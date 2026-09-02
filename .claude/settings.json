@@ -1,0 +1,45 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(bash -n:*)",
+      "Bash(shellcheck:*)",
+      "Bash(sha256sum:*)",
+      "Bash(du:*)",
+      "Bash(df:*)"
+    ],
+    "ask": [
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(rsync:*)",
+      "Bash(sudo:*)",
+      "Bash(docker:*)",
+      "Bash(./scripts/r770-offline-fetch.sh:*)"
+    ],
+    "deny": [
+      "Bash(mkfs*)",
+      "Bash(parted:*)",
+      "Bash(sgdisk:*)",
+      "Bash(gdisk:*)",
+      "Bash(fdisk:*)",
+      "Bash(wipefs:*)",
+      "Bash(dd:*)",
+      "Bash(shred:*)",
+      "Bash(lvremove:*)",
+      "Bash(vgremove:*)",
+      "Bash(pvremove:*)",
+      "Bash(rm -rf /:*)",
+      "Read(**/.ssh/id_*)",
+      "Read(**/*.pem)",
+      "Read(**/*secret*)"
+    ]
+  }
+}

@@ -16,14 +16,6 @@
       "Bash(du:*)",
       "Bash(df:*)"
     ],
-    "ask": [
-      "Bash(ssh:*)",
-      "Bash(scp:*)",
-      "Bash(rsync:*)",
-      "Bash(sudo:*)",
-      "Bash(docker:*)",
-      "Bash(./scripts/r770-offline-fetch.sh:*)"
-    ],
     "deny": [
       "Bash(mkfs*)",
       "Bash(parted:*)",
@@ -40,6 +32,25 @@
       "Read(**/.ssh/id_*)",
       "Read(**/*.pem)",
       "Read(**/*secret*)"
+    ],
+    "ask": [
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(rsync:*)",
+      "Bash(sudo:*)",
+      "Bash(docker:*)",
+      "Bash(./scripts/r770-offline-fetch.sh:*)"
     ]
+  },
+  "enabledPlugins": {
+    "superpowers@superpowers-marketplace": true
+  },
+  "extraKnownMarketplaces": {
+    "superpowers-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "obra/superpowers-marketplace"
+      }
+    }
   }
 }

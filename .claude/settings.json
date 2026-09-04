@@ -14,7 +14,10 @@
       "Bash(shellcheck:*)",
       "Bash(sha256sum:*)",
       "Bash(du:*)",
-      "Bash(df:*)"
+      "Bash(df:*)",
+      "Bash(bats:*)",
+      "Bash(./tests/run.sh:*)",
+      "Bash(./scripts/r770-bundle.sh:*)"
     ],
     "deny": [
       "Bash(mkfs*)",

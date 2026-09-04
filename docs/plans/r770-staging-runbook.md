@@ -15,7 +15,7 @@ Everything heavy runs inside containers (`ubuntu:24.04`, `python:3.12-slim`), so
 - [ ] **B. GNS3 vendor appliance inventory** — **still open.** Free set (VyOS, CHR, OPNsense, Alpine, docker nodes) is now scripted; the licensed list (Cisco IOSv/IOSvL2/IOL/CSR/ASAv, FortiGate, PA VM-Series — and pfSense CE, which now requires a Netgate account) needs inventorying against your entitlements. Usually the largest category (10–100+ GB) and sizes the media.
 - [x] **C. Supply strategy** — curated bundle (decided). Revisit apt-mirror only if unplanned `apt install` on the gapped box becomes recurring.
 - [x] **D. Transfer media** — 256 GB+ USB/NVMe, ext4 (decided). Site policy for media scanning/signing still to confirm (Step 6 must match it).
-- [ ] **E. Dell service tag** of the R770 at hand, for the firmware downloads in Step 4.
+- [x] **E. Dell service tag** — **`G8WFGH4`** (express service code 35366715688), confirmed by Phase 1 discovery 2026-09-03. Firmware baselines to compare against in Step 4: BIOS **1.7.5** (2026-01-16) · iDRAC/LC **1.30.20.10** · PERC H975i Front **8.14.0.0.28-40** · backplane **1.92** · Broadcom NIC **233.1.181.0** (pkg) / 233.0.195.0 · PSU **1408** · CPLD **109.125.104**.
 - [ ] **F. Proxy details** if the staging host egresses through one: proxy URL (+credentials if any), and confirm the allowlist covers the domains printed by the script's preflight failure message (registries, Ubuntu archives, download.docker.com, PyPI, GitHub, and the appliance mirrors).
 
 ## Step 1 — Prepare the RHEL 8 staging host
@@ -101,7 +101,8 @@ Not applicable on the chosen Docker path — tarballs are natively docker-format
 
 ## Step 4 — Manual additions (cannot be scripted)
 
-- [ ] **Dell** (`bundle/dell/`): from dell.com/support with the service tag — perccli/perccli2, BIOS + iDRAC + Broadcom NIC firmware DUPs, optionally a DSU offline repo. Keep Dell's published checksums alongside each file.
+- [ ] **Dell** (`bundle/dell/`): from dell.com/support with service tag **`G8WFGH4`** — **perccli2** (the PERC H975i is an NVMe RAID part), BIOS + iDRAC + Broadcom NIC firmware DUPs, optionally a DSU offline repo. Keep Dell's published checksums alongside each file. Only download DUPs *newer* than the baselines in Step 0E; a firmware package is not worth the risk if it matches what is installed.
+- [ ] **Note for OOB work:** this chassis has **IPMI-over-LAN disabled** (SOL enabled). Anything scripted against iDRAC must use **Redfish**, not `ipmitool -H`.
 - [ ] **Licensed GNS3 appliances** (`bundle/gns3/appliances/`): the images from Step 0B per the README the script writes there. Free appliances, `.gns3a` definitions (including for the licensed appliances), and docker-node images are already fetched by the script into `gns3/`.
 - [ ] **GNS3 v3 note:** gns3-server 3.x bundles its web UI and enforces authentication (admin user created on first run); appliance images are still plain files under the server's `images_path`, so pre-staging on disk remains the right offline approach.
 

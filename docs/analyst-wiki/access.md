@@ -32,7 +32,7 @@ The disk layout separates evidence, scratch, and infrastructure so that nothing 
 | `/data/staging/` | SFTP upload area for imported PCAPs | Working area — clean up after Malcolm ingests your file |
 | `/srv/work/` | Per-analyst workspaces: exports, reports, case artifacts | **Never auto-deleted** |
 
-The practical rule: **`raw/` is a conveyor belt, not a shelf.** How long the belt is depends on total ingest rate — at a sustained 100 Mbps across all feeds the math gives roughly two weeks in a 1.5 TB allocation; at 1 Gbps, under two days. Real numbers come after the build measures real feeds **(TBD)** — until then assume raw retention is short and promote anything that matters.
+The practical rule: **`raw/` is a conveyor belt, not a shelf.** How long the belt is depends on total ingest rate. Against the **3.25 TiB** allocated to PCAP: roughly **3 days** at a sustained 100 Mbps across all feeds, about **16 hours** at 500 Mbps, and **8 hours** at 1 Gbps. (An earlier version of this page said "two weeks" — that came from a decimal error in the design doc's retention table and was ten times too optimistic.) Real numbers come after the build measures real feeds — until then assume raw retention is **short**, and promote anything that matters the day you find it.
 
 Zeek/Arkime *metadata* (the searchable index) has its own longer retention, managed by index lifecycle policies — so you will often still be able to *find* a session in Arkime after its packets have rolled off. You get the session record and protocol logs, but not the payload.
 

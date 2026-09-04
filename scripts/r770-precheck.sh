@@ -215,22 +215,28 @@ done
 BNXT=$(for i in $IFACES; do d=$(priv ethtool -i "$i" 2>/dev/null | awk '/^driver:/{print $2}'); [ "$d" = "bnxt_en" ] && echo "$i"; done)
 BNXT_COUNT=$(echo "$BNXT" | grep -c . 2>/dev/null); BNXT_COUNT=$(echo "${BNXT_COUNT:-0}" | head -1)
 case "$BNXT_COUNT" in (''|*[!0-9]*) BNXT_COUNT=0;; esac
-if [ "${BNXT_COUNT:-0}" -eq 8 ]; then
-    ok "8 Broadcom (bnxt_en) ports detected: $(echo $BNXT | tr '\n' ' ')"
+# This chassis (tag G8WFGH4) presents TEN bnxt_en ports: 8 x 10GBASE-T capture
+# ports (two BCM57412 OCP quads) PLUS the 2 x 25G SFP28 pair (BCM57414, PCIe
+# slot 9) carrying the management bond. Expecting exactly 8 fired a false WARN
+# on 2026-09-02 — see state/inventory/r770-discovery-findings.md §2.2.
+if [ "${BNXT_COUNT:-0}" -eq 10 ]; then
+    ok "10 Broadcom (bnxt_en) ports detected — 8 capture + 2 management: $(echo "$BNXT" | tr '\n' ' ')"
+elif [ "${BNXT_COUNT:-0}" -eq 8 ]; then
+    ok "8 Broadcom (bnxt_en) ports detected: $(echo "$BNXT" | tr '\n' ' ')"
 elif [ "${BNXT_COUNT:-0}" -gt 0 ]; then
-    warn "Broadcom bnxt_en ports found: ${BNXT_COUNT} (expected 8) — check OCP adapter seating/BIOS enumeration"
+    warn "Broadcom bnxt_en ports found: ${BNXT_COUNT} (expected 8 capture, or 10 including the 2x25G management pair) — check OCP adapter seating/BIOS enumeration"
 else
     warn "No bnxt_en interfaces detected — capture adapters not visible (driver, seating, or naming; investigate before Phase 9)"
 fi
 # NUMA locality of capture ports (drives §8 socket split)
 NODES=$(for i in $BNXT; do cat "/sys/class/net/$i/device/numa_node" 2>/dev/null; done | sort -u | tr '\n' ' ')
 [ -n "${NODES// }" ] && echo "Capture-port NUMA node(s): ${NODES}" | tee -a "$RESULTS"
-# media type check (plan flags 57412=SFP+ vs 57416=BASE-T discrepancy)
+# media type check (discrepancy resolved 2026-09-03: BASE-T copper on this chassis)
 for i in $BNXT; do
     PORTS=$(priv ethtool "$i" 2>/dev/null | grep -E 'Supported ports' || true)
     echo "$i: $PORTS" >> "$OUT/06b-media-types.txt"
 done
-[ -s "$OUT/06b-media-types.txt" ] && warn "Confirm capture-NIC media type in 06b-media-types.txt (inventory says BASE-T; 57412 is normally SFP+ / 57416 is BASE-T)"
+[ -s "$OUT/06b-media-types.txt" ] && echo "Capture-NIC media: see 06b-media-types.txt. Settled 2026-09-03 for tag G8WFGH4 — BCM957412-N410TGI0S is 4x10GBASE-T copper (MEDIA=TP); the 2x25G SFP28 pair reports FIBRE and is the management bond. Re-verify only if adapters change." | tee -a "$RESULTS"
 
 # ── 7. current management path (must be protected) ───────────────────────────
 section 07-mgmt-path.txt "Current management path"
@@ -282,7 +288,10 @@ if have sensors; then run sensors; fi
 
 # ── 10. tool availability for later phases ───────────────────────────────────
 section 10-tools.txt "Tooling present vs needed later"
-for t in ethtool nvme smartctl numactl ipmitool jq git curl tcpdump tshark iperf3 mtr lvm2 docker virsh tc; do
+# Check BINARY names, not package names: 'lvm2' is a package and is never on
+# PATH, so it always reported MISSING even on this host, which is already
+# running LVM. The binary to look for is 'lvs'.
+for t in ethtool nvme smartctl numactl ipmitool jq git curl tcpdump tshark iperf3 mtr lvs docker virsh tc; do
     if have "$t"; then echo "present: $t" >> "$SEC"; else echo "MISSING (install in its phase): $t" >> "$SEC"; fi
 done
 

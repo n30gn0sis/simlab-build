@@ -1,8 +1,8 @@
 # PRD — Sim Lab: Air-Gapped Network Simulation & Packet-Capture Server (Dell R770)
 
-**Version:** 1.0 · 2026-09-01
+**Version:** 1.1 · 2026-09-03
 **Owner:** Stephen (lab operator)
-**Status:** Approved for build — Phase 1 (discovery) not yet executed
+**Status:** Approved for build — **Phase 1 (discovery) VERIFIED 2026-09-03**; §4 is now measured fact, §11 re-dispositioned
 **Sources distilled:** project build-agent charter, `docs/plans/r770-network-lab-buildout.md`, `docs/plans/r770-offline-supply.md`, `docs/plans/r770-dependency-manifest.md`, `docs/plans/r770-staging-runbook.md`, `docs/analyst-wiki/`
 
 ---
@@ -32,19 +32,22 @@ One air-gapped Ubuntu Server 24.04 LTS host that concurrently provides:
 
 All software arrives via a versioned offline bundle built on an internet-connected RHEL 8 staging host by `scripts/r770-offline-fetch.sh` (v3.3: resumable, proxy-aware, cross-bundle seeding), transferred on checksummed ext4 media.
 
-## 4. Target Hardware (per inventory — every line requires discovery verification)
+## 4. Hardware of Record (**verified 2026-09-03** — evidence in `state/inventory/`)
 
-- Dell PowerEdge R770, 2U
-- 2 × Intel Xeon 6 6515P — 32 physical cores / 64 threads total, 2 NUMA nodes expected
-- 128 GB DDR5-6400 (8 × 16 GB — only 4 of 8 channels per socket populated; bandwidth caveat)
-- ~8 TB raw NVMe behind Dell PERC "H975i" (model discrepancy — verify; RAID 1 intended → usable capacity **unknown**: ~4 TB or ~8 TB)
-- 2 × Broadcom quad-port 10GbE OCP (8 capture ports; 57412=SFP+ vs 57416=BASE-T discrepancy — verify media)
-- Integrated NIC (management), iDRAC (out-of-band recovery)
+Every line below is measured, not assumed. Sources: `r770-precheck-report-2026-09-02.md` (host, 14 PASS / 7 WARN / 0 FAIL) and `r770-idrac-inventory-G8WFGH4.md` (iDRAC export); analysis in `r770-discovery-findings.md`.
+
+- **Dell PowerEdge R770**, 2U, 17G · service tag **`G8WFGH4`** · BIOS 1.7.5 (2026-01-16) · UEFI, Secure Boot disabled · 2 × 1100 W redundant PSUs, 6 fans, all OK
+- **2 × Intel Xeon 6515P** — 16c/32t each = **32 physical cores / 64 threads**, L3 144 MiB, VT-x + IOMMU active. **2 NUMA nodes with interleaved numbering**: node 0 = even CPUs, node 1 = odd CPUs (distance 21) — pinning by contiguous range is a trap
+- **128 GB DDR5-6400** as 8 × 16 GB Micron single-rank RDIMMs (A1–A4, B1–B4) — 4 of 8 channels per socket, so per-socket bandwidth is ~half the platform's; **8 of 32 slots used, max 8 TB**, so the 256 GB upgrade is a straightforward purchase
+- **Storage: PERC H975i Front** (fw 8.14.0.0.28-40, Write Back), one **RAID-1 VD of 7.68 TB (6.99 TiB) usable** over 2 × KIOXIA E3.S NVMe 2.0 at 100 % endurance. **Encryption is Enabled with a Security Key Assigned — custody unknown (see §11).** Drives negotiated **x2 of a x4-capable link**. **14 of 16 backplane bays free.** Ubuntu is already installed; VG `ubuntu-vg0` has ≈**6.84 TiB of free extents**, so the storage phase needs no repartitioning
+- **Capture: 8 × 10GBASE-T copper (RJ45)** — 2 × Broadcom BCM57412 OCP quads (`BCM957412-N410TGI0S`). **OCP Slot 10 → NUMA node 0** (same node as the PERC; primary feeds), **OCP Slot 4 → NUMA node 1** (secondary). **Copper TAPs, not optics**
+- **Management: an 802.3ad bond, not the integrated NIC** — 2 × 25G SFP28 (Broadcom BCM57414, PCIe Slot 9, node 0, Dell D0R73 transceivers) bonded as `lacp-trunk`, VLAN 10 as **`lacp-trunk.10` at 10.10.10.31/24**, gateway 10.10.10.1
+- **iDRAC** (OOB recovery) — `https://192.168.76.231:443`, fw 1.30.20.10. **IPMI-over-LAN disabled → Redfish, not `ipmitool -H`.** On a different subnet from management, and **not yet demonstrated reachable** — the Phase 5 gate
 
 ## 5. Goals
 
 1. Reliable, drop-accounted packet capture on dedicated, unaddressed, promiscuous ports (offloads disabled on capture ports only; AF_PACKET first, escalate only on measured loss).
-2. Concurrent heavy capture and large GNS3 topologies via a NUMA socket split: capture/analysis stack on the socket owning the capture NICs, labs on the other (≈12.5 infrastructure cores / 16 guaranteed lab cores; ~64 GB infra / ~48 GB lab RAM).
+2. Concurrent heavy capture and large GNS3 topologies via a NUMA socket split — **decided from discovery: node 0 is capture/analysis (it owns the PERC, the management bond and OCP Slot 10), node 1 is the lab socket** (≈12.5 infrastructure cores / 16 guaranteed lab cores; ~64 GB infra / ~48 GB lab RAM). Node numbering is interleaved (node 0 = even CPUs), so pinning must use explicit lists, never ranges.
 3. Evidence protection: `raw/` PCAP auto-deletes oldest-first at a free-space floor; `cases/`, `archived/`, and `/srv/work/` never auto-delete; each workload on its own LVM volume so nothing starves anything else.
 4. Full offline operation: local APT repo only, no snapd, no phone-home, local time and DNS authority, internal CA, all updates by bundle.
 5. Repeatability and recoverability: config repo (`/opt/network-lab-config/`, git), idempotent scripts, documented rollback for every change, nightly Restic backups of configs/projects/curated artifacts.
@@ -63,9 +66,9 @@ All software arrives via a versioned offline bundle built on an internet-connect
 
 ## 7. Architecture Requirements (summary — authoritative detail in `docs/plans/r770-network-lab-buildout.md`)
 
-**Network zones (strict):** iDRAC OOB · management (integrated NIC, only physical host IP) · capture (8 ports, no IP ever, never bridged to labs) · lab fabric (virtual bridges) · lab NAT (firewalled, default-off). Lab traffic reaches Malcolm only via a dedicated virtual mirror feed.
+**Network zones (strict):** iDRAC OOB (192.168.76.0/24) · management (**`lacp-trunk.10` — an 802.3ad bond of 2 × 25G with VLAN 10, 10.10.10.31/24 — the only physical host IP**) · capture (8 × 10GBASE-T ports, no IP ever, never bridged to labs) · lab fabric (virtual bridges) · lab NAT (firewalled, default-off). Lab traffic reaches Malcolm only via a dedicated virtual mirror feed.
 
-**Storage:** LVM VG `vg_lab` on the RAID-1 VD; separate LVs for `/`, `/var`, `/var/lib/docker`, `/data/pcap` (XFS), `/data/index` (XFS), `/data/staging`, `/srv/vms`, `/srv/gns3`, `/srv/work`, `/srv/backup`; ~10% VG reserve; sizes scale with discovered usable capacity (4 TB worst case → 1.5 TB PCAP / 600 GB index).
+**Storage:** new LVs in the **existing VG `ubuntu-vg0`** on the RAID-1 VD (no repartitioning — ≈6.84 TiB of free extents): `/var/lib/docker` 250 GiB, `/data/pcap` **3.25 TiB** (XFS), `/data/index` **1 TiB** (XFS), `/data/staging` 250 GiB, `/srv/vms` 500 GiB, `/srv/gns3` 400 GiB, `/srv/work` 200 GiB, `/srv/backup` 250 GiB, plus growing `/var` from 6 → 50 GiB; ~10 % VG reserve retained.
 
 **Security:** SSH key-only on mgmt IP; UFW default-deny with mgmt-subnet-only 22/443; every web service localhost-bound behind Nginx TLS+auth; Docker socket never on TCP; capture containers get only documented `NET_ADMIN`/`NET_RAW`; auditd; secrets never in git.
 
@@ -98,18 +101,22 @@ Hard rules: never guess device/interface names; never touch RAID, partitions, bo
 - **Monitoring:** all Prometheus targets up; a test alert fires.
 - **Backup:** one file and one GNS3 project restored from Restic.
 
-## 11. Key Risks & Unknowns (resolve by discovery, in priority order)
+## 11. Key Risks & Unknowns — **re-dispositioned after Phase 1 (2026-09-03)**
 
-1. Usable storage capacity (4 vs 8 TB) — halves or doubles every storage number.
-2. PERC model/firmware/TRIM behavior ("H975i" unconfirmed).
-3. NIC media type (SFP+ vs BASE-T) — cabling and TAP procurement.
-4. NUMA locality of capture NICs and PERC — decides the socket split.
-5. Retention vs real ingest rates — all retention figures are models until measured.
-6. Single RAID-1 VD shared by capture I/O, indexing, and VM disks — disk-latency monitoring is the tripwire.
-7. RAM (not CPU) is the binding constraint for lab size; 256 GB upgrade is the escape hatch.
-8. Management NIC is a single access point until iDRAC is verified.
-9. Backup escapes the chassis only when the Restic repo is copied off-box — owner needed.
-10. Licensed appliance inventory still open — sizes the transfer media and lab capability.
+**Closed by discovery:** usable capacity (**7.68 TB**, not 4) · PERC model and firmware (**H975i Front, 8.14.0.0.28-40**) · NIC media (**10GBASE-T copper**) · NUMA locality (**PERC, mgmt bond and OCP Slot 10 on node 0; OCP Slot 4 on node 1** — socket split now decided in buildout §8) · Dell service tag (**G8WFGH4**).
+
+**Open, in priority order:**
+
+1. **PERC encryption key custody — NEW.** Encryption is on with a Security Key assigned and nobody has established LKM vs SEKM, who holds the passphrase, or where it is escrowed. Losing it loses the VD and every byte of evidence on it. Blocking for case data; resolve in Phase 2.
+2. **iDRAC unproven as a recovery path.** Address known, different subnet from management, no login demonstrated. Phase 5 must not touch Netplan until it is — an SSH session proves nothing about the recovery path.
+3. **Management is a bond + tagged VLAN**, not a single addressed port, which raises Phase 5 from medium to high consequence. A mistake in bond mode, slave membership, or the VLAN tag drops the only in-band path.
+4. **Retention is days, not weeks — and the prior model was 10× optimistic.** The buildout plan's retention table was computed for 15 TB while labelled 1.5 TB; corrected, 3.25 TiB of PCAP holds ~3.3 days at 100 Mbps and ~8 hours at 1 Gbps. All figures remain models until feed rates are measured in Phase 10. The 14 free drive bays are the escape hatch.
+5. **NVMe link width x2 of x4 — NEW.** Half the per-drive bandwidth. Backplane bifurcation by design, or a fault? Determine in Phase 2 *before* any performance tuning.
+6. **One RAID-1 VD shared** by capture I/O, indexing and VM disks — now known to be running at half link width. Disk-latency monitoring is the tripwire; dedicated PCAP NVMe in the free bays is the fix if proven.
+7. **RAM is the binding constraint** for lab size, not CPU. Outlook improved: 8 of 32 DIMM slots populated, so 256 GB is a simple upgrade that also fixes the half-channel bandwidth caveat.
+8. **Backup escapes the chassis only** when the Restic repo is copied off-box — owner still needed.
+9. **Licensed appliance inventory** still open — sizes the transfer media and lab capability.
+10. **Housekeeping from discovery** (non-blocking): iDRAC virtual media causes persistent `sdb`/`sr0` I/O errors that pollute health baselines — detach it; `pam_lastlog.so` is missing on 24.04 and logs a PAM error per login; `systemd-networkd-wait-online` stalls boot waiting on eight legitimately-down capture ports; gateway 10.10.10.1 did not answer ping (possibly filtered — confirm, don't assume).
 
 ## 12. Deliverables
 

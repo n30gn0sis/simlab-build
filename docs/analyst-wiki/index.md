@@ -40,7 +40,7 @@ Raw captured PCAP is **automatically deleted oldest-first** when the capture vol
 These are the things this guide deliberately does *not* state yet, because they depend on hardware discovery, build decisions, or measurement that hasn't happened:
 
 - **Final service URLs and hostnames.** The design calls for friendly internal names served through a portal (working names: `portal.lab`, `malcolm.lab`, `gns3.lab`, `monitoring.lab`), but nothing is live and names/addresses are unconfirmed.
-- **Storage capacities and retention windows.** Usable disk is unknown until the RAID configuration is verified (could be ~4 TB or ~8 TB), and PCAP retention depends on measured feed rates. All retention figures are TBD.
+- **Retention windows.** Usable disk is now known — **7.68 TB on one RAID-1 volume**, with **3.25 TiB allocated to PCAP** — but PCAP retention still depends on measured feed rates, so the windows below remain estimates until the build measures real feeds. Plan on **days, not weeks**.
 - **Capture feed inventory.** Which physical ports carry which TAP/SPAN feeds, and their names, are set during build.
 - **Account provisioning.** How analysts get SSH keys, Malcolm logins, and GNS3 accounts — process TBD by the lab operator.
 - **Licensed GNS3 appliances.** Free/open-source appliances (VyOS, MikroTik CHR, OPNsense, FRR, etc.) are bundled; which licensed images (Cisco, Fortinet, Palo Alto) get staged depends on entitlement inventory, still open.

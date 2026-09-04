@@ -40,7 +40,7 @@ Kernel/security updates arrive the same way: each refresh cycle, the container r
 
 ### 1.2 Malcolm (the big one)
 
-Malcolm's releases are already offline-friendly ([releases page](https://github.com/idaholab/Malcolm/releases); current: [v26.07.1](https://github.com/idaholab/Malcolm/releases/tag/v26.07.1)):
+Malcolm's releases are already offline-friendly ([releases page](https://github.com/idaholab/Malcolm/releases); current: [v26.08.0](https://github.com/idaholab/Malcolm/releases/tag/v26.08.0), pinned 2026-09-04):
 
 | Artifact | Use |
 |---|---|
@@ -136,4 +136,4 @@ A 256 GB+ USB-NVMe drive holds current + previous bundle comfortably.
 4. Confirm site policy for transfer media scanning/signing so step 3 of the procedure matches it.
 5. Decide whether a GPS/PPS time source is available; otherwise accept documented free-running drift.
 
-Sources: [Malcolm releases](https://github.com/idaholab/Malcolm/releases) · [Malcolm v26.07.1](https://github.com/idaholab/Malcolm/releases/tag/v26.07.1) · [Malcolm ISO docs](https://malcolm.fyi/docs/malcolm-iso.html) · [Malcolm quick start](https://malcolm.fyi/docs/quickstart.html)
+Sources: [Malcolm releases](https://github.com/idaholab/Malcolm/releases) · [Malcolm v26.08.0](https://github.com/idaholab/Malcolm/releases/tag/v26.08.0) · [Malcolm ISO docs](https://malcolm.fyi/docs/malcolm-iso.html) · [Malcolm quick start](https://malcolm.fyi/docs/quickstart.html)

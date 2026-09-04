@@ -2,6 +2,19 @@
 #
 # r770-offline-fetch.sh — build the air-gap supply bundle for the R770 lab server.
 #
+# v3.4 (2026-09-04): pin bumps for bundle-1, after a full upstream review
+#   (evidence: state/inventory/pin-review-2026-09-04.md, operator approved):
+#     - MALCOLM_VER  26.07.1 -> 26.08.0  (23 images, release assets verified)
+#     - alertmanager v0.33.0 -> v0.34.0
+#     - cadvisor     v0.57.0 -> v0.60.5
+#     - FRR_IMG      10.6.1  -> 10.7.1
+#   grafana-oss stays HELD at 12.1.0 (13.2.1 is current) until dashboards are
+#   reviewed. Policy of record: bump moved pins at cut time rather than ship
+#   stale, since ad-hoc cadence means a bundle may sit for months.
+#   Staging host also changed: RHEL 8 -> Ubuntu 24.04 Proxmox VM + Docker CE.
+#   The script is unchanged by that — everything heavy already runs in
+#   ubuntu:24.04 / python:3.12-slim containers.
+#
 # v3.3 (2026-08-31): cross-bundle seeding — a NEW bundle reuses a previous one:
 #   - At startup the script finds the newest sibling bundle-*/ directory next to
 #     the one being built (or SEED_FROM=/path/to/bundle to pick explicitly;
@@ -92,21 +105,21 @@
 set -euo pipefail
 
 # ── pins: review each refresh cycle ──────────────────────────────────────────
-MALCOLM_VER="${MALCOLM_VER:-26.07.1}"          # check https://github.com/idaholab/Malcolm/releases
+MALCOLM_VER="${MALCOLM_VER:-26.08.0}"          # check https://github.com/idaholab/Malcolm/releases
 UBUNTU_ISO_VER="${UBUNTU_ISO_VER:-24.04.4}"    # check https://releases.ubuntu.com/noble/
 GNS3_VER="${GNS3_VER:-3.0.6}"                  # check https://pypi.org/project/gns3-server/
 ET_SURICATA_PATH="${ET_SURICATA_PATH:-suricata-7.0}"  # noble ships Suricata 7.0.x; ET returns 410 on retired paths
 CHR_VER="${CHR_VER:-7.21.5}"                   # check https://mikrotik.com/download/chr
 OPNSENSE_VER="${OPNSENSE_VER:-26.7}"           # check https://opnsense.org/download/
 OPNSENSE_MIRROR="${OPNSENSE_MIRROR:-https://mirrors.dotsrc.org/opnsense/releases/mirror}"
-FRR_IMG="${FRR_IMG:-quay.io/frrouting/frr:10.6.1}"    # check https://quay.io/repository/frrouting/frr?tab=tags
+FRR_IMG="${FRR_IMG:-quay.io/frrouting/frr:10.7.1}"    # check https://quay.io/repository/frrouting/frr?tab=tags
 
 MONITOR_IMAGES=(
     "docker.io/prom/prometheus:v3.14.0"
-    "docker.io/prom/alertmanager:v0.33.0"
+    "docker.io/prom/alertmanager:v0.34.0"
     "docker.io/prom/blackbox-exporter:v0.28.0"
     "docker.io/grafana/grafana-oss:12.1.0"     # 13.x is current stable; held at 12.x — review dashboards before jumping majors
-    "gcr.io/cadvisor/cadvisor:v0.57.0"
+    "gcr.io/cadvisor/cadvisor:v0.60.5"
     "docker.io/library/nginx:stable"
     "docker.io/library/registry:2"
     "docker.io/squidfunk/mkdocs-material:latest"  # pin a tag once you standardize

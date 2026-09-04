@@ -1,23 +1,24 @@
 # R770 Lab — Offline Dependency Manifest
 
-**Version:** 1.0 (2026-08-31)
+**Version:** 1.1 (2026-09-04)
 **Companion to:** `r770-offline-supply.md` (supply plan), `r770-offline-fetch.sh` (v3.3 fetch script — resumable; new bundles seed from previous ones), `r770-staging-runbook.md`, `r770-network-lab-buildout.md`
 
 This is the definitive list of everything the air-gapped R770 build needs, what version it is pinned to, where it comes from, whether the fetch script gets it automatically or a human must, and where it lands in the bundle.
 
 ---
 
-## 0. Decisions record (2026-08-31)
+## 0. Decisions record (2026-08-31, revised 2026-09-04)
 
 | Decision | Choice |
 |---|---|
 | Scope | Everything in the supply plan: OS/APT, Docker, Malcolm, monitoring stack, GNS3, VM images, enrichment/rules, Dell firmware checklist, docs mirrors |
 | APT strategy | Curated bundle (exact package set + deps resolved in clean `ubuntu:24.04` container) — not a partial mirror |
-| Staging host | RHEL 8 with **Docker Engine** (script also supports rootful podman, unused) |
+| Staging host | **CHANGED 2026-09-04 (operator approved): a dedicated Proxmox VM running Ubuntu 24.04 with Docker CE**, ~300 GB disk. Was: RHEL 8 with Docker Engine. Rationale: Docker CE is a first-party path on Ubuntu rather than a third-party repo outside Red Hat support that conflicts with the `container-tools` module; it matches the bundle's target OS; the VM can be snapshotted before fetch day; and it removes the SELinux `:Z` bind-mount risk entirely (Ubuntu uses AppArmor). Must be a **VM, not an LXC container** — Docker in LXC needs `nesting=1`/`keyctl=1` and still fights overlayfs. (Script also supports rootful podman, unused.) |
 | Transfer media | 256 GB+ USB/NVMe, **ext4** |
 | GeoIP enrichment | **Descoped** — no MaxMind account; Malcolm runs without geo tagging. Reversible: v2 of the fetch script has the working GeoLite2 block if this changes |
 | GNS3 images | Free/open-source set scripted; Cisco + commercial firewall images manual (checklist below) |
 | Refresh cadence | Ad-hoc / one-time initial build; no fixed schedule. Accepted risk: host security updates, ET rules only refresh when a new bundle is cut |
+| Pin policy (added 2026-09-04) | **Bump moved pins at cut time rather than shipping stale**, since ad-hoc cadence means a bundle may sit for months and nothing is yet deployed to migrate. The one standing exception is grafana-oss, held below 13.x until dashboards are reviewed. Every bump is recorded in `state/inventory/pin-review-<date>.md` |
 | Drive helper script | None — manual rsync + `sha256sum -c MANIFEST.sha256` on the drive |
 
 ---
@@ -46,21 +47,21 @@ Curated package list (script is authoritative):
 
 | Item | Pin | Source | Bundle path | Size |
 |---|---|---|---|---|
-| `malcolm-26.07.1-docker_install.zip` | 26.07.1 (current as of 2026-08-31) | github.com/idaholab/Malcolm releases | `malcolm/` | ~0.5 MB |
-| All container images from the release compose file | tags as referenced by v26.07.1 compose | ghcr.io/idaholab/malcolm/* | `malcolm/malcolm-images-26.07.1.tar.gz` | ~20–30 GB |
-| Release compose file + image list | v26.07.1 | raw.githubusercontent.com | `malcolm/` | — |
+| `malcolm-26.08.0-docker_install.zip` | **26.08.0** (verified current 2026-09-04) | github.com/idaholab/Malcolm releases | `malcolm/` | ~0.5 MB |
+| All container images from the release compose file | **23 images, all tagged `26.08.0`** (verified against the v26.08.0 compose 2026-09-04) | ghcr.io/idaholab/malcolm/* | `malcolm/malcolm-images-26.08.0.tar.gz` | ~20–30 GB |
+| Release compose file + image list | v26.08.0 | raw.githubusercontent.com | `malcolm/` | — |
 
-Restore: `docker load -i malcolm-images-26.07.1.tar.gz`, then run Malcolm's install/configure scripts (find images locally, never pull). The full Malcolm ISO is **not** bundled (Ubuntu stays the host OS); grab a copy manually only if you want the recovery/reference option.
+Restore: `docker load -i malcolm-images-26.08.0.tar.gz`, then run Malcolm's install/configure scripts (find images locally, never pull). The full Malcolm ISO is **not** bundled (Ubuntu stays the host OS); grab a copy manually only if you want the recovery/reference option.
 
 ## 3. Monitoring / portal container images — scripted §4
 
 | Image | Pin |
 |---|---|
 | prom/prometheus | v3.14.0 |
-| prom/alertmanager | v0.33.0 |
+| prom/alertmanager | v0.34.0 *(bumped 2026-09-04)* |
 | prom/blackbox-exporter | v0.28.0 |
-| grafana/grafana-oss | 12.1.0 (13.x is current; held — review dashboards before jumping majors) |
-| gcr.io/cadvisor/cadvisor | v0.57.0 |
+| grafana/grafana-oss | 12.1.0 — **held** (13.2.1 is current; review dashboards before jumping majors) |
+| gcr.io/cadvisor/cadvisor | v0.60.5 *(bumped 2026-09-04)* |
 | nginx | stable |
 | registry | 2 |
 | squidfunk/mkdocs-material | latest (pin once standardized) |
@@ -89,7 +90,7 @@ Fetched from the GNS3 registry (raw.githubusercontent.com/GNS3/gns3-registry) in
 | MikroTik CHR raw image | 7.21.5 | download.mikrotik.com/routeros/7.21.5/chr-7.21.5.img.zip | ~50 MB |
 | OPNsense dvd ISO (+ sha256 + sig) | 26.7 | mirrors.dotsrc.org/opnsense/releases/mirror | ~2.2 GB |
 | Alpine virt ISO | latest-stable at build time (parsed from `latest-releases.yaml`) | dl-cdn.alpinelinux.org | ~60 MB |
-| GNS3 docker-node images (alpine, debian:stable-slim, nicolaka/netshoot, quay.io/frrouting/frr:10.6.1) | as listed | Docker Hub / quay.io | ~1.5 GB saved |
+| GNS3 docker-node images (alpine, debian:stable-slim, nicolaka/netshoot, quay.io/frrouting/frr:**10.7.1**) | as listed | Docker Hub / quay.io | ~1.5 GB saved |
 
 ### 4.4 Licensed / account-gated images — **MANUAL** (`gns3/appliances/README.txt` in bundle)
 

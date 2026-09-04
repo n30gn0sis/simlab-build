@@ -1,6 +1,6 @@
 # Analysis Stack — Malcolm
 
-Malcolm (pinned at **v26.07.1**) is the lab's traffic-analysis platform. It is one integrated Docker Compose deployment that bundles every analysis tool you'll touch — you don't install or manage any of them, you just use their web interfaces through the portal.
+Malcolm (pinned at **v26.08.0**) is the lab's traffic-analysis platform. It is one integrated Docker Compose deployment that bundles every analysis tool you'll touch — you don't install or manage any of them, you just use their web interfaces through the portal.
 
 **What's inside, in analyst terms:**
 

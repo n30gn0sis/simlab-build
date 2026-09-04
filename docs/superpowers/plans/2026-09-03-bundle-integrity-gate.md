@@ -26,7 +26,7 @@ Additionally: `shellcheck` reports SC2094 (read and write the same file in one p
 - **bash floor is 4.4** (RHEL 8 staging host). `mapfile -d ''` is available; bash-5-only syntax is not.
 - **No new staging-host dependencies.** Runbook §1.3 installs only `curl gnupg2 unzip wget pigz`. `jq` is in the *R770's* package list, not staging's — parse JSON with `grep`/`sed`.
 - **Manifest exclusions are exactly:** `MANIFEST.sha256`, `*.part`, `./.stamps/*`. Defined once, in `bundle_files()`.
-- **Pins as of 2026-08-31** (do not bump in this plan): Malcolm `26.07.1` · Ubuntu ISO `24.04.4` · gns3-server `3.0.6` · MikroTik CHR `7.21.5` · OPNsense `26.7` · FRR `quay.io/frrouting/frr:10.6.1` · prometheus `v3.14.0` · alertmanager `v0.33.0` · blackbox-exporter `v0.28.0` · cadvisor `v0.57.0` · grafana-oss `12.1.0` (**deliberately held** — 13.x exists; review dashboards before jumping majors) · ET path `suricata-7.0`.
+- **Pins as of 2026-09-04** (do not bump in this plan; four were bumped separately on 2026-09-04 — see `state/inventory/pin-review-2026-09-04.md`): Malcolm `26.08.0` · Ubuntu ISO `24.04.4` · gns3-server `3.0.6` · MikroTik CHR `7.21.5` · OPNsense `26.7` · FRR `quay.io/frrouting/frr:10.7.1` · prometheus `v3.14.0` · alertmanager `v0.34.0` · blackbox-exporter `v0.28.0` · cadvisor `v0.60.5` · grafana-oss `12.1.0` (**deliberately held** — 13.2.1 is current; review dashboards before jumping majors) · ET path `suricata-7.0`.
 - **Never fabricate results.** Every task's "expected" output must be what the command actually printed. If it differs, the plan is wrong — fix the plan, do not fudge the report.
 - **Do not restructure `r770-offline-fetch.sh`.** It cannot be exercised in the dev sandbox (no Docker, needs ~150 GB and hours). The only edit it receives in this plan is the two-line change in Task 6.
 - **Commit style:** match existing history — imperative, capitalized subject, no `feat:`/`fix:` prefix (e.g. `Add SessionStart hook installing shellcheck for web sessions`). Append whatever session-attribution trailer your harness specifies.
@@ -275,7 +275,7 @@ make_bundle() {
     mkdir -p "$d"/{apt,malcolm,docker,images,enrichment,isos,dell} \
              "$d"/gns3/{appliances,definitions} "$d"/.stamps
     echo "fake deb"             > "$d/apt/example_1.0_amd64.deb"
-    echo "fake malcolm images"  > "$d/malcolm/malcolm-images-26.07.1.tar.gz"
+    echo "fake malcolm images"  > "$d/malcolm/malcolm-images-26.08.0.tar.gz"
     echo "fake monitoring"      > "$d/docker/monitoring-images.tar.gz"
     echo "fake iso"             > "$d/isos/ubuntu-24.04.4-live-server-amd64.iso"
     echo "fake oui"             > "$d/enrichment/oui.txt"
@@ -286,7 +286,7 @@ make_bundle() {
 # Bundle notes
 
 - Ubuntu ISO 24.04.4 fetched
-- Malcolm 26.07.1 images saved
+- Malcolm 26.08.0 images saved
 NOTES
 }
 
@@ -344,7 +344,7 @@ setup() {
 }
 
 @test "refuses when an incomplete download is present" {
-    echo half > "$BUNDLE/malcolm/malcolm-images-26.07.1.tar.gz.part"
+    echo half > "$BUNDLE/malcolm/malcolm-images-26.08.0.tar.gz.part"
     run "$SCRIPT" manifest "$BUNDLE"
     echo "$output"
     [ "$status" -ne 0 ]
@@ -588,7 +588,7 @@ setup() {
 }
 
 @test "a leftover .part fails" {
-    echo half > "$BUNDLE/malcolm/malcolm-images-26.07.1.tar.gz.part"
+    echo half > "$BUNDLE/malcolm/malcolm-images-26.08.0.tar.gz.part"
     run "$SCRIPT" verify "$BUNDLE"
     echo "$output"
     [ "$status" -eq 1 ]

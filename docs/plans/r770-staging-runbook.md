@@ -1,11 +1,11 @@
-# R770 Offline Dependency Prep — Staging Runbook (RHEL 8)
+# R770 Offline Dependency Prep — Staging Runbook (Ubuntu 24.04 VM)
 
 **Companion to:** `r770-offline-supply.md` (the model/rationale) · `r770-offline-fetch.sh` v3.3 (the tool; resumable, seeds new bundles from previous ones) · `r770-dependency-manifest.md` (authoritative dependency list + decisions record) · `r770-network-lab-buildout.md`
-**Date:** 2026-08-31 (updated for v3.1: Docker-on-RHEL8 chosen, proxy support, GNS3 appliance fetching, GeoIP descoped)
-**Staging host:** RHEL 8 box with internet access (direct or via corporate proxy), preparing bundles for the air-gapped Ubuntu 24.04 R770.
-**Verified against:** Malcolm v26.07.1 (current), Ubuntu 24.04.4 (current point release), gns3-server 3.0.6, CHR 7.21.5, OPNsense 26.7, FRR 10.6.1, CirrOS 0.6.3, ET Open suricata-7.0 path.
+**Date:** 2026-09-04 — **staging host changed from RHEL 8 to a dedicated Proxmox VM running Ubuntu 24.04 + Docker CE** (operator approved; rationale in dependency manifest §0). Pins reviewed and four bumped the same day (`state/inventory/pin-review-2026-09-04.md`).
+**Staging host:** a dedicated **Proxmox VM** running Ubuntu 24.04 with internet access (direct or via corporate proxy), preparing bundles for the air-gapped Ubuntu 24.04 R770 `testbed` (tag `G8WFGH4`).
+**Verified against (2026-09-04):** Malcolm **v26.08.0**, Ubuntu 24.04.4, gns3-server 3.0.6, CHR 7.21.5, OPNsense 26.7, FRR **10.7.1**, alertmanager **v0.34.0**, cadvisor **v0.60.5**, CirrOS 0.6.3, ET Open `suricata-7.0` path (HTTP 200, not retired).
 
-Everything heavy runs inside containers (`ubuntu:24.04`, `python:3.12-slim`), so a RHEL host builds Ubuntu artifacts correctly — the host only needs a container runtime, curl, gpg, unzip, wget, and disk.
+Everything heavy still runs inside containers (`ubuntu:24.04`, `python:3.12-slim`) — that indirection is what made a RHEL host viable and it costs nothing on Ubuntu, so the script is unchanged. The host needs only a container runtime, curl, gpg, unzip, wget, and disk.
 
 ---
 
@@ -18,37 +18,64 @@ Everything heavy runs inside containers (`ubuntu:24.04`, `python:3.12-slim`), so
 - [x] **E. Dell service tag** — **`G8WFGH4`** (express service code 35366715688), confirmed by Phase 1 discovery 2026-09-03. Firmware baselines to compare against in Step 4: BIOS **1.7.5** (2026-01-16) · iDRAC/LC **1.30.20.10** · PERC H975i Front **8.14.0.0.28-40** · backplane **1.92** · Broadcom NIC **233.1.181.0** (pkg) / 233.0.195.0 · PSU **1408** · CPLD **109.125.104**.
 - [ ] **F. Proxy details** if the staging host egresses through one: proxy URL (+credentials if any), and confirm the allowlist covers the domains printed by the script's preflight failure message (registries, Ubuntu archives, download.docker.com, PyPI, GitHub, and the appliance mirrors).
 
-## Step 1 — Prepare the RHEL 8 staging host
+## Step 1 — Prepare the Ubuntu 24.04 staging VM
 
-**1.1 Disk space.** Budget ≥150 GB free total: images stored uncompressed under container storage (30–40 GB compressed expands to 60–80+ GB) plus the bundle output.
+**1.0 Provision the VM.** It must be a **QEMU/KVM virtual machine, not an LXC container.** Docker inside LXC needs `nesting=1` and `keyctl=1` and still fights overlayfs — not a fight worth having in the middle of a multi-hour 65 GB fetch. On the Proxmox host:
+
+- Ubuntu Server 24.04 LTS, **≥300 GB disk** (150 GB working space + room for the bundle and the previous one), ≥4 vCPU, ≥8 GB RAM
+- Take a **snapshot before fetch day** — that is the cheap rollback a bare-metal host never had
 
 ```bash
-df -h /var "$(pwd)"      # docker's storage lives in /var/lib/docker
+systemd-detect-virt        # expect "kvm" or "qemu"; "lxc" means wrong container type
+df -h /var /               # /var/lib/docker lives here
 ```
 
-On RHEL's default partitioning, `/` (holding `/var`) is small and the space is in `/home`. If `/var` is tight, either move docker's `data-root` (`/etc/docker/daemon.json`) to a filesystem with room, or free space first.
-
-**1.2 Container runtime — Docker CE (decided 2026-08-31).** Third-party repo, outside Red Hat support, but runs the script identically to the original:
+**1.1 Disk space.** Budget ≥150 GB free: images stored uncompressed under `/var/lib/docker` (30–40 GB compressed expands to 60–80+ GB) plus the bundle output. Unlike RHEL's default partitioning there is no `/home`-vs-`/var` split to work around, but confirm the root filesystem was actually grown to the full virtual disk:
 
 ```bash
-sudo dnf -y install dnf-plugins-core
-sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
-sudo dnf -y install docker-ce docker-ce-cli containerd.io
+lsblk; df -h /
+# if the FS is smaller than the disk:  sudo growpart /dev/sda 1 && sudo resize2fs /dev/sda1
+```
+
+**1.2 Container runtime — Docker CE.** On Ubuntu this is a **first-party supported path** from Docker's own repository, with none of the RHEL caveats (third-party repo outside vendor support, conflict with the `container-tools` module):
+
+```bash
+sudo apt-get update
+sudo apt-get -y install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+  https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" |
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo systemctl enable --now docker
+sudo docker run --rm hello-world          # prove it before fetch day
 ```
 
-Note: docker-ce conflicts with the `container-tools` module packages — don't install both. (Rootful podman remains a supported fallback; the script auto-detects it and handles its differences, but then re-validate tarball interop per Step 3.)
+(Rootful podman remains a supported fallback; the script auto-detects it and handles its differences, but then re-validate tarball interop per Step 3.)
 
 **1.3 Host tools:**
 
 ```bash
-sudo dnf -y install curl gnupg2 unzip wget pigz
+sudo apt-get -y install curl gnupg unzip wget pigz jq
 for t in curl gpg sha256sum tar unzip wget; do command -v $t; done
 ```
 
 `pigz` is optional but worthwhile — the script auto-uses it to parallelize the ~30 GB compression step (stock single-threaded gzip is the wall-clock bottleneck). `wget` is required for the docs mirrors (skipped with a WARN if absent).
 
-**1.5 Proxy configuration (if the staging host egresses through one).** A proxy must be configured in **two places** — this is the classic failure mode where the image pull works but `apt-get update` inside the container hangs, or vice versa:
+**1.4 Readiness check.** Before committing to a multi-hour run, confirm the box is the one you think it is:
+
+```bash
+systemd-detect-virt                       # kvm/qemu, NOT lxc
+. /etc/os-release && echo "$PRETTY_NAME"  # Ubuntu 24.04.x
+df -h --output=avail / | tail -1          # >= 150G
+docker info >/dev/null && echo "docker OK"
+curl -fsS -o /dev/null -w 'egress %{http_code}\n' https://api.github.com
+```
+
+**1.5 Proxy configuration (if the staging VM egresses through one).** A proxy must be configured in **two places** — this is the classic failure mode where the image pull works but `apt-get update` inside the container hangs, or vice versa:
 
 1. **The Docker daemon** (for image pulls — env vars do NOT reach it):
 
@@ -74,7 +101,7 @@ for t in curl gpg sha256sum tar unzip wget; do command -v $t; done
 
    Either case works — the script normalizes upper/lowercase to both. If the proxy needs auth, use `http://user:pass@proxy...` (the script redacts credentials in `BUNDLE_NOTES.md`).
 
-The script's **[0/10] preflight** proves both paths (daemon pull + in-container apt egress) before committing to hours of downloads, and prints the full domain allowlist to hand your proxy team if it fails. Also configure dnf's proxy for Step 1.2/1.3 itself: `proxy=http://proxy.example.com:3128` in `/etc/dnf/dnf.conf`.
+The script's **[0/10] preflight** proves both paths (daemon pull + in-container apt egress) before committing to hours of downloads, and prints the full domain allowlist to hand your proxy team if it fails. For apt itself, add `Acquire::http::Proxy "http://proxy.example.com:3128";` to `/etc/apt/apt.conf.d/95proxy` so Step 1.2/1.3 work too.
 
 ## Step 2 — Run the fetch script
 
@@ -143,18 +170,18 @@ Also confirm in `BUNDLE_NOTES.md`: no unresolved `WARN` lines (ET rules 410, VyO
 
 ## Refresh cadence and pin review
 
-**Decided cadence: ad-hoc** (initial build; no fixed schedule). Accepted, documented risk: host security updates, ET rules, and OUI data only refresh when a new bundle is cut. When cutting a refresh bundle, review the pins at the top of the script:
+**Decided cadence: ad-hoc** (initial build; no fixed schedule). **Pin policy (2026-09-04): bump moved pins at cut time** rather than shipping stale — nothing is deployed to migrate, and an ad-hoc bundle may sit for months. Grafana is the standing exception. Accepted, documented risk: host security updates, ET rules, and OUI data only refresh when a new bundle is cut. When cutting a refresh bundle, review the pins at the top of the script:
 
 | Pin | Current (2026-08-31) | Where to check |
 |---|---|---|
-| `MALCOLM_VER` | 26.07.1 | github.com/idaholab/Malcolm/releases |
+| `MALCOLM_VER` | **26.08.0** (bumped 2026-09-04) | github.com/idaholab/Malcolm/releases |
 | `UBUNTU_ISO_VER` | 24.04.4 | releases.ubuntu.com/noble |
 | `GNS3_VER` | 3.0.6 | pypi.org/project/gns3-server |
 | `CHR_VER` | 7.21.5 | mikrotik.com/download/chr |
 | `OPNSENSE_VER` | 26.7 | opnsense.org/download |
-| `FRR_IMG` | quay.io/frrouting/frr:10.6.1 | quay.io/repository/frrouting/frr?tab=tags |
+| `FRR_IMG` | **quay.io/frrouting/frr:10.7.1** (bumped 2026-09-04) | quay.io/repository/frrouting/frr?tab=tags |
 | `ET_SURICATA_PATH` | suricata-7.0 (matches noble's Suricata 7.0.x; ET returns 410 when a branch retires — script checks) | rules.emergingthreats.net |
-| Monitoring tags | prometheus v3.14.0 · alertmanager v0.33.0 · blackbox v0.28.0 · cadvisor v0.57.0 · grafana-oss 12.1.0 (13.x exists — review before jumping majors) | upstream GitHub releases |
+| Monitoring tags | prometheus v3.14.0 · alertmanager **v0.34.0** · blackbox v0.28.0 · cadvisor **v0.60.5** · grafana-oss 12.1.0 (**held**; 13.2.1 is current — review dashboards before jumping majors) | upstream GitHub releases |
 
 VyOS rolling and Alpine are resolved to latest automatically at build time (GitHub API / `latest-releases.yaml`).
 
@@ -164,16 +191,17 @@ VyOS rolling and Alpine are resolved to latest automatically at build time (GitH
 |---|---|
 | Proxy configured in one place but not the other (daemon vs. containers) | Script [0/10] preflight fails fast with guidance; runbook §1.5 configures both |
 | Proxy blocks a needed domain mid-run | Preflight error prints the full allowlist to hand the proxy team; WARN lines catch per-item failures |
-| SELinux denials writing to bind mounts | Script uses `:Z` labels; point output at a dedicated bundle tree only (relabeling is recursive) |
-| `/var` fills mid-pull on default RHEL partitioning | Step 1.1 check; relocate docker `data-root` or prune between runs |
+| ~~SELinux denials writing to bind mounts~~ | **No longer applicable** — Ubuntu uses AppArmor, not SELinux. Removing this failure mode was part of the reason for the host change. The script's `:Z` labels are harmless no-ops here |
+| `/var` fills mid-pull | Step 1.1 check (and confirm the root FS was grown to the full virtual disk); prune between runs with `docker system prune -a`. On a VM the cheapest fix is to grow the disk |
 | Rules/OUI silently stale (ad-hoc cadence) | WARN lines in `BUNDLE_NOTES.md`; treat unresolved WARNs as a gate in Step 5; staleness is an accepted, documented risk |
-| Vendor appliance images exceed media | Step 0B inventory sizes the media before fetch day |
+| Vendor appliance images exceed media | Step 0B inventory sizes the media before fetch day — **still open, and the one genuinely unbounded item in this cycle** |
+| Docker inside an LXC container | Step 1.0 — use a VM. `systemd-detect-virt` must not say `lxc` |
 | Grafana 12→13 major jump breaks dashboards | Held at 12.1.0; upgrade deliberately in its own cycle |
 
 ## Success criteria
 
 - [ ] Preflight [0/10] passes (daemon pull + in-container egress, through the proxy if present)
-- [ ] Bundle builds end-to-end on the RHEL 8 host with zero unresolved WARNs in `BUNDLE_NOTES.md`
+- [ ] Bundle builds end-to-end on the Ubuntu 24.04 staging VM with zero unresolved WARNs in `BUNDLE_NOTES.md`
 - [ ] Manual items (Dell, licensed appliances) present and covered by the regenerated manifest
 - [ ] Media verifies (`sha256sum -c`) after copy, and again on the R770 before any import
 - [ ] Previous bundle retained until the new one validates on the R770

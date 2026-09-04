@@ -13,7 +13,7 @@
 | Netplan of record | `/etc/netplan/00-h2-init.yaml` (mode 0600, single file) |
 | R770 SSH target | *`CLAUDE.md` says `ssh r770`; the host calls itself `testbed` at 10.10.10.31 — confirm the alias the operator uses before remote work* |
 | iDRAC | `https://192.168.76.231:443` · DNS `testbed-idrac` · MAC `28:00:af:df:bc:8c` · fw 1.30.20.10 · **IPMI-over-LAN disabled → use Redfish, not `ipmitool -H`** · **reachability from the operator's position NOT yet demonstrated** |
-| Staging host | RHEL 8 + Docker CE (this machine) |
+| Staging host | **VM 9770 `r770-staging`** on Proxmox `proxmox` (192.168.4.21) — Ubuntu 24.04.4, Docker CE 29.8.0, 6 cores / 8 GiB / 400 GiB, at **192.168.4.28**. Built + snapshotted `pre-fetch` 2026-09-04; evidence in `inventory/staging-vm-9770.md`. *(Not this session's container — LXC 101 is a 40 GiB container with no Docker.)* |
 | Current bundle | *none imported yet — see `inventory/bundles.md`* |
 
 ## Phases
@@ -76,3 +76,4 @@
 *(append one line per action: date · phase · what happened · evidence file)*
 
 - 2026-09-03 · Phase 1 · Ingested `r770-precheck.sh` v2 output (2026-09-02, 14 PASS / 7 WARN / 0 FAIL) and the iDRAC hardware inventory for tag G8WFGH4; five of eight top unknowns resolved, three design assumptions corrected, three new risks recorded. Phase 1 → VERIFIED. · `inventory/r770-discovery-findings.md`
+- 2026-09-04 · Bundle prep · Reviewed all 11 pins (4 bumped: Malcolm 26.08.0, alertmanager v0.34.0, cadvisor v0.60.5, FRR 10.7.1); built and verified staging VM 9770 on Proxmox with Docker CE, 8 G swap, thin-pool watchdog and a `pre-fetch` snapshot. All evidence gates passed incl. in-container apt egress and 376 G free. · `inventory/pin-review-2026-09-04.md`, `inventory/staging-vm-9770.md`

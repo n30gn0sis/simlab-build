@@ -13,10 +13,12 @@ updates, ET rules and OUI data are only as fresh as the last bundle.
 |---|---|---|---|---|---|---|---|
 | *in progress* | bundle-1 | — | Malcolm 26.08.0 · Ubuntu 24.04.4 · gns3-server 3.0.6 | not yet cut | — | — | no |
 
+**Staging host is built and ready:** VM 9770 `r770-staging` at **192.168.4.28** (Ubuntu 24.04.4, Docker CE 29.8.0, 400 GiB, 376 G free, snapshot `pre-fetch` taken). Build record and fetch-day watch list: `staging-vm-9770.md`.
+
 ## Per-cycle checklist
 
-- [ ] Pins reviewed — any `MOVED` row bumped with the operator's OK (recorded in dependency manifest §0) or explicitly deferred
-- [ ] Staging host is a **VM, not LXC** (`systemd-detect-virt` ≠ `lxc`), ≥150 GB free, `docker info` works
+- [x] Pins reviewed 2026-09-04 — 4 bumped with operator approval, grafana held (`pin-review-2026-09-04.md`)
+- [x] Staging host is a **VM, not LXC** — VM 9770, `systemd-detect-virt`=`kvm`, 376 G free, `docker info` OK (2026-09-04)
 - [ ] Bundle built: `sudo -E ./scripts/r770-offline-fetch.sh`
 - [ ] Manual categories staged: Dell (`dell/`) and licensed GNS3 appliances (`gns3/appliances/`)
 - [ ] Manifest regenerated **after** the manual additions: `./scripts/r770-bundle.sh manifest bundle-YYYYMMDD`

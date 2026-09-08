@@ -48,7 +48,7 @@ Curated package list (script is authoritative):
 | Item | Pin | Source | Bundle path | Size |
 |---|---|---|---|---|
 | `malcolm-26.08.0-docker_install.zip` | **26.08.0** (verified current 2026-09-04) | github.com/idaholab/Malcolm releases | `malcolm/` | ~0.5 MB |
-| All container images from the release compose file | **23 images, all tagged `26.08.0`** (verified against the v26.08.0 compose 2026-09-04) | ghcr.io/idaholab/malcolm/* | `malcolm/malcolm-images-26.08.0.tar.gz` | ~20–30 GB |
+| All container images from the release compose file | **23 images, all tagged `26.08.0`** (verified against the v26.08.0 compose 2026-09-04) | ghcr.io/idaholab/malcolm/* | `malcolm/malcolm-images-26.08.0.tar.gz` | **6.7 GiB measured 2026-09-08** (~24 GB uncompressed in the daemon; the old ~20–30 GB figure counted uncompressed layers, not the gzipped tarball) |
 | Release compose file + image list | v26.08.0 | raw.githubusercontent.com | `malcolm/` | — |
 
 Restore: `docker load -i malcolm-images-26.08.0.tar.gz`, then run Malcolm's install/configure scripts (find images locally, never pull). The full Malcolm ISO is **not** bundled (Ubuntu stays the host OS); grab a copy manually only if you want the recovery/reference option.
@@ -155,7 +155,7 @@ Ubuntu SHA256SUMS + GPG sig (scripted, verified on staging), Docker repo key (sc
 | Enrichment/rules | <0.5 GB |
 | Docs mirrors | 1–2 GB |
 | Dell (manual) | 2–5 GB |
-| **Scripted+Dell subtotal** | **~45–65 GB** |
+| **Scripted+Dell subtotal** | **~45–65 GB estimated · 15 GB MEASURED (bundle-20260908)** — the estimate summed uncompressed image sizes; the bundle stores gzipped tarballs |
 | Licensed GNS3 appliances (manual) | 10–100+ GB |
 
 Current + previous bundle fit comfortably unless the licensed-appliance set is very large; ext4 preserves permissions and >4 GB files.

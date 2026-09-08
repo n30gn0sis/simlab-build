@@ -11,7 +11,50 @@ updates, ET rules and OUI data are only as fresh as the last bundle.
 
 | Date | Bundle | Size | Key versions | `verify` result | WARN dispositions | Courier | Imported on R770 |
 |---|---|---|---|---|---|---|---|
-| *in progress* | bundle-1 | — | Malcolm 26.08.0 · Ubuntu 24.04.4 · gns3-server 3.0.6 | not yet cut | — | — | no |
+| 2026-09-08 | `bundle-20260908` | **15 GB**, 1616 files | Malcolm 26.08.0 · Ubuntu 24.04.4 · gns3-server 3.0.6 · FRR 10.7.1 · alertmanager v0.34.0 · cadvisor v0.60.5 (ghcr.io) | **PASS WITH WARNINGS (exit 2)** | 2 docs-mirror WARNs, accepted — see below | not yet transferred | no |
+
+### bundle-20260908 — build result
+
+Built on VM 9770, three attempts (two failures, zero re-downloads — the script's resumability held).
+
+| Component | Size |
+|---|---|
+| `malcolm/` | 6.8 G (23 images, tarball + compose + install zip) |
+| `isos/` | 3.2 G (Ubuntu 24.04.4 + SHA256SUMS + .gpg) |
+| `gns3/` | 1.6 G (wheelhouse, 12 `.gns3a` definitions, 8 free appliance files) |
+| `apt/` | 1.5 G (877 debs + `Packages.gz` + Docker repo key) |
+| `images/` | 617 M (noble cloud image, CirrOS) |
+| `docker/` | 510 M (8 monitoring/portal images) |
+| `docs/` | 53 M · `enrichment/` 12 M · `dell/` README only |
+| **Total** | **15 G** |
+
+**Verification (2026-09-08):**
+- `r770-bundle.sh verify` → **PASS WITH WARNINGS, exit 2**. Manifest parses (1616 entries), every
+  manifested file present and unmodified, no unmanifested files, no `.part` leftovers.
+- Ubuntu ISO: **Good signature** from `Ubuntu CD Image Automatic Signing Key (2012) <cdimage@ubuntu.com>`,
+  fingerprint `8439 38DF 228D 22F7 B374 2BC0 D94A A3F0 EFE2 1092`; `ubuntu-24.04.4-live-server-amd64.iso: OK`.
+
+**WARN dispositions — both ACCEPTED:**
+
+| WARN | Disposition |
+|---|---|
+| `docs mirror for malcolm incomplete/failed` | **Accepted.** Docs mirrors are best-effort by design (dependency manifest §8: "each is `\|\| warn` — a failed mirror never fails the bundle"). 53 M of docs did land (Wireshark guide, gns3-server source tree). Retryable: a rerun resumes them. |
+| `docs mirror for zeek incomplete/failed` | **Accepted**, same reasoning. |
+
+Neither touches software, images, or enrichment data — only offline reading material.
+
+**Still blocking transfer** (both are `verify` warnings by design, not defects):
+`dell/` holds only README.txt, and the licensed GNS3 appliance set is not inventoried.
+
+**Two failures on the way, both recorded for the next cycle:**
+1. `[4/10]` — `gcr.io/cadvisor/cadvisor:v0.60.5` not found. That registry is abandoned at v0.55.1;
+   the *previous* pin 404s there too, so this was broken before the bump. Fixed to
+   `ghcr.io/google/cadvisor`. Root cause was method: a GitHub release existing is not an image
+   existing. See `pin-review-2026-09-04.md`.
+2. `[6/10]` — exit 23 after the `.gns3a` definitions. **Transient and not reproducible**: an xtrace
+   rerun went straight through the same code, resolved VyOS `2026.09.01-0034-rolling`, and
+   downloaded it. Deliberately not "fixed". If it recurs, the VyOS block is where to look — its
+   `\|\| note "WARN: …"` fallback should have downgraded a download failure to a warning, and did not.
 
 **Staging host is built and ready:** VM 9770 `r770-staging` at **192.168.4.28** (Ubuntu 24.04.4, Docker CE 29.8.0, 400 GiB, 376 G free, snapshot `pre-fetch` taken). Build record and fetch-day watch list: `staging-vm-9770.md`.
 

@@ -2,6 +2,19 @@
 #
 # r770-offline-fetch.sh — build the air-gap supply bundle for the R770 lab server.
 #
+# v3.5 (2026-09-08): cadvisor REGISTRY fix (not just a tag bump).
+#   The bundle-1 fetch failed at [4/10] with:
+#     failed to resolve reference "gcr.io/cadvisor/cadvisor:v0.60.5": not found
+#   gcr.io/cadvisor/cadvisor stopped publishing at v0.55.1. The PREVIOUS pin
+#   (v0.57.0) 404s there too, so this was already broken before the 2026-09-04
+#   bump -- the bundle would have failed here either way. cadvisor images now
+#   live at ghcr.io/google/cadvisor (v0.57.0 and v0.60.5 both resolve).
+#   Lesson recorded: a GitHub release existing does NOT mean an image was
+#   published at that tag. Pin review must verify the image REFERENCE
+#   (docker manifest inspect), not the version number. All 15 image
+#   references were re-verified this way before the rerun; only this one
+#   was broken.
+#
 # v3.4 (2026-09-04): pin bumps for bundle-1, after a full upstream review
 #   (evidence: state/inventory/pin-review-2026-09-04.md, operator approved):
 #     - MALCOLM_VER  26.07.1 -> 26.08.0  (23 images, release assets verified)
@@ -119,7 +132,7 @@ MONITOR_IMAGES=(
     "docker.io/prom/alertmanager:v0.34.0"
     "docker.io/prom/blackbox-exporter:v0.28.0"
     "docker.io/grafana/grafana-oss:12.1.0"     # 13.x is current stable; held at 12.x — review dashboards before jumping majors
-    "gcr.io/cadvisor/cadvisor:v0.60.5"
+    "ghcr.io/google/cadvisor:v0.60.5"   # gcr.io/cadvisor/cadvisor is ABANDONED at v0.55.1 — see below
     "docker.io/library/nginx:stable"
     "docker.io/library/registry:2"
     "docker.io/squidfunk/mkdocs-material:latest"  # pin a tag once you standardize

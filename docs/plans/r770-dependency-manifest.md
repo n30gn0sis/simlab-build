@@ -61,7 +61,7 @@ Restore: `docker load -i malcolm-images-26.08.0.tar.gz`, then run Malcolm's inst
 | prom/alertmanager | v0.34.0 *(bumped 2026-09-04)* |
 | prom/blackbox-exporter | v0.28.0 |
 | grafana/grafana-oss | 12.1.0 — **held** (13.2.1 is current; review dashboards before jumping majors) |
-| gcr.io/cadvisor/cadvisor | v0.60.5 *(bumped 2026-09-04)* |
+| **ghcr.io/google/cadvisor** | v0.60.5 *(bumped 2026-09-04; **registry corrected 2026-09-08** — `gcr.io/cadvisor/cadvisor` is abandoned at v0.55.1 and 404s for both the old and new tag)* |
 | nginx | stable |
 | registry | 2 |
 | squidfunk/mkdocs-material | latest (pin once standardized) |

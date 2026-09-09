@@ -136,10 +136,10 @@ Not applicable on the chosen Docker path — tarballs are natively docker-format
 After adding manual files, **regenerate the manifest** (the script's manifest predates them):
 
 ```bash
-cd bundle-YYYYMMDD && find . -type f ! -name MANIFEST.sha256 ! -name '*.part' ! -path './.stamps/*' -print0 | xargs -0 sha256sum > MANIFEST.sha256
+./scripts/r770-bundle.sh manifest bundle-YYYYMMDD
 ```
 
-(The exclusions keep resume bookkeeping — `.stamps/` and any leftover `.part` partials — out of the manifest; a `.part` file present at this stage means an incomplete download: rerun the script before packing.)
+(The script excludes resume bookkeeping — `.stamps/` and any leftover `.part` partials — from the manifest, and refuses to run while a `.part` file is present: that means an incomplete download — rerun the fetch script before packing.)
 
 ## Step 5 — Verify on staging (trust is established here)
 
@@ -151,8 +151,10 @@ cd bundle-YYYYMMDD
 gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 0x843938DF228D22F7B3742BC0D94AA3F0EFE21092
 gpg --verify isos/SHA256SUMS.gpg isos/SHA256SUMS
 ( cd isos && grep live-server SHA256SUMS | sha256sum -c - )
-sha256sum -c MANIFEST.sha256          # full-bundle self-check
+../scripts/r770-bundle.sh verify . --strict   # full-bundle integrity gate, not a hand-rolled sha256sum -c
 ```
+
+Exit **0** PASS · **2** PASS WITH WARNINGS (disposition each before the media moves) · **1** FAIL, do not import.
 
 (Behind the proxy, gpg's keyserver fetch may need `--keyserver-options http-proxy=$HTTPS_PROXY`.) The script already sha256-verifies OPNsense and Alpine against their published checksum files at fetch time.
 
@@ -160,7 +162,7 @@ Also confirm in `BUNDLE_NOTES.md`: no unresolved `WARN` lines (ET rules 410, VyO
 
 ## Step 6 — Pack, transfer, import
 
-1. Copy the bundle to the ext4 drive; `sha256sum -c MANIFEST.sha256` **from the media** before it leaves staging.
+1. Copy the bundle to the ext4 drive; `./scripts/r770-bundle.sh verify <path-on-media>/bundle-YYYYMMDD --strict` **from the media** before it leaves staging.
 2. AV/content scan per site policy (Step 0D).
 3. On the R770: manifest check first, then import in the order in `BUNDLE_NOTES.md` (local apt repo → `docker load` of Malcolm/monitoring/gns3-node tarballs → wheelhouse/definitions/appliances/images/enrichment/docs into place), per supply plan §3.
 4. **Keep the previous bundle** until this one validates — that's the rollback.
@@ -203,5 +205,5 @@ VyOS rolling and Alpine are resolved to latest automatically at build time (GitH
 - [ ] Preflight [0/10] passes (daemon pull + in-container egress, through the proxy if present)
 - [ ] Bundle builds end-to-end on the Ubuntu 24.04 staging VM with zero unresolved WARNs in `BUNDLE_NOTES.md`
 - [ ] Manual items (Dell, licensed appliances) present and covered by the regenerated manifest
-- [ ] Media verifies (`sha256sum -c`) after copy, and again on the R770 before any import
+- [ ] Media verifies (`r770-bundle.sh verify`) after copy, and again on the R770 before any import
 - [ ] Previous bundle retained until the new one validates on the R770

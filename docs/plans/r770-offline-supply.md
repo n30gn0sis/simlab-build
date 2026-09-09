@@ -102,7 +102,7 @@ Ubuntu archive GPG keys, Docker repo key, Malcolm release signatures/checksums, 
 
 1. On staging: run `r770-offline-fetch.sh` → `bundle-YYYYMMDD/` with `MANIFEST.sha256` covering every file.
 2. Verify upstream signatures **on staging** (Ubuntu ISO GPG, Malcolm `.sha`, Docker repo signatures) — the gapped side can only verify what the manifest asserts, so trust is established here. Record versions in `BUNDLE_NOTES.md`.
-3. Copy to approved media; on the R770 run `sha256sum -c MANIFEST.sha256` before anything is installed; then AV/content scan per site policy.
+3. Copy to approved media; on the R770 run `./r770-bundle.sh verify .` before anything is installed (the verifier ships inside the bundle root); then AV/content scan per site policy.
 4. Import: sync debs into the local repo + `apt update`; `docker load` image tars; copy wheelhouse/images/enrichment data into place; keep the previous bundle until the new one is validated (instant rollback).
 5. Log the cycle in the config repo (`inventory/bundles.md`): date, versions, hashes, who carried it.
 

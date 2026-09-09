@@ -22,7 +22,7 @@
 |---|---|---|---|---|
 | 1 | Hardware & OS discovery (read-only) | — | **VERIFIED** | `inventory/r770-precheck-report-2026-09-02.md`, `inventory/r770-idrac-inventory-G8WFGH4.md`, analysis in `inventory/r770-discovery-findings.md` |
 | 2 | BIOS/firmware/iDRAC assessment; RAID VD verification | 1 | **READY** | — |
-| 3 | Storage: LVM/filesystem layout | 1,2 | **READY** *(no repartitioning needed — ≈6.85 TB free extents in existing VG `ubuntu-vg0`)* | — |
+| 3 | Storage: LVM/filesystem layout | 1,2 | **READY** *(no repartitioning needed — ≈6.84 TiB free extents in existing VG `ubuntu-vg0`)* | — |
 | 4 | Base OS: users, SSH hardening, UFW, packages, auditd | 3 | NOT STARTED | — |
 | 5 | Management networking (Netplan, dnsmasq, chrony) | 4 | **BLOCKED** — iDRAC reachability unproven; mgmt is a bond + tagged VLAN | — |
 | 6 | Docker Engine + Compose on lv_docker | 4 | NOT STARTED | — |
@@ -49,7 +49,7 @@
 | Virtual disk | `vd0` — **RAID1, 7,680,877,920,256 B ≈ 7.68 TB (6.99 TiB) usable**, 64 KB stripe, SSD, PCIE, redundancy OK |
 | Physical disks | 2 × KIOXIA E3.S NVMe 2.0, ≈7.68 TB each, 100 % endurance, Online — **link negotiated x2 of x4 capable** |
 | Backplane | 16 slots, **2 populated → 14 free bays**, fw 1.92 |
-| Existing LVM | VG `ubuntu-vg0` on `/dev/sda3`; lv-root 50G, lv-home 84.9G, lv-var 6G, lv-varlog 2G, lv-varlogaudit 2G, lv-tmp 2G → **≈6.85 TB free extents** |
+| Existing LVM | VG `ubuntu-vg0` on `/dev/sda3`; lv-root 50G, lv-home 84.9G, lv-var 6G, lv-varlog 2G, lv-varlogaudit 2G, lv-tmp 2G → **≈6.84 TiB free extents** |
 | Capture NICs | 8 × **10GBASE-T copper (RJ45)** — 2 × Broadcom BCM57412 OCP quads (`BCM957412-N410TGI0S`). **OCP Slot 10 → NUMA node 0; OCP Slot 4 → NUMA node 1.** All 8 currently down, no carrier |
 | Management NIC | Broadcom BCM57414 2 × 25G SFP28 (PCIe Slot 9, **node 0**), Dell D0R73 transceivers, bonded 802.3ad as `lacp-trunk` (50 Gbps) |
 | PERC locality | `0000:ae:00.0` → **NUMA node 0** (same node as the mgmt bond and OCP Slot 10) |

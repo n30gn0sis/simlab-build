@@ -19,7 +19,7 @@ This is the definitive list of everything the air-gapped R770 build needs, what 
 | GNS3 images | Free/open-source set scripted; Cisco + commercial firewall images manual (checklist below) |
 | Refresh cadence | Ad-hoc / one-time initial build; no fixed schedule. Accepted risk: host security updates, ET rules only refresh when a new bundle is cut |
 | Pin policy (added 2026-09-04) | **Bump moved pins at cut time rather than shipping stale**, since ad-hoc cadence means a bundle may sit for months and nothing is yet deployed to migrate. The one standing exception is grafana-oss, held below 13.x until dashboards are reviewed. Every bump is recorded in `state/inventory/pin-review-<date>.md` |
-| Drive helper script | None — manual rsync + `sha256sum -c MANIFEST.sha256` on the drive |
+| Drive helper script | **Superseded 2026-09-09**: `scripts/r770-bundle.sh verify` is the gate. Was: manual `sha256sum -c`, which cannot see unmanifested files. |
 
 ---
 
@@ -165,4 +165,4 @@ Current + previous bundle fit comfortably unless the licensed-appliance set is v
 1. Dell downloads by service tag → `dell/` (§7).
 2. Inventory + download licensed GNS3 images per your entitlements → `gns3/appliances/` (§4.4).
 3. Verify Ubuntu ISO GPG signature and Malcolm `.sha` files on staging per site policy (script verifies SHA256; GPG per policy).
-4. Site AV/content scan of the drive per policy, then `sha256sum -c MANIFEST.sha256` on the R770 before anything is installed.
+4. Site AV/content scan of the drive per policy, then `./r770-bundle.sh verify .` on the R770 before anything is installed.

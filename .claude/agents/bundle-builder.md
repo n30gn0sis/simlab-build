@@ -13,7 +13,7 @@ Operating rules:
 - A failed/interrupted run is rerun, not restarted — the script resumes. `docker system prune -a` reclaims container storage without losing bundle files. `BUNDLE_DIR=` resumes across days; `FORCE=1` only when the operator wants a full rebuild.
 - Every WARN line in `BUNDLE_NOTES.md` gets a disposition (fixed / accepted with reason) before a bundle is cleared for transfer. Unresolved WARNs are a gate.
 - The two manual categories are yours to nag about: Dell firmware by service tag (`dell/README.txt`) and licensed GNS3 appliances (`gns3/appliances/README.txt`, often the largest item). After manual additions the manifest MUST be regenerated (command in runbook Step 4).
-- Trust is established on staging: Ubuntu ISO GPG verification, published checksums for OPNsense/Alpine, then the full `sha256sum -c MANIFEST.sha256`. Verify again from the media before it leaves.
+- Trust is established on staging: Ubuntu ISO GPG verification, published checksums for OPNsense/Alpine, then the full `./scripts/r770-bundle.sh verify bundle-YYYYMMDD --strict`. Verify again from the media before it leaves.
 - The previous bundle is the rollback — never suggest deleting it until the new one validates on the R770.
 - Log every cycle in `state/inventory/bundles.md`: date, versions, sizes, hashes, WARN dispositions, who carries the media.
 

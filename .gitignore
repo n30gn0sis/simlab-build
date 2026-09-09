@@ -1,0 +1,18 @@
+# Bundle output. r770-offline-fetch.sh writes bundle-YYYYMMDD/ to $(pwd), and
+# .claude/commands/bundle.md runs it from the repo root, so a 15 GB tree lands
+# here. .claude/settings.json auto-approves `git add` and `git commit`.
+bundle-*/
+*.tar.gz
+*.part
+
+# Discovery output from r770-precheck.sh
+r770-precheck-*/
+r770-precheck-*.tar.gz
+
+# Machine-local agent settings. May contain credentials in permission entries;
+# previously protected only by a global gitignore outside the repo.
+.claude/settings.local.json
+
+# Editor / OS noise
+*.swp
+.DS_Store

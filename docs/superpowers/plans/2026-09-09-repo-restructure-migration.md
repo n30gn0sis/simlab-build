@@ -73,7 +73,7 @@ Create `tests/no-secrets.bats`:
 
 @test "no credential-shaped string is tracked" {
     cd "$BATS_TEST_DIRNAME/.."
-    run git grep -nE 'sshpass -p [^$]|BEGIN [A-Z ]*PRIVATE KEY' -- ':!tests/'
+    run git grep -nE 'ssh[p]ass -p [^$]|BEGIN [A-Z ]*PRIVATE KEY' -- ':!tests/'
     [ "$status" -ne 0 ]
 }
 ```
@@ -602,7 +602,7 @@ git commit -am "Remove superseded sections and a self-contradicting changelog"
 test -f .gitignore
 GIT_CONFIG_GLOBAL=/dev/null git check-ignore -q .claude/settings.local.json
 GIT_CONFIG_GLOBAL=/dev/null git check-ignore -q bundle-20260908/
-! git grep -nE 'sshpass -p [^$]|BEGIN [A-Z ]*PRIVATE KEY' -- ':!tests/'
+! git grep -nE 'ssh[p]ass -p [^$]|BEGIN [A-Z ]*PRIVATE KEY' -- ':!tests/'
 ! grep -rn 'sha256sum -c MANIFEST' docs/ .claude/ scripts/
 [ "$(grep -rl 'r770-bundle.sh' docs/ .claude/ | wc -l)" -ge 6 ]
 ! grep -rn '6\.85 TB' . --exclude-dir=.git

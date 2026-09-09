@@ -47,21 +47,21 @@ Curated package list (script is authoritative):
 
 | Item | Pin | Source | Bundle path | Size |
 |---|---|---|---|---|
-| `malcolm-26.08.0-docker_install.zip` | **26.08.0** (verified current 2026-09-04) | github.com/idaholab/Malcolm releases | `malcolm/` | ~0.5 MB |
-| All container images from the release compose file | **23 images, all tagged `26.08.0`** (verified against the v26.08.0 compose 2026-09-04) | ghcr.io/idaholab/malcolm/* | `malcolm/malcolm-images-26.08.0.tar.gz` | **6.7 GiB measured 2026-09-08** (~24 GB uncompressed in the daemon; the old ~20–30 GB figure counted uncompressed layers, not the gzipped tarball) |
-| Release compose file + image list | v26.08.0 | raw.githubusercontent.com | `malcolm/` | — |
+| `malcolm-${MALCOLM_VER}-docker_install.zip` | see pin block, `scripts/r770-offline-fetch.sh` (last reviewed `state/inventory/pin-review-2026-09-04.md`) | github.com/idaholab/Malcolm releases | `malcolm/` | ~0.5 MB |
+| All container images from the release compose file | **23 images, all tagged to the pin** — see `scripts/r770-offline-fetch.sh` (verification evidence: `state/inventory/pin-review-2026-09-04.md`) | ghcr.io/idaholab/malcolm/* | `malcolm/malcolm-images-${MALCOLM_VER}.tar.gz` | **6.7 GiB measured 2026-09-08** (~24 GB uncompressed in the daemon; the old ~20–30 GB figure counted uncompressed layers, not the gzipped tarball) |
+| Release compose file + image list | see pin block, `scripts/r770-offline-fetch.sh` | raw.githubusercontent.com | `malcolm/` | — |
 
-Restore: `docker load -i malcolm-images-26.08.0.tar.gz`, then run Malcolm's install/configure scripts (find images locally, never pull). The full Malcolm ISO is **not** bundled (Ubuntu stays the host OS); grab a copy manually only if you want the recovery/reference option.
+Restore: `docker load -i malcolm-images-${MALCOLM_VER}.tar.gz`, then run Malcolm's install/configure scripts (find images locally, never pull). The full Malcolm ISO is **not** bundled (Ubuntu stays the host OS); grab a copy manually only if you want the recovery/reference option.
 
 ## 3. Monitoring / portal container images — scripted §4
 
 | Image | Pin |
 |---|---|
 | prom/prometheus | v3.14.0 |
-| prom/alertmanager | v0.34.0 *(bumped 2026-09-04)* |
+| prom/alertmanager | see pin block, `scripts/r770-offline-fetch.sh` *(last bumped 2026-09-04 — `state/inventory/pin-review-2026-09-04.md`)* |
 | prom/blackbox-exporter | v0.28.0 |
-| grafana/grafana-oss | 12.1.0 — **held** (13.2.1 is current; review dashboards before jumping majors) |
-| **ghcr.io/google/cadvisor** | v0.60.5 *(bumped 2026-09-04; **registry corrected 2026-09-08** — `gcr.io/cadvisor/cadvisor` is abandoned at v0.55.1 and 404s for both the old and new tag)* |
+| grafana/grafana-oss | see pin block — **held below 13.x** (policy: §0; review dashboards before jumping majors) |
+| **ghcr.io/google/cadvisor** | see pin block, `scripts/r770-offline-fetch.sh` *(last bumped 2026-09-04 — `state/inventory/pin-review-2026-09-04.md`; **registry corrected 2026-09-08** — `gcr.io/cadvisor/cadvisor` is abandoned and 404s for both the old and new tag)* |
 | nginx | stable |
 | registry | 2 |
 | squidfunk/mkdocs-material | latest (pin once standardized) |
@@ -90,7 +90,7 @@ Fetched from the GNS3 registry (raw.githubusercontent.com/GNS3/gns3-registry) in
 | MikroTik CHR raw image | 7.21.5 | download.mikrotik.com/routeros/7.21.5/chr-7.21.5.img.zip | ~50 MB |
 | OPNsense dvd ISO (+ sha256 + sig) | 26.7 | mirrors.dotsrc.org/opnsense/releases/mirror | ~2.2 GB |
 | Alpine virt ISO | latest-stable at build time (parsed from `latest-releases.yaml`) | dl-cdn.alpinelinux.org | ~60 MB |
-| GNS3 docker-node images (alpine, debian:stable-slim, nicolaka/netshoot, quay.io/frrouting/frr:**10.7.1**) | as listed | Docker Hub / quay.io | ~1.5 GB saved |
+| GNS3 docker-node images (alpine, debian:stable-slim, nicolaka/netshoot, quay.io/frrouting/frr — pin: see `scripts/r770-offline-fetch.sh`) | as listed | Docker Hub / quay.io | ~1.5 GB saved |
 
 ### 4.4 Licensed / account-gated images — **MANUAL** (`gns3/appliances/README.txt` in bundle)
 

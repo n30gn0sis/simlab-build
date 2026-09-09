@@ -60,6 +60,19 @@ which is how it drifted. Two checks now cover it:
 
 Check 2 is the one that would have caught the original incident.
 
+The lookup is anchored on the phrase `<n>.<n> <unit> [of] free extents`, **not on
+the current digits**. An earlier version matched `6\.8[0-9] Ti?B`, which stops
+matching the moment the owner's value leaves that window — and an empty lookup
+makes every comparison built on it vacuous. Both checks now fail loudly, with a
+message saying the owner lookup found nothing, rather than passing on an empty
+value. A check that cannot fail is worse than no check, because it reads as
+coverage.
+
+Known residual gap, stated rather than hidden: a stale figure that names neither
+the owner's current value nor the phrase "free extents" is not caught. Writing
+the figure adjacent to that phrase, as every current statement does, keeps it
+inside the guard.
+
 ## Decisions of record — why `CLAUDE.md` restates them
 
 `docs/plans/r770-dependency-manifest.md` §0 is the owner: a decision is changed
@@ -115,6 +128,15 @@ bump. Keep the surrounding shape real (registry paths, filename patterns) so the
 example still teaches; make only the owned value obviously fake. Fixtures are
 therefore **not** exempt from the pin check — they simply have nothing to
 restate.
+
+That claim was false when first written. The pin check scanned `'*.md' '*.sh'`
+only, so `.bats` and `.bash` files were invisible to it, and
+`tests/helpers/fixtures.bash` carried the live Malcolm, Prometheus and Ubuntu ISO
+pins in plain sight while the test reported `ok`. The pathspec now includes
+`'*.bats' '*.bash'`, and the fixtures are synthetic. Nothing in the fixtures
+depended on a real value: `scripts/r770-bundle.sh` pairs payloads with their list
+files by glob (`malcolm/malcolm-images-*.tar.gz`), never by version, and no test
+asserts on one.
 
 ## Pin block enumeration and enforcement status
 

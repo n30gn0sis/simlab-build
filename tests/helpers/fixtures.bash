@@ -1,5 +1,12 @@
 # Synthetic bundles: the real directory shape from r770-offline-fetch.sh, with
 # byte-sized stand-ins for the 40+ GB of payload. Never a real bundle.
+#
+# Versions here are SYNTHETIC (0.0.0-fixture) and must stay that way. A fixture
+# needs *a* version, not *the* version: the pins are owned by the pin block in
+# scripts/r770-offline-fetch.sh (see OWNERS.md), and a fixture that spells one
+# out is another copy nothing updates on the next bump. Nothing here depends on
+# the value -- r770-bundle.sh pairs payloads by glob (malcolm-images-*.tar.gz),
+# never by version, and no test asserts on one.
 
 # make_bundle <dir> — a freshly fetched bundle, manual categories NOT yet staged
 # (README.txt only), which is the true state at the end of a fetch run.
@@ -8,14 +15,14 @@ make_bundle() {
     mkdir -p "$d"/{apt,malcolm,docker,images,enrichment,isos,dell} \
              "$d"/gns3/{appliances,definitions} "$d"/.stamps
     echo "fake deb"             > "$d/apt/example_1.0_amd64.deb"
-    echo "fake malcolm images"  > "$d/malcolm/malcolm-images-26.08.0.tar.gz"
+    echo "fake malcolm images"  > "$d/malcolm/malcolm-images-0.0.0-fixture.tar.gz"
     echo "fake monitoring"      > "$d/docker/monitoring-images.tar.gz"
     # Every image tarball the fetch script writes has a companion image-list.txt
     # beside it, and import-bundle.md step 3b verifies loaded tags against it.
     # The fixture omitted them, which made it a shape no real bundle ever has.
-    printf 'ghcr.io/idaholab/malcolm/arkime:26.08.0\n' > "$d/malcolm/image-list.txt"
-    printf 'docker.io/prom/prometheus:v3.14.0\n'       > "$d/docker/monitoring-image-list.txt"
-    echo "fake iso"             > "$d/isos/ubuntu-24.04.4-live-server-amd64.iso"
+    printf 'ghcr.io/idaholab/malcolm/arkime:0.0.0-fixture\n' > "$d/malcolm/image-list.txt"
+    printf 'docker.io/prom/prometheus:v0.0.0-fixture\n'       > "$d/docker/monitoring-image-list.txt"
+    echo "fake iso"             > "$d/isos/ubuntu-0.0.0-fixture-live-server-amd64.iso"
     echo "fake oui"             > "$d/enrichment/oui.txt"
     echo "MANUAL DOWNLOADS from dell.com/support" > "$d/dell/README.txt"
     echo "Stage licensed appliance images here"   > "$d/gns3/appliances/README.txt"
@@ -23,8 +30,8 @@ make_bundle() {
     cat > "$d/BUNDLE_NOTES.md" <<'NOTES'
 # Bundle notes
 
-- Ubuntu ISO 24.04.4 fetched
-- Malcolm 26.08.0 images saved
+- Ubuntu ISO 0.0.0-fixture fetched
+- Malcolm 0.0.0-fixture images saved
 NOTES
 }
 

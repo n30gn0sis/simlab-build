@@ -35,7 +35,7 @@ setup() {
 }
 
 @test "refuses when an incomplete download is present" {
-    echo half > "$BUNDLE/malcolm/malcolm-images-26.08.0.tar.gz.part"
+    echo half > "$BUNDLE/malcolm/malcolm-images-0.0.0-fixture.tar.gz.part"
     run "$SCRIPT" manifest "$BUNDLE"
     echo "$output"
     [ "$status" -ne 0 ]

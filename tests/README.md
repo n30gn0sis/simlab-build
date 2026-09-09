@@ -20,7 +20,7 @@ Seven suites. `./tests/run.sh` runs them all; the count below is the whole gate.
 | `no-credentials.bats` | secret protection lives in the repo, not in a machine-local ignore file: `.gitignore` exists, `settings.local.json` and bundle output are ignored by it, no credential-shaped string is tracked |
 | `no-legacy-manifest.bats` | the defective `sha256sum -c` recipe cannot reappear, and the real gate is referenced **by name** from every operational route (and is permitted to run by `.claude/settings.json`) |
 | `owners.bats` | the ownership registry in `OWNERS.md` is true: pins, bundle sizes, the staging-host OS and the free-extent capacity figure appear only where `OWNERS.md` says they may, and permitted restatements match their owner |
-| `references.bats` | every repo path named in `.claude/` or `BUILD-STATE.md` exists, and every script a slash command invokes is executable |
+| `references.bats` | every repo path named in `.claude/`, in `BUILD-STATE.md`, or anywhere under `state/` exists, and every script a slash command invokes is executable. `work/plans/` is exempt: a plan names artifacts it intends to create |
 
 ## Accepted legacy shellcheck exclusions
 

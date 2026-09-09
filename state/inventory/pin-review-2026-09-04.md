@@ -28,7 +28,7 @@ Not bumped blind. Confirmed against the release:
 
 ## Note for the record
 
-Malcolm 26.08.0 was published **2026-08-25**, six days *before* the dependency manifest recorded "Pins re-verified 2026-08-31: Malcolm 26.07.1 … still current." The record does not say whether it was missed or consciously not adopted. Flagged as a fact, not a fault — but it is the reason the next cycle should run this check from a script rather than by eye (`r770-pin-check.sh`, planned in `docs/superpowers/plans/2026-09-03-bundle-integrity-gate.md` Task 5).
+Malcolm 26.08.0 was published **2026-08-25**, six days *before* the dependency manifest recorded "Pins re-verified 2026-08-31: Malcolm 26.07.1 … still current." The record does not say whether it was missed or consciously not adopted. Flagged as a fact, not a fault — but it is the reason the next cycle should run this check from a script rather than by eye (`r770-pin-check.sh`, planned in `work/plans/archive/2026-09-03-bundle-integrity-gate.md` Task 5).
 
 ## Rationale for bumping rather than holding
 

@@ -16,4 +16,4 @@ Rules:
 - If a check can't run (dependency missing, service not yet built), report SKIPPED with the reason — never silently omit it, never mark it passed.
 - A FAIL gets a one-paragraph diagnosis and the single most likely next step, not a fix attempt — fixing happens in the main session under the phase protocol.
 
-Output: a table (check · expected · observed · verdict · evidence) followed by SKIPPED items and FAIL diagnoses. Write it under `state/inventory/`, named `validation-<date>.md`, and return the summary.
+Output: a table (check · expected · observed · verdict · evidence) followed by SKIPPED items and FAIL diagnoses. Write it to `state/inventory/validation-<date>.md` and return the summary.

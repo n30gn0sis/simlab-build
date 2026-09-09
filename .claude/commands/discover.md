@@ -9,7 +9,7 @@ Phase 1 discovery for the R770. Everything here is READ-ONLY.
    `scp scripts/r770-precheck.sh r770:/tmp/ && ssh r770 'sudo bash /tmp/r770-precheck.sh'`
    (confirm the actual SSH host first; ask if unknown).
 3. Retrieve the resulting `r770-precheck-<host>-<ts>.tar.gz` into `state/inventory/` and extract it.
-4. Launch the `discovery-analyst` subagent on the extracted output. It must produce `state/inventory/hardware-inventory.md` answering, at minimum:
+4. Launch the `discovery-analyst` subagent on the extracted output. It must produce `state/inventory/r770-discovery-findings.md` answering, at minimum:
    - Usable RAID capacity (the #1 unknown: ~4 TB vs ~8 TB) and actual PERC model/firmware
    - Socket/core/thread/NUMA map; sub-NUMA clustering yes/no
    - NUMA locality of each Broadcom OCP adapter, the PERC, and the integrated NIC

@@ -10,5 +10,5 @@ Work build phase $ARGUMENTS of the R770 buildout.
 3. Produce the phase in the CLAUDE.md phase format (Current State / Proposed Design / Reasoning / Changes / Commands / Risks / Validation / Rollback / Status).
 4. Classify destructiveness. For anything touching storage, Netplan, firewall, SSH, RAID, or firmware: run the `safety-reviewer` subagent on the proposed commands, present its findings, and get explicit operator confirmation before executing. For Netplan changes, use `netplan try` and confirm iDRAC access is verified first.
 5. Execute only with authorization, over SSH to the R770, one logical step at a time, capturing output.
-6. Run the phase's validation commands (spawn `validation-runner` for anything non-trivial). Save evidence to `state/inventory/phase-<n>-evidence.txt`.
+6. Run the phase's validation commands (spawn `validation-runner` for anything non-trivial). Save evidence under `state/inventory/`, named `phase-<n>-evidence.txt`.
 7. Update `state/BUILD-STATE.md` (APPLIED after execution, VERIFIED only with validation evidence) and commit. State the rollback path in the final report.

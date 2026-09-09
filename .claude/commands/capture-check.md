@@ -13,4 +13,4 @@ Collect, over SSH, from all three independent sources:
 
 Then reconcile: the three must agree. For a quantitative check, tcpreplay a reference PCAP with a known packet count into a designated test feed and compare against Arkime's indexed count.
 
-Report per feed: pps/throughput during the window, drops from each source, verdict (CLEAN / DEGRADED / UNTRUSTWORTHY), and — only if sustained loss is proven — the escalation options in order (AF_PACKET block/fanout tuning → AF_XDP → PF_RING/DPDK as last resort) with their costs. Save the report to `state/inventory/capture-check-<date>.md`.
+Report per feed: pps/throughput during the window, drops from each source, verdict (CLEAN / DEGRADED / UNTRUSTWORTHY), and — only if sustained loss is proven — the escalation options in order (AF_PACKET block/fanout tuning → AF_XDP → PF_RING/DPDK as last resort) with their costs. Save the report under `state/inventory/`, named `capture-check-<date>.md`.

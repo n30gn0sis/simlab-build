@@ -11,4 +11,4 @@ Rules:
 - Never run fio against a raw device or a filesystem with data — scratch files only.
 - Capture validation is quantitative: replayed reference-PCAP packet count vs Arkime session/packet count, Zeek `capture_loss` ≈ 0, `ethtool -S` drop deltas ≈ 0. "It seems to work" is not a result.
 
-Use the `validation-runner` subagent to execute and collect evidence. Produce a PASS/WARN/FAIL table with the exact evidence line for each check, save it to `state/inventory/validation-<date>.md`, update `state/BUILD-STATE.md`, and commit. Phases only move to VERIFIED off this evidence.
+Use the `validation-runner` subagent to execute and collect evidence. Produce a PASS/WARN/FAIL table with the exact evidence line for each check, save it under `state/inventory/`, named `validation-<date>.md`, update `state/BUILD-STATE.md`, and commit. Phases only move to VERIFIED off this evidence.

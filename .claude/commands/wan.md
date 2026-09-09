@@ -13,4 +13,4 @@ Ground rules (from buildout plan §4.4 and `docs/analyst-wiki/wan.md`):
 
 Built-in profiles: branch-wan (20 Mbps/40 ms/5 ms jitter/0.2% loss), satellite (25 Mbps/600 ms RTT-equivalent), poor-broadband (10 Mbps/80 ms/2% loss), asymmetric variants (HTB rate + netem delay; IFB for ingress).
 
-When writing new profile scripts, put them in the config-repo layout (`scripts/wan/` → `/opt/network-lab-config/scripts/wan/` on the box): readable, commented, idempotent, safe to rerun. Measurement evidence for any applied/cleared impairment goes in the report.
+When writing new profile scripts, put them in the box's config-repo checkout at `/opt/network-lab-config`, under its own `scripts` directory (a `wan` subfolder there) — not this repo's `scripts`: readable, commented, idempotent, safe to rerun. Measurement evidence for any applied/cleared impairment goes in the report.

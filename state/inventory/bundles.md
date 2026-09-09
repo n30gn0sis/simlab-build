@@ -11,7 +11,7 @@ updates, ET rules and OUI data are only as fresh as the last bundle.
 
 | Date | Bundle | Size | Key versions | `verify` result | WARN dispositions | Courier | Imported on R770 |
 |---|---|---|---|---|---|---|---|
-| 2026-09-08 | `bundle-20260908` | **15 GB**, 1616 files | Malcolm 26.08.0 · Ubuntu 24.04.4 · gns3-server 3.0.6 · FRR 10.7.1 · alertmanager v0.34.0 · cadvisor v0.60.5 (ghcr.io) | **PASS WITH WARNINGS (exit 2)** | 2 docs-mirror WARNs, accepted — see below | not yet transferred | no |
+| 2026-09-08 | `bundle-20260908` | **15 GB**, 1617 files | Malcolm 26.08.0 · Ubuntu 24.04.4 · gns3-server 3.0.6 · FRR 10.7.1 · alertmanager v0.34.0 · cadvisor v0.60.5 (ghcr.io) | **PASS WITH WARNINGS (exit 2)** | 2 docs-mirror WARNs, accepted — see below | not yet transferred | no |
 
 ### bundle-20260908 — build result
 
@@ -29,7 +29,7 @@ Built on VM 9770, three attempts (two failures, zero re-downloads — the script
 | **Total** | **15 G** |
 
 **Verification (2026-09-08):**
-- `r770-bundle.sh verify` → **PASS WITH WARNINGS, exit 2**. Manifest parses (1616 entries), every
+- `r770-bundle.sh verify` → **PASS WITH WARNINGS, exit 2**. Manifest parses (1617 entries), every
   manifested file present and unmodified, no unmanifested files, no `.part` leftovers.
 - Ubuntu ISO: **Good signature** from `Ubuntu CD Image Automatic Signing Key (2012) <cdimage@ubuntu.com>`,
   fingerprint `8439 38DF 228D 22F7 B374 2BC0 D94A A3F0 EFE2 1092`; `ubuntu-24.04.4-live-server-amd64.iso: OK`.
@@ -42,6 +42,11 @@ Built on VM 9770, three attempts (two failures, zero re-downloads — the script
 | `docs mirror for zeek incomplete/failed` | **Accepted**, same reasoning. |
 
 Neither touches software, images, or enrichment data — only offline reading material.
+
+**Remediated 2026-09-09** after review on PR #1: `r770-bundle.sh` is now copied into the
+bundle root and covered by its own manifest (1616 → 1617 files), so the documented
+`./r770-bundle.sh verify .` actually runs on the R770. It did not before — the bundle carried no
+verifier. Future bundles get it automatically; the fetch script now does the copy.
 
 **Still blocking transfer** (both are `verify` warnings by design, not defects):
 `dell/` holds only README.txt, and the licensed GNS3 appliance set is not inventoried.

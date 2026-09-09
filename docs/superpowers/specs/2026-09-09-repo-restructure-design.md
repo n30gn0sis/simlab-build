@@ -46,7 +46,7 @@ simlab-build/
 ├── work/plans/{active,archive}/  THE ONE MOVE
 ├── scripts/                      unchanged location (sibling + air-gap-name constraints)
 ├── state/                        UNCHANGED LAYOUT — BUILD-STATE.md stays put
-├── tests/                        + no-legacy-manifest · references · owners · no-secrets
+├── tests/                        + no-legacy-manifest · references · owners · no-credentials
 └── .github/workflows/tests.yml   NEW
 ```
 

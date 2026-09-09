@@ -44,6 +44,13 @@ All eight requested categories are present and separated. The sequence differs f
 
 **Files:** Create `.gitignore`, `tests/no-secrets.bats` · Modify `scripts/r770-offline-fetch.sh:700` · Modify (untracked) `.claude/settings.local.json`
 
+> **Editorial note (Stage 6, fix round 1):** `tests/no-secrets.bats` was later renamed to
+> `tests/no-credentials.bats`. `Read(**/*secret*)` in `.claude/settings.json` also blocks Bash
+> commands that merely *name* a path containing "secret" (not just Read calls), so this
+> test's own filename collided with the guard it implements. The steps and code below are
+> the historical record of what Stage 0 actually did and ran, under the original filename —
+> left unedited on purpose.
+
 - [ ] **Step 1: Write the failing safety test**
 
 Create `tests/no-secrets.bats`:

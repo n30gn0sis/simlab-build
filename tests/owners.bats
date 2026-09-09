@@ -35,7 +35,7 @@
 
 @test "no document claims the staging host is RHEL" {
     cd "$BATS_TEST_DIRNAME/.."
-    run bash -c "git grep -n 'RHEL' -- README.md .claude/ ':!OWNERS.md'"
+    run bash -c "git grep -n 'RHEL' -- README.md .claude/ scripts/ ':!OWNERS.md'"
     echo "$output"
     [ -z "$output" ]
 }

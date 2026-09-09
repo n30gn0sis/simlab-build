@@ -10,7 +10,7 @@
 
 **Tech Stack:** Docker CE 29.8.0 · Malcolm 26.08.0 (23 images, 12 in the `malcolm` profile) · Nginx · iptables · bats + shellcheck (existing gate)
 
-**Spec:** `docs/plans/r770-network-lab-buildout.md` §7, §9 (line 315), §4.5 (line 206), §13 (line 386); `PRD.md` §3.4, §7 (line 73), §10; `.claude/commands/import-bundle.md`; `state/inventory/bundles.md`.
+**Spec:** `docs/plans/r770-network-lab-buildout.md` §7, §9, §4.5, §13; `PRD.md` §3.4, §7, §10; `.claude/commands/import-bundle.md`; `state/inventory/bundles.md`.
 
 ## Why this exists
 

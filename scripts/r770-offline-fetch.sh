@@ -16,12 +16,13 @@
 #   was broken.
 #
 # Earlier versions (v3 - v3.4): see `git log --follow -p -- scripts/r770-offline-fetch.sh`.
-# Some older entries describe behaviour a later version replaced (e.g. v3.3's
-# staging-host note was superseded by v3.4) — git log gives the accurate,
-# ordered history instead of a comment block that can drift out of sync.
+# Some older entries describe behaviour a later version replaced (e.g. v3's
+# original staging-host line named the OS since replaced by v3.4's move to
+# Ubuntu 24.04 + Docker CE) — git log gives the accurate, ordered history
+# instead of a comment block that can drift out of sync.
 #
 # RUN THIS ON AN INTERNET-CONNECTED STAGING HOST — NEVER on the air-gapped server.
-# Staging host: RHEL 8 + Docker Engine (or Ubuntu; rootful podman also works).
+# Staging host: Ubuntu 24.04 + Docker CE (rootful podman also works).
 # Requirements:
 #   - Docker Engine (chosen), or rootful podman 4.9+ (then run with sudo)
 #   - ~150 GB free across container storage (/var/lib/docker) and the bundle
@@ -114,7 +115,7 @@ elif command -v podman >/dev/null 2>&1; then
     fi
 else
     echo "ERROR: need docker or podman on the staging host."
-    echo "  RHEL 8 Docker: https://docs.docker.com/engine/install/  (chosen staging setup)"
+    echo "  Ubuntu 24.04 Docker CE: https://docs.docker.com/engine/install/  (chosen staging setup)"
     exit 1
 fi
 note "Staging container runtime: $CTR ($($CTR --version 2>/dev/null | head -1))"

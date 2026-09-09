@@ -18,24 +18,24 @@
 
 ## Phases
 
-| # | Phase | Depends on | Status | Evidence |
-|---|---|---|---|---|
-| 1 | Hardware & OS discovery (read-only) | — | **VERIFIED** | `inventory/r770-precheck-report-2026-09-02.md`, `inventory/r770-idrac-inventory-G8WFGH4.md`, analysis in `inventory/r770-discovery-findings.md` |
-| 2 | BIOS/firmware/iDRAC assessment; RAID VD verification | 1 | **READY** | — |
-| 3 | Storage: LVM/filesystem layout | 1,2 | **READY** *(no repartitioning needed — ≈6.84 TiB free extents in existing VG `ubuntu-vg0`)* | — |
-| 4 | Base OS: users, SSH hardening, UFW, packages, auditd | 3 | NOT STARTED | — |
-| 5 | Management networking (Netplan, dnsmasq, chrony) | 4 | **BLOCKED** — iDRAC reachability unproven; mgmt is a bond + tagged VLAN | — |
-| 6 | Docker Engine + Compose on lv_docker | 4 | NOT STARTED | — |
-| 7 | KVM/libvirt + lab bridges + NAT zone | 5 | NOT STARTED | — |
-| 8 | GNS3 server + service + proxy publication | 6,7 | NOT STARTED | — |
-| 9 | Capture-port prep + drop-stat plumbing | 5 | NOT STARTED | — |
-| 10 | Malcolm deployment + live capture + retention | 6,9,3 | NOT STARTED | — |
-| 11 | Virtual mirror feed + imported-PCAP workflow | 10,7 | NOT STARTED | — |
-| 12 | WAN impairment script library | 7 | NOT STARTED | — |
-| 13 | Nginx portal + TLS + `.lab` names + docs site | 5,6 | NOT STARTED | — |
-| 14 | Monitoring/alerting + capture validation suite | 10,13 | NOT STARTED | — |
-| 15 | Backup jobs + restore test | 3,13 | NOT STARTED | — |
-| 16 | Full validation pass + baseline + build document | all | NOT STARTED | — |
+| # | Phase | Depends on | Destructive? | Status | Evidence |
+|---|---|---|---|---|---|
+| 1 | Hardware & OS discovery (read-only) | — | No — **DONE, VERIFIED 2026-09-03** | **VERIFIED** | `inventory/r770-precheck-report-2026-09-02.md`, `inventory/r770-idrac-inventory-G8WFGH4.md`, analysis in `inventory/r770-discovery-findings.md` |
+| 2 | BIOS/firmware/iDRAC assessment; RAID VD verification | 1 | Only if changes chosen (each gated) | **READY** | — |
+| 3 | Storage: LVM/filesystem layout | 1,2 | **Lower than planned** — discovery found ≈6.84 TiB of free extents, so this is `lvcreate`/`mkfs`/`mount` plus one online `lvextend` of `lv-var`. **No repartitioning, no RAID change, no reinstall.** Still gated: it writes filesystems | **READY** *(no repartitioning needed — ≈6.84 TiB free extents in existing VG `ubuntu-vg0`)* | — |
+| 4 | Base OS: users, SSH hardening, UFW, packages, auditd | 3 | Low (SSH/firewall steps gated) | NOT STARTED | — |
+| 5 | Management networking (Netplan, dnsmasq, chrony) | 4 | **High** — the mgmt path is an 802.3ad bond + tagged VLAN (`lacp-trunk.10`), not a single port. Blocked until iDRAC is proven reachable (§12 risk 2) | **BLOCKED** — iDRAC reachability unproven; mgmt is a bond + tagged VLAN | — |
+| 6 | Docker Engine + Compose on lv_docker | 4 | No | NOT STARTED | — |
+| 7 | KVM/libvirt + lab bridges + NAT zone | 5 | Low | NOT STARTED | — |
+| 8 | GNS3 server + service + proxy publication | 6,7 | No | NOT STARTED | — |
+| 9 | Capture-port prep + drop-stat plumbing | 5 | No (capture ports only) | NOT STARTED | — |
+| 10 | Malcolm deployment + live capture + retention | 6,9,3 | No | NOT STARTED | — |
+| 11 | Virtual mirror feed + imported-PCAP workflow | 10,7 | No | NOT STARTED | — |
+| 12 | WAN impairment script library | 7 | No | NOT STARTED | — |
+| 13 | Nginx portal + TLS + `.lab` names + docs site | 5,6 | No | NOT STARTED | — |
+| 14 | Monitoring/alerting + capture validation suite | 10,13 | No | NOT STARTED | — |
+| 15 | Backup jobs + restore test | 3,13 | No | NOT STARTED | — |
+| 16 | Full validation pass + baseline + build document | all | No | NOT STARTED | — |
 
 ## Verified hardware of record
 

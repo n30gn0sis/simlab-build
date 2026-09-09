@@ -2,7 +2,7 @@
 
 **Version:** 1.1 · 2026-09-03
 **Owner:** Stephen (lab operator)
-**Status:** Approved for build — **Phase 1 (discovery) VERIFIED 2026-09-03**; §4 is now measured fact, §11 re-dispositioned
+**Status:** Approved for build — **Phase 1 (discovery) VERIFIED 2026-09-03**; §4 now defers to `state/BUILD-STATE.md`, §11 re-dispositioned
 **Sources distilled:** project build-agent charter, `docs/plans/r770-network-lab-buildout.md`, `docs/plans/r770-offline-supply.md`, `docs/plans/r770-dependency-manifest.md`, `docs/plans/r770-staging-runbook.md`, `docs/analyst-wiki/`
 
 ---
@@ -32,17 +32,24 @@ One air-gapped Ubuntu Server 24.04 LTS host that concurrently provides:
 
 All software arrives via a versioned offline bundle built on an internet-connected Ubuntu 24.04 staging VM by `scripts/r770-offline-fetch.sh` (v3.3: resumable, proxy-aware, cross-bundle seeding), transferred on checksummed ext4 media.
 
-## 4. Hardware of Record (**verified 2026-09-03** — evidence in `state/inventory/`)
+## 4. Hardware of Record — **owned by `state/BUILD-STATE.md`**
 
-Every line below is measured, not assumed. Sources: `r770-precheck-report-2026-09-02.md` (host, 14 PASS / 7 WARN / 0 FAIL) and `r770-idrac-inventory-G8WFGH4.md` (iDRAC export); analysis in `r770-discovery-findings.md`.
+This section used to restate the whole inventory, which made it a second copy
+that nothing kept in step. It is now a pointer. The authoritative statement of
+what this chassis is lives in `state/BUILD-STATE.md`, in its *Connection facts*
+and *Verified hardware of record* tables (see `OWNERS.md`). Read it there.
 
-- **Dell PowerEdge R770**, 2U, 17G · service tag **`G8WFGH4`** · BIOS 1.7.5 (2026-01-16) · UEFI, Secure Boot disabled · 2 × 1100 W redundant PSUs, 6 fans, all OK
-- **2 × Intel Xeon 6515P** — 16c/32t each = **32 physical cores / 64 threads**, L3 144 MiB, VT-x + IOMMU active. **2 NUMA nodes with interleaved numbering**: node 0 = even CPUs, node 1 = odd CPUs (distance 21) — pinning by contiguous range is a trap
-- **128 GB DDR5-6400** as 8 × 16 GB Micron single-rank RDIMMs (A1–A4, B1–B4) — 4 of 8 channels per socket, so per-socket bandwidth is ~half the platform's; **8 of 32 slots used, max 8 TB**, so the 256 GB upgrade is a straightforward purchase
-- **Storage: PERC H975i Front** (fw 8.14.0.0.28-40, Write Back), one **RAID-1 VD of 7.68 TB (6.99 TiB) usable** over 2 × KIOXIA E3.S NVMe 2.0 at 100 % endurance. **Encryption is Enabled with a Security Key Assigned — custody unknown (see §11).** Drives negotiated **x2 of a x4-capable link**. **14 of 16 backplane bays free.** Ubuntu is already installed; VG `ubuntu-vg0` has ≈**6.84 TiB of free extents**, so the storage phase needs no repartitioning
-- **Capture: 8 × 10GBASE-T copper (RJ45)** — 2 × Broadcom BCM57412 OCP quads (`BCM957412-N410TGI0S`). **OCP Slot 10 → NUMA node 0** (same node as the PERC; primary feeds), **OCP Slot 4 → NUMA node 1** (secondary). **Copper TAPs, not optics**
-- **Management: an 802.3ad bond, not the integrated NIC** — 2 × 25G SFP28 (Broadcom BCM57414, PCIe Slot 9, node 0, Dell D0R73 transceivers) bonded as `lacp-trunk`, VLAN 10 as **`lacp-trunk.10` at 10.10.10.31/24**, gateway 10.10.10.1
-- **iDRAC** (OOB recovery) — `https://192.168.76.231:443`, fw 1.30.20.10. **IPMI-over-LAN disabled → Redfish, not `ipmitool -H`.** On a different subnet from management, and **not yet demonstrated reachable** — the Phase 5 gate
+**Provenance** (this is the part the owner does not carry): verified 2026-09-03
+from `state/inventory/r770-precheck-report-2026-09-02.md` — the host precheck,
+**14 PASS / 7 WARN / 0 FAIL** — and `state/inventory/r770-idrac-inventory-G8WFGH4.md`
+(iDRAC export), analysed in `state/inventory/r770-discovery-findings.md`. Every
+line in the owner is measured, not assumed.
+
+Where a measured property drives a requirement, the requirement states the
+consequence rather than the measurement: §5 goal 2 for the NUMA socket split
+(node numbering is interleaved, so pinning must use explicit CPU lists, never
+ranges), §7 for the storage layout and network zones, and §11 for what discovery
+closed and what it newly opened (PERC key custody, NVMe link width).
 
 ## 5. Goals
 

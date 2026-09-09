@@ -15,6 +15,7 @@ Everything needed to design, build, validate, and supply the air-gapped Dell Pow
 |---|---|
 | `PRD.md` | The distilled product requirements — goals, non-goals, architecture, success criteria, risks |
 | `CLAUDE.md` | Claude Code operating rules: run context (staging + SSH), safety gates, phase protocol |
+| `OWNERS.md` | The ownership registry — one declared owner per fact, the restatements permitted alongside it, and which are mechanically enforced. Read before restating any version, size or measurement |
 | `.claude/commands/` | `/discover` `/phase` `/bundle` `/import-bundle` `/validate` `/wan` `/capture-check` `/status` |
 | `.claude/agents/` | discovery-analyst · safety-reviewer · bundle-builder · validation-runner · capture-engineer |
 | `.claude/settings.json` | Permission guardrails (destructive disk commands denied; ssh/sudo/docker always prompt) |
@@ -29,6 +30,8 @@ Everything needed to design, build, validate, and supply the air-gapped Dell Pow
 | `work/plans/archive/` | Executed plans, kept as outcome records |
 | `state/BUILD-STATE.md` | Phase tracker — the single source of build truth |
 | `state/inventory/` | Discovery output, phase evidence, validation reports, bundle logs |
+| `.gitignore` | In-repo protection for credentials and bundle output — deliberately not a machine-local ignore file |
+| `.github/workflows/` | CI: runs `./tests/run.sh` on every push to `main` and every pull request |
 
 ## The three machines
 

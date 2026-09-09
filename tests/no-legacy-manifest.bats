@@ -26,8 +26,46 @@
     [ -z "$output" ]
 }
 
-@test "the gate is referenced from the operational paths that use it" {
+# The two tests below replace a single count assertion:
+#
+#     run bash -c "grep -rl 'r770-bundle.sh' docs/plans/ .claude/ | wc -l"
+#     [ "$output" -ge 5 ]
+#
+# Seven files matched, so it carried two files of slack and named no path.
+# Proved by injection: stripping every r770-bundle.sh reference from
+# .claude/commands/import-bundle.md -- the R770 side of the air-gap crossing,
+# the live defect this branch exists to close -- still reported ok. A count is
+# not a reachability guard. Each route is now asserted by name, and a failure
+# names the file that lost the reference.
+
+@test "the gate is referenced by name from every documented operational route" {
     cd "$BATS_TEST_DIRNAME/.."
-    run bash -c "grep -rl 'r770-bundle.sh' docs/plans/ .claude/ | wc -l"
-    [ "$output" -ge 5 ]
+    # One entry per route an operator or agent can actually take to the gap:
+    #   import-bundle.md   R770-side import -- the crossing itself
+    #   bundle.md          staging-side cut via /bundle
+    #   bundle-builder.md  the agent that does supply-chain work
+    #   staging-runbook    the human runbook for cutting and shipping media
+    #   offline-supply     the transfer procedure
+    #   dependency-manifest the transfer/import section of the manifest
+    # `verify` is required, not just the filename: a route that only names the
+    # script's `manifest` subcommand does not gate anything.
+    missing=""
+    for f in .claude/commands/import-bundle.md \
+             .claude/commands/bundle.md \
+             .claude/agents/bundle-builder.md \
+             docs/plans/r770-staging-runbook.md \
+             docs/plans/r770-offline-supply.md \
+             docs/plans/r770-dependency-manifest.md; do
+        grep -qE 'r770-bundle\.sh verify' "$f" || missing="$missing $f"
+    done
+    echo "no 'r770-bundle.sh verify' reference in:$missing"
+    [ -z "$missing" ]
+}
+
+@test "the gate is runnable by the agent that is told to run it" {
+    cd "$BATS_TEST_DIRNAME/.."
+    # Reachable in prose but denied by the permission layer is still unreachable.
+    run grep -F 'scripts/r770-bundle.sh' .claude/settings.json
+    echo "no Bash allow-rule naming scripts/r770-bundle.sh in .claude/settings.json"
+    [ "$status" -eq 0 ]
 }

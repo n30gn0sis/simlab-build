@@ -10,11 +10,17 @@ installs shellcheck in web sessions; on the staging VM,
 
 ## What is covered
 
+Seven suites. `./tests/run.sh` runs them all; the count below is the whole gate.
+
 | Suite | Covers |
 |---|---|
 | `bundle-manifest.bats` | `r770-bundle.sh manifest` — coverage, exclusions, the empty-bundle and `.part` refusals, reproducibility, spaces in filenames |
 | `bundle-verify.bats` | `r770-bundle.sh verify` — one test per confirmed defect, plus WARN triage, `--strict`, and exit-code precedence |
 | `lint.bats` | shellcheck over every script, and `bash -n` over all of them |
+| `no-credentials.bats` | secret protection lives in the repo, not in a machine-local ignore file: `.gitignore` exists, `settings.local.json` and bundle output are ignored by it, no credential-shaped string is tracked |
+| `no-legacy-manifest.bats` | the defective `sha256sum -c` recipe cannot reappear, and the real gate is referenced **by name** from every operational route (and is permitted to run by `.claude/settings.json`) |
+| `owners.bats` | the ownership registry in `OWNERS.md` is true: pins, bundle sizes, the staging-host OS and the free-extent capacity figure appear only where `OWNERS.md` says they may, and permitted restatements match their owner |
+| `references.bats` | every repo path named in `.claude/` or `BUILD-STATE.md` exists, and every script a slash command invokes is executable |
 
 ## Accepted legacy shellcheck exclusions
 
@@ -30,7 +36,15 @@ written after the gate get no exclusions at all.
 | SC2012 | `ls` used to resolve a single version-glob (e.g. `vyos-*-generic-amd64.iso`) where filenames are upstream-controlled and alphanumeric. |
 | SC2010 | `ls /sys/class/net \| grep -v` — a sysfs listing with fixed, safe names. |
 | SC1091 | `. /etc/os-release` is not present at lint time. |
-| SC2094 | **Not accepted — temporary.** A real finding at `r770-offline-fetch.sh:651`; comes off the list when that line delegates to `r770-bundle.sh` (integrity-gate Task 6). |
+
+SC2094 used to sit in this table as a temporary, not-accepted finding. It is
+gone because it is gone: the manifest write it flagged now delegates to
+`"$BUNDLE_TOOL" manifest "$B"`, `shellcheck 0.9.0` reports no SC2094 against
+either legacy script, and the code is absent from `LEGACY_EXCLUDE` in
+`lint.bats` — so nothing suppresses it. Verify with
+`shellcheck -e "$LEGACY_EXCLUDE" scripts/r770-offline-fetch.sh`, not by line
+number: four line citations in this repo broke under edit during this migration,
+so cite by content or by identifier instead.
 
 ## Gotchas worth knowing before editing these scripts or their tests
 

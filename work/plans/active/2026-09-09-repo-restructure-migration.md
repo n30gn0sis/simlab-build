@@ -268,17 +268,24 @@ Document the exit contract wherever the command is acted on — `.claude/command
 
 ```bash
 bats tests/no-legacy-manifest.bats
-grep -rl 'r770-bundle.sh' docs/ .claude/ | wc -l     # expect >= 6
 ```
 
-- [ ] **Step 5: Fix the unit error in the source of truth**
+The guard asserts each operational route **by name**, not by count. An earlier
+form of it counted matching files with two files of slack, so stripping every
+reference from `.claude/commands/import-bundle.md` — the crossing itself — still
+reported `ok`. Do not reintroduce a count here.
 
-`state/BUILD-STATE.md:25,52` say **6.85 TB**; `docs/plans/r770-network-lab-buildout.md:93,121,341` say **6.84 TiB**. 6.85 TB is 6.23 TiB — a ~600 GiB discrepancy in the file CLAUDE.md designates authoritative. The buildout figure is the measured one.
+- [x] **Step 5: Fix the unit error in the source of truth** — APPLIED 2026-09-09
+
+`state/BUILD-STATE.md` stated the free-extent figure in TB where the measured
+figure (buildout §3) is in TiB — a ~600 GiB understatement in the file CLAUDE.md
+designates authoritative. Corrected in place. The figure is now owned by
+`state/BUILD-STATE.md` (`OWNERS.md`), and the values themselves are not restated
+here: `tests/owners.bats` fails if any file outside the owner and its two named
+restatements carries the figure, or if a restatement disagrees with the owner.
 
 ```bash
-sed -i 's/≈6\.85 TB free extents/≈6.84 TiB free extents/g' state/BUILD-STATE.md
-grep -rn '6\.85 TB' . --exclude-dir=.git             # expect 0 lines
-grep -rho '6\.8[0-9] TiB' --include='*.md' . | sort -u   # expect exactly one form
+bats tests/owners.bats
 ```
 
 - [ ] **Step 6: Run the gate and commit**
@@ -292,8 +299,8 @@ Nine tracked references still told the reader to gate a bundle with plain
 sha256sum -c, including the import command and the bundle-builder agent. The
 guard test is written first, so the recipe cannot return the way Task 7 did.
 
-Also corrects a unit error in the single source of truth: BUILD-STATE.md said
-6.85 TB where the measured figure is 6.84 TiB, understating free extents by
+Also corrects a unit error in the single source of truth: BUILD-STATE.md stated
+free extents in TB where the measured figure is in TiB, understating them by
 roughly 600 GiB."
 ```
 

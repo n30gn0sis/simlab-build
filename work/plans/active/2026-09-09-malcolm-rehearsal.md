@@ -8,7 +8,7 @@
 
 **Architecture:** Simulate the air gap on staging VM 9770 with a reversible, auto-expiring egress block; `docker load` Malcolm from the bundle tarball; configure it via the installer's `--defaults` + `--export-malcolm-config-file` so the configuration becomes a replayable artifact. Then stand up **both** port arrangements — Malcolm owning `0.0.0.0:443` (A) versus Malcolm rebound to `127.0.0.1:8443` behind a host Nginx portal (B) — and decide from measured evidence which survives Keycloak's redirect flow and Dashboards' websockets.
 
-**Tech Stack:** Docker CE 29.8.0 · Malcolm 26.08.0 (23 images, 12 in the `malcolm` profile) · Nginx · iptables · bats + shellcheck (existing gate)
+**Tech Stack:** Docker CE 29.8.0 · Malcolm (release pinned by `scripts/r770-offline-fetch.sh` — see `OWNERS.md`; 23 images, 12 in the `malcolm` profile) · Nginx · iptables · bats + shellcheck (existing gate)
 
 **Spec:** `docs/plans/r770-network-lab-buildout.md` §7, §9, §4.5, §13; `PRD.md` §3.4, §7, §10; `.claude/commands/import-bundle.md`; `state/inventory/bundles.md`.
 
@@ -18,7 +18,7 @@ The repo specifies a portal and specifies Malcolm, but **never specifies how the
 
 Two facts make resolving it now, on staging, materially cheaper than later:
 
-- Malcolm 26.08.0 ships **Keycloak** and **PostgreSQL** as first-class services. Identity providers behind a second reverse proxy are the classic source of redirect loops, and Malcolm's installer exposes no setting for the 443 bind (`open_ports.py` covers Logstash, OpenSearch, Filebeat TCP, SFTP and Syslog — not the main port).
+- The bundled Malcolm release ships **Keycloak** and **PostgreSQL** as first-class services. Identity providers behind a second reverse proxy are the classic source of redirect loops, and Malcolm's installer exposes no setting for the 443 bind (`open_ports.py` covers Logstash, OpenSearch, Filebeat TCP, SFTP and Syslog — not the main port).
 - On the R770 this is discovered *after* the media has crossed the gap, where fixing it costs a full bundle cycle.
 
 There is also **no validation criterion for the portal anywhere** — neither buildout §13 nor PRD §10 has a line item for "portal reachable over TLS" or "Malcolm usable through the portal". Task 5 adds one.
@@ -29,7 +29,7 @@ There is also **no validation criterion for the portal anywhere** — neither bu
 - **Never break SSH to the VM.** Every egress block exempts `192.168.4.0/22` and loopback, and carries a timed auto-revert. Losing the VM means Proxmox console recovery.
 - **Never modify Proxmox guests other than 9770.** LXC 101 runs this session; VMs 100 and 108 stay stopped.
 - **Proves deployment and integration, NOT performance.** VM 9770 has **8 GiB / 6 cores**; the R770 budget is ~64 GB (`buildout:295-298`) and Malcolm's installer defaults OpenSearch to **16g**. Use `4g` and expect a functional-but-slow stack.
-- **Bundle of record:** `~/r770/bundle-20260908` — 15 GB, 1616 files, `verify` PASS WITH WARNINGS (2 accepted docs-mirror WARNs).
+- **Bundle of record:** `~/r770/bundle-20260908` — `verify` PASS WITH WARNINGS (2 accepted docs-mirror WARNs). Its size and file count are owned by `state/inventory/bundles.md` and are deliberately not restated here; this line used to carry a count one lower than the owner's.
 - **Malcolm images are already in the VM's daemon** from the fetch. Task 2 must remove them first or the offline-load test proves nothing.
 - **Evidence discipline** (`.claude/agents/validation-runner.md`): expected value vs observed value, never adjectives; capture the exact command *and* the exact output line; a check that cannot run is **SKIPPED with a reason**, never silently omitted.
 - **No secrets in git** (CLAUDE.md rule 7). Malcolm generates auth material during configure. Never commit anything under `config/*.env`.
@@ -261,7 +261,11 @@ prevent. Tests assert the generated rules rather than applying them."
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `tests/malcolm-deploy.bats`:
+Create `tests/malcolm-deploy.bats`. Its image tags are deliberately synthetic
+(`0.0.0-fixture`) — the fixture needs *a* tag, not *the* tag, and spelling the
+real pin here would make this plan another copy of a fact owned by
+`scripts/r770-offline-fetch.sh` (`OWNERS.md`) that nothing would update on the
+next bump. The registry paths stay real because the tag-matching logic parses them.
 
 ```bash
 #!/usr/bin/env bats
@@ -271,8 +275,8 @@ setup() {
     BUNDLE="$BATS_TEST_TMPDIR/bundle"
     mkdir -p "$BUNDLE/malcolm"
     cat > "$BUNDLE/malcolm/image-list.txt" <<'EOF'
-ghcr.io/idaholab/malcolm/arkime:26.08.0
-ghcr.io/idaholab/malcolm/zeek:26.08.0
+ghcr.io/idaholab/malcolm/arkime:0.0.0-fixture
+ghcr.io/idaholab/malcolm/zeek:0.0.0-fixture
 EOF
     export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
     mkdir -p "$BATS_TEST_TMPDIR/bin"
@@ -290,18 +294,18 @@ stub_docker_reporting() {
 }
 
 @test "assert-tags passes when every listed tag is present" {
-    stub_docker_reporting ghcr.io/idaholab/malcolm/arkime:26.08.0 ghcr.io/idaholab/malcolm/zeek:26.08.0
+    stub_docker_reporting ghcr.io/idaholab/malcolm/arkime:0.0.0-fixture ghcr.io/idaholab/malcolm/zeek:0.0.0-fixture
     run "$SCRIPT" assert-tags "$BUNDLE"
     echo "$output"
     [ "$status" -eq 0 ]
 }
 
 @test "assert-tags FAILS when a tag is missing, and names it" {
-    stub_docker_reporting ghcr.io/idaholab/malcolm/arkime:26.08.0
+    stub_docker_reporting ghcr.io/idaholab/malcolm/arkime:0.0.0-fixture
     run "$SCRIPT" assert-tags "$BUNDLE"
     echo "$output"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"zeek:26.08.0"* ]]
+    [[ "$output" == *"zeek:0.0.0-fixture"* ]]
 }
 
 @test "assert-tags fails loudly when image-list.txt is missing" {
@@ -405,7 +409,7 @@ docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -c '^ghcr.io/idaholab
 
 sudo ./scripts/r770-airgap-sim.sh block --minutes 60
 ./scripts/r770-airgap-sim.sh status
-docker pull ghcr.io/idaholab/malcolm/arkime:26.08.0 && echo "UNEXPECTED: pull worked" || echo "pull blocked (correct)"
+docker pull hello-world && echo "UNEXPECTED: pull worked" || echo "pull blocked (correct)"   # any image: this probes egress, not a pin
 
 time ./scripts/r770-malcolm-deploy.sh load ~/r770/bundle-20260908
 ```
@@ -438,7 +442,9 @@ Still air-gapped:
 
 ```bash
 mkdir -p ~/malcolm && cd ~/malcolm
-unzip -q ~/r770/bundle-20260908/malcolm/malcolm-26.08.0-docker_install.zip
+# Glob, not a version: at the air gap there is no way to look the pin up, and the
+# bundle carries exactly one install zip.
+unzip -q ~/r770/bundle-20260908/malcolm/malcolm-*-docker_install.zip
 cp ~/r770/bundle-20260908/malcolm/docker-compose.yml .
 find . -maxdepth 2 -name 'install.py'
 python3 ./install.py --defaults --dry-run 2>&1 | tail -20

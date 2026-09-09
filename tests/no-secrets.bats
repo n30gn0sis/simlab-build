@@ -10,7 +10,13 @@
 
 @test "settings.local.json is ignored by the REPO, not by a machine-local file" {
     cd "$BATS_TEST_DIRNAME/.."
-    run env GIT_CONFIG_GLOBAL=/dev/null git check-ignore -q .claude/settings.local.json
+    # GIT_CONFIG_GLOBAL=/dev/null alone is not enough: it disables ~/.gitconfig but
+    # not git's separate default-excludes fallback ($HOME/.config/git/ignore), which
+    # on some machines already carries an entry for this exact path. Pin
+    # core.excludesFile to /dev/null too so only the repo's own .gitignore can match --
+    # otherwise this test passes even with no .gitignore at all, and can never catch
+    # someone deleting the line that actually protects this file.
+    run env GIT_CONFIG_GLOBAL=/dev/null git -c core.excludesFile=/dev/null check-ignore -q .claude/settings.local.json
     [ "$status" -eq 0 ]
 }
 

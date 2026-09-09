@@ -34,7 +34,8 @@
       "Bash(rm -rf /:*)",
       "Read(**/.ssh/id_*)",
       "Read(**/*.pem)",
-      "Read(**/*secret*)"
+      "Read(**/secret*)",
+      "Read(**/secret*/**)"
     ],
     "ask": [
       "Bash(ssh:*)",

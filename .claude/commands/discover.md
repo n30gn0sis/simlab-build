@@ -7,7 +7,7 @@ Phase 1 discovery for the R770. Everything here is READ-ONLY.
 1. Check `state/BUILD-STATE.md` and `state/inventory/` — if a precheck bundle already exists, skip to step 4 (re-run only if the user asks or hardware changed).
 2. Copy `scripts/r770-precheck.sh` to the R770 over SSH and run it with sudo:
    `scp scripts/r770-precheck.sh r770:/tmp/ && ssh r770 'sudo bash /tmp/r770-precheck.sh'`
-   (confirm the actual SSH host first; ask if unknown).
+   (the SSH target is unconfirmed — see the "R770 SSH target" row of `state/BUILD-STATE.md`'s Connection facts table before running this; ask the operator if it's still open).
 3. Retrieve the resulting `r770-precheck-<host>-<ts>.tar.gz` into `state/inventory/` and extract it.
 4. Launch the `discovery-analyst` subagent on the extracted output. It must produce `state/inventory/r770-discovery-findings.md` answering, at minimum:
    - Usable RAID capacity (the #1 unknown: ~4 TB vs ~8 TB) and actual PERC model/firmware

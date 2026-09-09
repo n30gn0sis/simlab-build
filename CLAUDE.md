@@ -33,6 +33,7 @@ Build phases 1–16 and their dependency order are in `PRD.md` §9 and the build
 ### Commands / Configuration  — exact commands or config
 ### Risks                — especially loss of access or data
 ### Validation           — commands proving it worked
+### Test Suite           — Run `./tests/run.sh`; a phase does not advance on a red suite.
 ### Rollback             — how to undo
 ### Status
 ```

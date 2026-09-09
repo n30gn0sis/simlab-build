@@ -4,9 +4,7 @@
 # severity with no exclusions. The two scripts that predate the gate get a
 # documented exclusion list (see tests/README.md for why each is accepted).
 
-# SC2094 is a real finding at r770-offline-fetch.sh:651 and comes off this list
-# when that line starts delegating to r770-bundle.sh (integrity-gate Task 6).
-LEGACY_EXCLUDE="SC2015,SC2012,SC2010,SC1091,SC2094"
+LEGACY_EXCLUDE="SC2015,SC2012,SC2010,SC1091"
 
 @test "new scripts are shellcheck-clean with no exclusions" {
     run shellcheck scripts/r770-bundle.sh tests/run.sh

@@ -183,6 +183,46 @@ check_manual() {  # <dir>
     done
 }
 
+# A list file without its payload -- or a payload with no list file -- means the
+# bundle cannot be imported. import-bundle.md step 3b docker-loads the payload and
+# then verifies the loaded tags against the list; either half alone is useless.
+#
+# This is the difference between CONSISTENCY and COMPLETENESS. The rest of verify
+# proves the manifest matches the disk. It cannot notice that something which
+# should be there isn't, and the manifest regeneration the workflow mandates after
+# manual additions would otherwise launder a lost payload into "PASS - bundle is
+# complete, unmodified and ready to transfer". Reported by review on PR #1 and
+# reproduced before this check existed.
+first_match() {  # <dir> <glob relative to dir> -> prints the first non-empty match
+    local d=$1 g=$2 f
+    for f in "$d"/$g; do [ -s "$f" ] && { printf '%s' "$f"; return 0; }; done
+    return 1
+}
+
+check_required() {  # <dir>
+    local dir=$1 pair list payload have_list have_payload
+    for pair in \
+        "malcolm/image-list.txt|malcolm/malcolm-images-*.tar.gz" \
+        "docker/monitoring-image-list.txt|docker/monitoring-images.tar.gz" \
+        "gns3/docker-nodes/image-list.txt|gns3/docker-nodes/gns3-node-images.tar.gz"
+    do
+        list="${pair%%|*}"
+        payload="${pair#*|}"
+        have_list=0;   [ -s "$dir/$list" ] && have_list=1
+        have_payload=0; first_match "$dir" "$payload" >/dev/null 2>&1 && have_payload=1
+
+        if [ "$have_list" -eq 1 ] && [ "$have_payload" -eq 1 ]; then
+            pass "$list has its payload"
+        elif [ "$have_list" -eq 0 ] && [ "$have_payload" -eq 0 ]; then
+            :   # category never fetched -- a legitimate bundle shape, not an error
+        elif [ "$have_payload" -eq 0 ]; then
+            fail "$list is present but $payload is missing — this bundle cannot import that category"
+        else
+            fail "$payload is present but $list is missing — import cannot verify the loaded tags"
+        fi
+    done
+}
+
 summary() {  # <strict>
     echo
     if [ "$FAILS" -gt 0 ]; then
@@ -227,6 +267,7 @@ cmd_verify() {
     check_hashes   "$dir"
     check_coverage "$dir" "$manifest"
     check_parts    "$dir"
+    check_required "$dir"
     check_notes    "$dir"
     check_manual   "$dir"
     summary "$strict"

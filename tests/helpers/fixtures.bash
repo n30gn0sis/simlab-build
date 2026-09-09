@@ -10,6 +10,11 @@ make_bundle() {
     echo "fake deb"             > "$d/apt/example_1.0_amd64.deb"
     echo "fake malcolm images"  > "$d/malcolm/malcolm-images-26.08.0.tar.gz"
     echo "fake monitoring"      > "$d/docker/monitoring-images.tar.gz"
+    # Every image tarball the fetch script writes has a companion image-list.txt
+    # beside it, and import-bundle.md step 3b verifies loaded tags against it.
+    # The fixture omitted them, which made it a shape no real bundle ever has.
+    printf 'ghcr.io/idaholab/malcolm/arkime:26.08.0\n' > "$d/malcolm/image-list.txt"
+    printf 'docker.io/prom/prometheus:v3.14.0\n'       > "$d/docker/monitoring-image-list.txt"
     echo "fake iso"             > "$d/isos/ubuntu-24.04.4-live-server-amd64.iso"
     echo "fake oui"             > "$d/enrichment/oui.txt"
     echo "MANUAL DOWNLOADS from dell.com/support" > "$d/dell/README.txt"

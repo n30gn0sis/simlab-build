@@ -160,3 +160,75 @@ setup() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"escaped path"* ]]
 }
+
+# ── required-artifact pairs ───────────────────────────────────────────────────
+# Reported by Codex review on PR #1 and reproduced: verify proved manifest<->disk
+# CONSISTENCY but had no notion of COMPLETENESS. Delete a payload tarball, run the
+# manifest regeneration the workflow mandates after manual additions, and the gate
+# said "PASS - bundle is complete, unmodified and ready to transfer" for a bundle
+# that cannot import Malcolm. A list file without its payload is the signature of
+# exactly that, because import-bundle.md step 3b docker-loads the payload and then
+# verifies loaded tags against the list.
+
+pair_bundle() {   # a bundle with all three list/payload pairs intact
+    local d=$1
+    make_bundle "$d"; stage_manual "$d"   # already carries the malcolm + monitoring pairs
+    mkdir -p "$d/gns3/docker-nodes"
+    echo "fake node images" > "$d/gns3/docker-nodes/gns3-node-images.tar.gz"
+    printf 'alpine:latest\n'                           > "$d/gns3/docker-nodes/image-list.txt"
+}
+
+@test "an intact bundle with all three list/payload pairs passes" {
+    B2="$BATS_TEST_TMPDIR/pairs"; pair_bundle "$B2"
+    "$SCRIPT" manifest "$B2"
+    run "$SCRIPT" verify "$B2"
+    echo "$output"
+    [ "$status" -eq 0 ]
+}
+
+@test "a missing Malcolm image tarball FAILS even after the manifest is regenerated" {
+    B2="$BATS_TEST_TMPDIR/pairs"; pair_bundle "$B2"
+    rm "$B2"/malcolm/malcolm-images-*.tar.gz
+    "$SCRIPT" manifest "$B2"          # the regeneration that used to launder the loss
+    run "$SCRIPT" verify "$B2"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"malcolm"* ]]
+}
+
+@test "a missing monitoring images tarball fails" {
+    B2="$BATS_TEST_TMPDIR/pairs"; pair_bundle "$B2"
+    rm "$B2/docker/monitoring-images.tar.gz"
+    "$SCRIPT" manifest "$B2"
+    run "$SCRIPT" verify "$B2"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"monitoring-images.tar.gz"* ]]
+}
+
+@test "a missing gns3 node images tarball fails" {
+    B2="$BATS_TEST_TMPDIR/pairs"; pair_bundle "$B2"
+    rm "$B2/gns3/docker-nodes/gns3-node-images.tar.gz"
+    "$SCRIPT" manifest "$B2"
+    run "$SCRIPT" verify "$B2"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"gns3-node-images.tar.gz"* ]]
+}
+
+@test "a payload present with no list file also fails - import cannot verify its tags" {
+    B2="$BATS_TEST_TMPDIR/pairs"; pair_bundle "$B2"
+    rm "$B2/docker/monitoring-image-list.txt"
+    "$SCRIPT" manifest "$B2"
+    run "$SCRIPT" verify "$B2"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"monitoring-image-list.txt"* ]]
+}
+
+@test "a category that was never fetched is not an error - only a MISMATCH is" {
+    B2="$BATS_TEST_TMPDIR/pairs"; pair_bundle "$B2"
+    rm "$B2/gns3/docker-nodes/gns3-node-images.tar.gz" "$B2/gns3/docker-nodes/image-list.txt"
+    "$SCRIPT" manifest "$B2"
+    run "$SCRIPT" verify "$B2"
+    echo "$output"
+    [ "$status" -eq 0 ]
+}

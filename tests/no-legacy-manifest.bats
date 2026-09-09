@@ -14,7 +14,7 @@
     # not a real one. git grep only ever sees tracked content, which is what
     # this guard is actually checking.
     run bash -c "git grep -n 'xargs -0 sha256sum' -- '*.md' \
-                 | grep -vE '/(superpowers|work)/'"
+                 | grep -vE '(^|/)(superpowers|work)/'"
     echo "$output"
     [ -z "$output" ]
 }

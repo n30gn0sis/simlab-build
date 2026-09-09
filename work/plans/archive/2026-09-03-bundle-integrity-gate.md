@@ -1,5 +1,11 @@
 # Bundle Integrity Gate Implementation Plan
 
+> **STATUS: EXECUTED 2026-09-03 — archived.** Tasks 1–4 and 6 shipped in `0938174`.
+> **Task 5 (`scripts/r770-pin-check.sh`) and Task 7 (wire the gate into the docs) never landed.**
+> Task 7's absence is what let every documented path keep pointing at the defective
+> manifest command until 2026-09-09. Task 5 is still unbuilt — tracked in `state/BUILD-STATE.md`.
+> Kept as an outcome record. Do not execute.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the offline supply bundle's integrity mechanically provable — replacing the hand-typed `find | xargs sha256sum` and eyeballed `BUNDLE_NOTES.md` review with a tested script that refuses to let an incomplete, stale-manifest, or unverifiable bundle cross the air gap.

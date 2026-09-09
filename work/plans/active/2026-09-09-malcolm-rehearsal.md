@@ -1,5 +1,7 @@
 # Malcolm Offline Deployment Rehearsal Implementation Plan
 
+> **STATUS: NOT STARTED.** Requires staging VM 9770 and `bundle-20260908`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prove, on the staging VM before the media crosses the air gap, that `bundle-20260908`'s images deploy Malcolm with zero network access, and settle by experiment whether Malcolm works behind the lab's Nginx portal or must own port 443 itself.

@@ -1,9 +1,12 @@
 # Bundle Integrity Gate Implementation Plan
 
-> **STATUS: EXECUTED 2026-09-03 — archived.** Tasks 1–4 and 6 shipped in `0938174`.
-> **Task 5 (`scripts/r770-pin-check.sh`) and Task 7 (wire the gate into the docs) never landed.**
-> Task 7's absence is what let every documented path keep pointing at the defective
-> manifest command until 2026-09-09. Task 5 is still unbuilt — tracked in `state/BUILD-STATE.md`.
+> **STATUS: EXECUTED 2026-09-04 — archived.** Tasks 1-4 shipped in `0938174` (2026-09-04).
+> **Task 6 did not ship with them** — the fetch script kept its inline
+> `find | xargs sha256sum` and never copied the verifier into the bundle. That gap was
+> caught by external review on 2026-09-09 and fixed in `9f84a37`. **Tasks 5 and 7 never
+> landed at all.** Task 7's absence is why every documented path still pointed at the
+> defective manifest command until 2026-09-09. Task 5 is still unbuilt — tracked in
+> `state/BUILD-STATE.md`.
 > Kept as an outcome record. Do not execute.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -3,7 +3,7 @@
 **Companion to:** `r770-offline-supply.md` (the model/rationale) · `r770-offline-fetch.sh` v3.3 (the tool; resumable, seeds new bundles from previous ones) · `r770-dependency-manifest.md` (authoritative dependency list + decisions record) · `r770-network-lab-buildout.md`
 **Date:** 2026-09-04 — **staging host changed from RHEL 8 to a dedicated Proxmox VM running Ubuntu 24.04 + Docker CE** (operator approved; rationale in dependency manifest §0). Pins reviewed and four bumped the same day (`state/inventory/pin-review-2026-09-04.md`).
 **Staging host:** a dedicated **Proxmox VM** running Ubuntu 24.04 with internet access (direct or via corporate proxy), preparing bundles for the air-gapped Ubuntu 24.04 R770 `testbed` (tag `G8WFGH4`).
-**Verified against (2026-09-04):** Malcolm **v26.08.0**, Ubuntu 24.04.4, gns3-server 3.0.6, CHR 7.21.5, OPNsense 26.7, FRR **10.7.1**, alertmanager **v0.34.0**, cadvisor **v0.60.5**, CirrOS 0.6.3, ET Open `suricata-7.0` path (HTTP 200, not retired).
+**Verified against (2026-09-04):** pins as reviewed in `state/inventory/pin-review-2026-09-04.md` — see the pin block in `scripts/r770-offline-fetch.sh` for current values; ET Open `suricata-7.0` path confirmed HTTP 200, not retired.
 
 Everything heavy still runs inside containers (`ubuntu:24.04`, `python:3.12-slim`) — that indirection is what made a RHEL host viable and it costs nothing on Ubuntu, so the script is unchanged. The host needs only a container runtime, curl, gpg, unzip, wget, and disk.
 
@@ -114,7 +114,7 @@ sudo -E ./r770-offline-fetch.sh       # -E preserves the proxy vars under sudo
 
 (Plain `./r770-offline-fetch.sh` also works if your user is in the `docker` group.)
 
-What to expect: ~45–65 GB downloaded (Malcolm images dominate); a few hours on a decent link. Output lands in `./bundle-YYYYMMDD/` (created wherever you run it — pick a filesystem with room, or run directly on the mounted ext4 transfer drive) with `BUNDLE_NOTES.md` regenerated each run as a log of what was fetched and skipped.
+What to expect: a multi-GB download (Malcolm images dominate) — see `state/inventory/bundles.md` for measured cycle sizes; a few hours on a decent link. Output lands in `./bundle-YYYYMMDD/` (created wherever you run it — pick a filesystem with room, or run directly on the mounted ext4 transfer drive) with `BUNDLE_NOTES.md` regenerated each run as a log of what was fetched and skipped.
 
 **Cutting a new bundle next to an old one? It seeds itself (v3.3).** At startup the script finds the newest sibling `bundle-*/` directory beside the one being built and hardlinks every identical version-pinned file it already holds — Ubuntu ISO, Malcolm/monitoring/gns3-node image tarballs, appliance images and definitions, the wheelhouse — instead of re-downloading (~35+ GB saved when pins haven't moved). Each reuse is logged as a `reused from bundle-...` line in `BUNDLE_NOTES.md`, hardlinks cost no disk space, and a bumped pin is fetched fresh automatically since matching is by exact filename. Deliberately **not** seeded: `apt/` (dist-upgrade security debs must be current) and `enrichment/` (fresh rules/OUI are the point of a new cycle); the wget docs mirrors also rebuild per bundle. `SEED_FROM=/path/to/bundle` picks the source explicitly; `SEED_FROM=none` disables.
 
@@ -172,18 +172,18 @@ Also confirm in `BUNDLE_NOTES.md`: no unresolved `WARN` lines (ET rules 410, VyO
 
 ## Refresh cadence and pin review
 
-**Decided cadence: ad-hoc** (initial build; no fixed schedule). **Pin policy (2026-09-04): bump moved pins at cut time** rather than shipping stale — nothing is deployed to migrate, and an ad-hoc bundle may sit for months. Grafana is the standing exception. Accepted, documented risk: host security updates, ET rules, and OUI data only refresh when a new bundle is cut. When cutting a refresh bundle, review the pins at the top of the script:
+**Decided cadence: ad-hoc** (initial build; no fixed schedule). **Pin policy (2026-09-04): bump moved pins at cut time** rather than shipping stale — nothing is deployed to migrate, and an ad-hoc bundle may sit for months. Grafana is the standing exception. Accepted, documented risk: host security updates, ET rules, and OUI data only refresh when a new bundle is cut. When cutting a refresh bundle, review the pin block at the top of `scripts/r770-offline-fetch.sh` — it is the sole owner of current pin values (see `OWNERS.md`) — against each pin's upstream source:
 
-| Pin | Current (2026-08-31) | Where to check |
-|---|---|---|
-| `MALCOLM_VER` | **26.08.0** (bumped 2026-09-04) | github.com/idaholab/Malcolm/releases |
-| `UBUNTU_ISO_VER` | 24.04.4 | releases.ubuntu.com/noble |
-| `GNS3_VER` | 3.0.6 | pypi.org/project/gns3-server |
-| `CHR_VER` | 7.21.5 | mikrotik.com/download/chr |
-| `OPNSENSE_VER` | 26.7 | opnsense.org/download |
-| `FRR_IMG` | **quay.io/frrouting/frr:10.7.1** (bumped 2026-09-04) | quay.io/repository/frrouting/frr?tab=tags |
-| `ET_SURICATA_PATH` | suricata-7.0 (matches noble's Suricata 7.0.x; ET returns 410 when a branch retires — script checks) | rules.emergingthreats.net |
-| Monitoring tags | prometheus v3.14.0 · alertmanager **v0.34.0** · blackbox v0.28.0 · cadvisor **v0.60.5** · grafana-oss 12.1.0 (**held**; 13.2.1 is current — review dashboards before jumping majors) | upstream GitHub releases |
+| Pin | Where to check |
+|---|---|
+| `MALCOLM_VER` | github.com/idaholab/Malcolm/releases |
+| `UBUNTU_ISO_VER` | releases.ubuntu.com/noble |
+| `GNS3_VER` | pypi.org/project/gns3-server |
+| `CHR_VER` | mikrotik.com/download/chr |
+| `OPNSENSE_VER` | opnsense.org/download |
+| `FRR_IMG` | quay.io/repository/frrouting/frr?tab=tags |
+| `ET_SURICATA_PATH` | rules.emergingthreats.net (matches noble's Suricata 7.0.x; ET returns 410 when a branch retires — script checks) |
+| Monitoring tags (prometheus, alertmanager, blackbox, cadvisor, grafana-oss) | upstream GitHub releases (grafana-oss is held below 13.x — see the pin block for the standing-exception note) |
 
 VyOS rolling and Alpine are resolved to latest automatically at build time (GitHub API / `latest-releases.yaml`).
 

@@ -8,7 +8,7 @@ You own the staging side of the air gap. Authoritative docs: `docs/plans/r770-de
 
 Operating rules:
 
-- Runs happen LOCALLY on the staging host (RHEL 8 + Docker CE). Preflight before committing hours: disk (≥150 GB across `/var/lib/docker` + output), docker pulls work, proxy configured in both the daemon drop-in AND env vars if applicable.
+- Runs happen LOCALLY on the staging host (current host spec: `docs/plans/r770-dependency-manifest.md` §0). Preflight before committing hours: disk (≥150 GB across `/var/lib/docker` + output), docker pulls work, proxy configured in both the daemon drop-in AND env vars if applicable.
 - Pins are deliberate. Check them against upstream before a refresh; propose bumps with evidence, never bump silently. Grafana is intentionally held at 12.x; ET path must match the target's Suricata major.
 - A failed/interrupted run is rerun, not restarted — the script resumes. `docker system prune -a` reclaims container storage without losing bundle files. `BUNDLE_DIR=` resumes across days; `FORCE=1` only when the operator wants a full rebuild.
 - Every WARN line in `BUNDLE_NOTES.md` gets a disposition (fixed / accepted with reason) before a bundle is cleared for transfer. Unresolved WARNs are a gate.

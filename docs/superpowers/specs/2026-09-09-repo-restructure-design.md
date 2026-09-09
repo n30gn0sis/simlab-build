@@ -11,7 +11,7 @@ Three drift incidents have already cost real work:
 | Drift | Cost |
 |---|---|
 | cadvisor pin verified as a GitHub *release*, not an image reference | fetch failed at `[4/10]` after 12 GB |
-| Malcolm 26.08.0 published six days before the manifest recorded 26.07.1 as "still current" | a stale bundle pin |
+| Malcolm's actual release published six days before the manifest recorded 26.07.1 as "still current" (current pin: `scripts/r770-offline-fetch.sh`, see `OWNERS.md`) | a stale bundle pin |
 | `6.85 TB` in `state/BUILD-STATE.md` vs `6.84 TiB` in the buildout plan | ~600 GiB error in the file CLAUDE.md calls the single source of truth |
 
 And one defect is live: **the tested integrity gate is unreachable from every documented path.** `scripts/r770-offline-fetch.sh:700` writes `sha256sum -c MANIFEST.sha256` into every bundle's import instructions — 17 lines before `:717` copies the correct verifier into that same bundle. `grep -rn 'r770-bundle' docs/ .claude/` returns nothing operational. `bundle-20260908` is cut and waiting to cross the air gap carrying an instruction to gate the crossing with the command proven to pass unmanifested files — precisely the Dell-firmware and licensed-appliance case still outstanding.

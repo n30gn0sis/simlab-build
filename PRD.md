@@ -25,7 +25,7 @@ Today this capability doesn't exist as a coherent system. The purpose of this pr
 
 One air-gapped Ubuntu Server 24.04 LTS host that concurrently provides:
 
-1. **Capture & analysis** — Malcolm v26.08.0 (Docker Compose: Arkime, Zeek, OpenSearch + Dashboards, Logstash/Filebeat; Suricata present but disabled) ingesting up to 4 active physical 10GbE TAP/SPAN feeds plus a virtual mirror of lab traffic plus imported PCAPs.
+1. **Capture & analysis** — Malcolm (version pin owned by `scripts/r770-offline-fetch.sh` — see `OWNERS.md`) (Docker Compose: Arkime, Zeek, OpenSearch + Dashboards, Logstash/Filebeat; Suricata present but disabled) ingesting up to 4 active physical 10GbE TAP/SPAN feeds plus a virtual mirror of lab traffic plus imported PCAPs.
 2. **Simulation** — GNS3 server v3.0.6 (venv install) running QEMU appliances (VyOS, MikroTik CHR, OPNsense, FRR, OpenWrt; licensed Cisco/Fortinet/PA images if entitled) and Docker nodes over KVM/libvirt.
 3. **WAN emulation** — `tc`/`netem` profile library (`wan-apply` / `wan-show` / `wan-clear`) with branch-wan, satellite, poor-broadband, and asymmetric profiles.
 4. **Services** — Nginx portal (`portal.lab` → `malcolm.lab`, `gns3.lab`, `monitoring.lab`, docs), dnsmasq (`.lab`, no forwarders), chrony (lab time source), Prometheus/Grafana/Alertmanager monitoring, Restic backup, MkDocs analyst wiki, internal CA (easy-rsa).
@@ -76,8 +76,8 @@ Every line below is measured, not assumed. Sources: `r770-precheck-report-2026-0
 
 ## 8. Offline Supply Chain Requirements
 
-- Bundle built by `scripts/r770-offline-fetch.sh` on a **dedicated Proxmox VM running Ubuntu 24.04 + Docker CE** (changed from RHEL 8, operator approved 2026-09-04 — see dependency manifest §0); proxy-aware, resumable, seeds from previous bundle; ~45–65 GB scripted + manual Dell firmware and licensed GNS3 images (10–100+ GB).
-- Pins (reviewed 2026-09-04, evidence in `state/inventory/pin-review-2026-09-04.md`): Malcolm **26.08.0**, Ubuntu 24.04.4, gns3-server 3.0.6, CHR 7.21.5, OPNsense 26.7, FRR **10.7.1**, Prometheus v3.14.0, alertmanager **v0.34.0**, cadvisor **v0.60.5**, Grafana 12.1.0 (held below 13), ET Open suricata-7.0. Policy: bump moved pins at cut time; grafana is the standing exception.
+- Bundle built by `scripts/r770-offline-fetch.sh` on a **dedicated Proxmox VM running Ubuntu 24.04 + Docker CE** (changed from RHEL 8, operator approved 2026-09-04 — see dependency manifest §0); proxy-aware, resumable, seeds from previous bundle; scripted size — see `state/inventory/bundles.md` for measured cycle sizes — plus manual Dell firmware and licensed GNS3 images (10–100+ GB).
+- Pins: see the pin block in `scripts/r770-offline-fetch.sh` (reviewed 2026-09-04, evidence in `state/inventory/pin-review-2026-09-04.md`). Policy: bump moved pins at cut time; grafana is the standing exception.
 - Trust established on staging (GPG/sha256 verification), asserted across the gap by `MANIFEST.sha256`, re-verified on the R770 before import; previous bundle retained as rollback; each cycle logged in `inventory/bundles.md`.
 - Cadence: ad-hoc (accepted, documented risk: security updates and rules staleness between bundles).
 - Open manual items: Dell service-tag downloads; licensed GNS3 appliance entitlement inventory; site media-scan policy confirmation.

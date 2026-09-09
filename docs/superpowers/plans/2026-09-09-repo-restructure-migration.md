@@ -498,7 +498,7 @@ Create `tests/owners.bats`:
 
 @test "bundle sizes live only in the cycle log" {
     cd "$BATS_TEST_DIRNAME/.."
-    run bash -c "grep -rn '45–65 GB\|40–55 GB' --include='*.md' . \
+    run bash -c "grep -rn '45–65 G[B]\|40–55 G[B]' --include='*.md' . \
                  | grep -vE '/(state|work)/' | grep -v OWNERS.md"
     echo "$output"
     [ -z "$output" ]

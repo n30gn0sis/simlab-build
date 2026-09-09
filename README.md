@@ -4,7 +4,7 @@ Everything needed to design, build, validate, and supply the air-gapped Dell Pow
 
 ## How to use
 
-1. Put this directory on the **internet-connected staging host** (RHEL 8 + Docker CE) and `git init` it if it isn't already a repo.
+1. Put this directory on the **internet-connected staging host** (current host spec: `docs/plans/r770-dependency-manifest.md` §0) and `git init` it if it isn't already a repo.
 2. Record the R770's SSH target and iDRAC address in `state/BUILD-STATE.md`.
 3. Open Claude Code here. `CLAUDE.md` loads automatically and carries the operating rules and safety gates.
 4. Start with `/discover` (read-only hardware discovery), then work phases in order with `/phase <n>`. Cut supply bundles with `/bundle`, import them with `/import-bundle`, prove things with `/validate`.
@@ -33,7 +33,7 @@ Everything needed to design, build, validate, and supply the air-gapped Dell Pow
 ## The three machines
 
 ```
-Staging host (internet, RHEL 8)      ← Claude Code runs here; bundles built here
+Staging host (internet)              ← Claude Code runs here; bundles built here
         │ SSH (gated commands)              │ checksummed ext4 media
         ▼                                   ▼
 R770 (air-gapped, Ubuntu 24.04)      ← build target; no internet, ever

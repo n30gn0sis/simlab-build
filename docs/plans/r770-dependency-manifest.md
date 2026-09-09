@@ -155,7 +155,7 @@ Ubuntu SHA256SUMS + GPG sig (scripted, verified on staging), Docker repo key (sc
 | Enrichment/rules | <0.5 GB |
 | Docs mirrors | 1–2 GB |
 | Dell (manual) | 2–5 GB |
-| **Scripted+Dell subtotal** | **~45–65 GB estimated · 15 GB MEASURED (bundle-20260908)** — the estimate summed uncompressed image sizes; the bundle stores gzipped tarballs |
+| **Scripted+Dell subtotal** | **See `state/inventory/bundles.md` for measured cycle sizes** — the per-category figures above summed uncompressed image sizes and significantly overstated the total; the bundle stores gzipped tarballs |
 | Licensed GNS3 appliances (manual) | 10–100+ GB |
 
 Current + previous bundle fit comfortably unless the licensed-appliance set is very large; ext4 preserves permissions and >4 GB files.

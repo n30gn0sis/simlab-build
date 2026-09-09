@@ -60,7 +60,7 @@ Discover before configuring · back up before replacing · measure before tuning
 
 ## Decisions of record (do not silently re-litigate)
 
-Ubuntu 24.04 LTS · Malcolm **26.08.0** as the integrated analysis stack (no separate Zeek/Arkime installs; bumped from 26.07.1 on 2026-09-04) · Suricata disabled initially · GeoIP descoped · OVS deferred · Windows endpoints descoped · curated APT bundle (not a mirror) · **Ubuntu 24.04 Proxmox VM + Docker CE staging** (changed from RHEL 8 on 2026-09-04) · ext4 256 GB+ transfer media · ad-hoc bundle cadence · **bump moved pins at cut time** (grafana-oss held below 13.x is the standing exception). Changing any of these requires the operator's explicit say-so; record the change in `PRD.md` §6 and `docs/plans/r770-dependency-manifest.md` §0.
+Ubuntu 24.04 LTS · Malcolm as the integrated analysis stack (no separate Zeek/Arkime installs; version pin owned by `scripts/r770-offline-fetch.sh` — see `OWNERS.md`) · Suricata disabled initially · GeoIP descoped · OVS deferred · Windows endpoints descoped · curated APT bundle (not a mirror) · **Ubuntu 24.04 Proxmox VM + Docker CE staging** (changed from RHEL 8 on 2026-09-04) · ext4 256 GB+ transfer media · ad-hoc bundle cadence · **bump moved pins at cut time** (grafana-oss held below 13.x is the standing exception). Changing any of these requires the operator's explicit say-so; record the change in `PRD.md` §6 and `docs/plans/r770-dependency-manifest.md` §0.
 
 ## Repo map
 

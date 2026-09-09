@@ -26,7 +26,7 @@ Today this capability doesn't exist as a coherent system. The purpose of this pr
 One air-gapped Ubuntu Server 24.04 LTS host that concurrently provides:
 
 1. **Capture & analysis** — Malcolm (version pin owned by `scripts/r770-offline-fetch.sh` — see `OWNERS.md`) (Docker Compose: Arkime, Zeek, OpenSearch + Dashboards, Logstash/Filebeat; Suricata present but disabled) ingesting up to 4 active physical 10GbE TAP/SPAN feeds plus a virtual mirror of lab traffic plus imported PCAPs.
-2. **Simulation** — GNS3 server v3.0.6 (venv install) running QEMU appliances (VyOS, MikroTik CHR, OPNsense, FRR, OpenWrt; licensed Cisco/Fortinet/PA images if entitled) and Docker nodes over KVM/libvirt.
+2. **Simulation** — GNS3 server (version pin owned by `scripts/r770-offline-fetch.sh` — see `OWNERS.md`; venv install) running QEMU appliances (VyOS, MikroTik CHR, OPNsense, FRR, OpenWrt; licensed Cisco/Fortinet/PA images if entitled) and Docker nodes over KVM/libvirt.
 3. **WAN emulation** — `tc`/`netem` profile library (`wan-apply` / `wan-show` / `wan-clear`) with branch-wan, satellite, poor-broadband, and asymmetric profiles.
 4. **Services** — Nginx portal (`portal.lab` → `malcolm.lab`, `gns3.lab`, `monitoring.lab`, docs), dnsmasq (`.lab`, no forwarders), chrony (lab time source), Prometheus/Grafana/Alertmanager monitoring, Restic backup, MkDocs analyst wiki, internal CA (easy-rsa).
 

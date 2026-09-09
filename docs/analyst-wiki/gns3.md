@@ -1,6 +1,6 @@
 # Network Simulation — GNS3
 
-GNS3 (server pinned at **v3.0.6**) is the lab's topology builder: drag routers, firewalls, switches, and endpoints onto a canvas, wire them up, and run them as real software — QEMU virtual machines and Docker containers under the hood. Use it to reproduce a customer network, build a test bed for a protocol question, stage traffic for capture practice, or rehearse a change.
+GNS3 (server version pin owned by `scripts/r770-offline-fetch.sh` — see `OWNERS.md`) is the lab's topology builder: drag routers, firewalls, switches, and endpoints onto a canvas, wire them up, and run them as real software — QEMU virtual machines and Docker containers under the hood. Use it to reproduce a customer network, build a test bed for a protocol question, stage traffic for capture practice, or rehearse a change.
 
 ## Connecting
 

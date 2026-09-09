@@ -19,7 +19,7 @@
 
 @test "version pins live only in the fetch script" {
     cd "$BATS_TEST_DIRNAME/.."
-    run bash -c "git grep -lE '26\.08\.0|v0\.34\.0|v0\.60\.5|10\.7\.1|v3\.14\.0|7\.21\.5|26\.7' -- '*.md' '*.sh' \
+    run bash -c "git grep -lE '26\.08\.0|v0\.34\.0|v0\.60\.5|10\.7\.1|v3\.14\.0|7\.21\.5|26\.7|24\.04\.4|3\.0\.6|suricata-7\.0|v0\.28\.0' -- '*.md' '*.sh' \
                  ':!state/' ':!work/' ':!OWNERS.md' ':!scripts/r770-offline-fetch.sh'"
     echo "$output"
     [ -z "$output" ]

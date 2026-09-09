@@ -27,7 +27,7 @@ This is the definitive list of everything the air-gapped R770 build needs, what 
 
 | Item | Pin | Source | Bundle path | Size |
 |---|---|---|---|---|
-| Ubuntu Server live ISO + SHA256SUMS(.gpg) | 24.04.4 | releases.ubuntu.com/noble | `isos/` | ~3.2 GB |
+| Ubuntu Server live ISO + SHA256SUMS(.gpg) | see pin block, `scripts/r770-offline-fetch.sh` | releases.ubuntu.com/noble | `isos/` | ~3.2 GB |
 | Curated .deb set + all deps + `dist-upgrade` security debs | resolved at build time | archive/security.ubuntu.com | `apt/` (with `Packages.gz` repo metadata) | ~3–6 GB |
 | Docker Engine debs (docker-ce, cli, containerd.io, buildx, compose) + repo GPG key | noble/stable current | download.docker.com | `apt/` | ~400 MB |
 
@@ -59,7 +59,7 @@ Restore: `docker load -i malcolm-images-${MALCOLM_VER}.tar.gz`, then run Malcolm
 |---|---|
 | prom/prometheus | see pin block, `scripts/r770-offline-fetch.sh` |
 | prom/alertmanager | see pin block, `scripts/r770-offline-fetch.sh` *(last bumped 2026-09-04 — `state/inventory/pin-review-2026-09-04.md`)* |
-| prom/blackbox-exporter | v0.28.0 |
+| prom/blackbox-exporter | see pin block, `scripts/r770-offline-fetch.sh` |
 | grafana/grafana-oss | see pin block — **held below 13.x** (policy: §0; review dashboards before jumping majors) |
 | **ghcr.io/google/cadvisor** | see pin block, `scripts/r770-offline-fetch.sh` *(last bumped 2026-09-04 — `state/inventory/pin-review-2026-09-04.md`; **registry corrected 2026-09-08** — `gcr.io/cadvisor/cadvisor` is abandoned and 404s for both the old and new tag)* |
 | nginx | stable |
@@ -74,7 +74,7 @@ Bundle path `docker/monitoring-images.tar.gz`, ~3 GB.
 
 | Item | Pin | Method | Bundle path |
 |---|---|---|---|
-| gns3-server + deps wheelhouse | 3.0.6 | `pip download` in `python:3.12-slim` container | `gns3/wheelhouse/` (~100 MB) |
+| gns3-server + deps wheelhouse | see pin block, `scripts/r770-offline-fetch.sh` | `pip download` in `python:3.12-slim` container | `gns3/wheelhouse/` (~100 MB) |
 
 Offline install: `python3 -m venv /opt/gns3 && /opt/gns3/bin/pip install --no-index --find-links <wheelhouse> gns3-server`. GNS3 v3 bundles the web UI and enforces auth (admin user created on first run); images live as files under `images_path`, so pre-staging appliances on disk works.
 
@@ -120,7 +120,7 @@ Windows endpoint ISOs + virtio-win: **descoped** (not selected).
 | IEEE OUI list (`oui.txt`) | Arkime | scripted |
 | Public suffix list | Arkime | scripted |
 | IANA ipv4-address-space | Arkime | scripted |
-| ET Open Suricata ruleset (`suricata-7.0` branch) | Suricata (disabled by default; cached anyway) | scripted, liveness-checked (ET returns 410 on retired branches) |
+| ET Open Suricata ruleset (branch pin: see `scripts/r770-offline-fetch.sh`) | Suricata (disabled by default; cached anyway) | scripted, liveness-checked (ET returns 410 on retired branches) |
 | MaxMind GeoLite2 City/ASN/Country | Malcolm/Arkime geo tagging | **DESCOPED** — no account. Geo fields will be absent in Arkime/dashboards. v2 script block is the recovery path |
 
 Staleness note: with ad-hoc cadence, rules/OUI are only as fresh as the last bundle — accepted.

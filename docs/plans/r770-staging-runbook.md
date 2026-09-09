@@ -3,7 +3,7 @@
 **Companion to:** `r770-offline-supply.md` (the model/rationale) · `r770-offline-fetch.sh` v3.3 (the tool; resumable, seeds new bundles from previous ones) · `r770-dependency-manifest.md` (authoritative dependency list + decisions record) · `r770-network-lab-buildout.md`
 **Date:** 2026-09-04 — **staging host changed from RHEL 8 to a dedicated Proxmox VM running Ubuntu 24.04 + Docker CE** (operator approved; rationale in dependency manifest §0). Pins reviewed and four bumped the same day (`state/inventory/pin-review-2026-09-04.md`).
 **Staging host:** a dedicated **Proxmox VM** running Ubuntu 24.04 with internet access (direct or via corporate proxy), preparing bundles for the air-gapped Ubuntu 24.04 R770 `testbed` (tag `G8WFGH4`).
-**Verified against (2026-09-04):** pins as reviewed in `state/inventory/pin-review-2026-09-04.md` — see the pin block in `scripts/r770-offline-fetch.sh` for current values; ET Open `suricata-7.0` path confirmed HTTP 200, not retired.
+**Verified against (2026-09-04):** pins as reviewed in `state/inventory/pin-review-2026-09-04.md` — see the pin block in `scripts/r770-offline-fetch.sh` for current values; ET Open Suricata branch path confirmed HTTP 200, not retired.
 
 Everything heavy still runs inside containers (`ubuntu:24.04`, `python:3.12-slim`) — that indirection is what made a RHEL host viable and it costs nothing on Ubuntu, so the script is unchanged. The host needs only a container runtime, curl, gpg, unzip, wget, and disk.
 

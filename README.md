@@ -20,8 +20,13 @@ Everything needed to design, build, validate, and supply the air-gapped Dell Pow
 | `.claude/settings.json` | Permission guardrails (destructive disk commands denied; ssh/sudo/docker always prompt) |
 | `docs/plans/` | The four source plans: buildout, offline supply, dependency manifest, staging runbook |
 | `docs/analyst-wiki/` | Analyst-facing wiki (becomes the portal's MkDocs site at build Phase 13) |
-| `scripts/r770-offline-fetch.sh` | Bundle builder (v3.3) — run on staging, never on the R770 |
+| `docs/superpowers/specs/` | Durable design specs (not one-shot work orders — those live in `work/plans/`) |
+| `scripts/r770-offline-fetch.sh` | Bundle builder — run on staging, never on the R770 |
+| `scripts/r770-bundle.sh` | Bundle manifest generation and integrity verification; ships inside the bundle itself |
 | `scripts/r770-precheck.sh` | Read-only Phase 1 discovery — run on the R770 |
+| `tests/` | `./tests/run.sh` — the repo's one check: shellcheck, lint, and bats suites, offline and read-only |
+| `work/plans/active/` | In-progress one-shot plans |
+| `work/plans/archive/` | Executed plans, kept as outcome records |
 | `state/BUILD-STATE.md` | Phase tracker — the single source of build truth |
 | `state/inventory/` | Discovery output, phase evidence, validation reports, bundle logs |
 

@@ -67,3 +67,12 @@ only the cadvisor one was broken:
 
 This is the same class of error as trusting a fingerprint printed in a generated document: check
 the thing you will actually use, not a proxy for it.
+
+---
+
+## Correction, 2026-09-09 — path reference moved
+
+The plan cited above for `r770-pin-check.sh` (Task 5) moved in the 2026-09-09 repo restructure and
+now lives at `work/plans/archive/2026-09-03-bundle-integrity-gate.md`. The citation above is left
+as originally written — this record is append-only — but readers following it now should use the
+new path.

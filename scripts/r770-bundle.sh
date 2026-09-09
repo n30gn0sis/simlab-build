@@ -15,7 +15,7 @@
 # OK (exit 0) for an empty bundle, for files added after the manifest was
 # written, and for leftover .part downloads. Each was reproduced against the
 # real command on 2026-09-03; see
-# docs/superpowers/plans/2026-09-03-bundle-integrity-gate.md.
+# work/plans/archive/2026-09-03-bundle-integrity-gate.md.
 set -euo pipefail
 
 MANIFEST_NAME="MANIFEST.sha256"

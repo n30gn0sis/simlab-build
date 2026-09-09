@@ -64,15 +64,6 @@ Ubuntu 24.04 LTS · Malcolm **26.08.0** as the integrated analysis stack (no sep
 
 ## Repo map
 
-```
-PRD.md                    — distilled requirements (start here)
-CLAUDE.md                 — this file
-docs/plans/               — buildout plan, offline supply plan, dependency manifest, staging runbook
-docs/analyst-wiki/        — analyst-facing wiki (becomes the MkDocs portal site)
-scripts/                  — r770-offline-fetch.sh (staging), r770-precheck.sh (R770, read-only)
-state/BUILD-STATE.md      — phase tracker (the single source of build truth)
-state/inventory/          — discovery output, evidence, bundle logs
-.claude/                  — commands, agents, permission settings
-```
+See `README.md`'s "What's here" table — the single map of this repo. Do not duplicate it here.
 
 When docs and reality disagree, reality (discovery output) wins — then update the docs.

@@ -1,5 +1,32 @@
 # Repository Restructure — Migration Implementation Plan
 
+> **STATUS: EXECUTED 2026-09-09 — archived.** All eight stages landed across the
+> 22 commits `253c5ed..db80b38`; `./tests/run.sh` green at 48 tests (the plan
+> projected 47). Two steps are left unticked on purpose because their effect
+> lives outside this repo and could not be verified from the host that executed
+> the plan — Stage 0 Step 6 (`BUNDLE_NOTES.md` inside `bundle-20260908` on
+> staging VM 9770) and Stage 0 Step 7 (the untracked, machine-local
+> `.claude/settings.local.json`). Both must be re-checked on the staging VM
+> before the media crosses the air gap.
+>
+> **Deviations from the plan as written**, all deliberate:
+> - `tests/no-secrets.bats` shipped as `tests/no-credentials.bats` (see the
+>   editorial note under Stage 0) — the original name collided with
+>   `Read(**/*secret*)` in `.claude/settings.json`.
+> - Stage 4 Step 1 missed one broken inbound link, in
+>   `state/inventory/pin-review-2026-09-04.md`, because the Stage 2 reference
+>   guard only looked at `.claude/` and `BUILD-STATE.md`. Fixed in `db80b38`,
+>   which widened the guard to all of `state/` so that class of drift cannot
+>   recur.
+> - Three of Stage 8 Step 1's grep criteria cannot pass as written: the spec
+>   document quotes the very strings it forbids — the legacy checksum recipe and
+>   the superseded free-extent figure, both named there to diagnose them — and
+>   this plan's own move table necessarily names the pre-move plan paths. The real rules are enforced by
+>   `owners.bats` and `references.bats` instead, which do pass.
+> - Stage 8 Step 2 expected zero diff in `r770-bundle.sh` and
+>   `r770-precheck.sh`; each carries one comment-only line, a citation the move
+>   itself invalidated. No executable line changed in either.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the tested integrity gate reachable from every documented path, give every duplicated fact one declared owner enforced by tests, and move the 98 KB of executed one-shot plans out of `docs/` — without changing what any script does.
@@ -51,7 +78,7 @@ All eight requested categories are present and separated. The sequence differs f
 > the historical record of what Stage 0 actually did and ran, under the original filename —
 > left unedited on purpose.
 
-- [ ] **Step 1: Write the failing safety test**
+- [x] **Step 1: Write the failing safety test**
 
 Create `tests/no-secrets.bats`:
 
@@ -85,12 +112,12 @@ Create `tests/no-secrets.bats`:
 }
 ```
 
-- [ ] **Step 2: Run it to confirm it fails**
+- [x] **Step 2: Run it to confirm it fails**
 
 Run: `bats tests/no-secrets.bats`
 Expected: tests 1–3 FAIL (no `.gitignore` exists). Test 4 passes already — the credential is untracked, which is exactly the fragile state this stage fixes.
 
-- [ ] **Step 3: Write `.gitignore`**
+- [x] **Step 3: Write `.gitignore`**
 
 ```gitignore
 # Bundle output. r770-offline-fetch.sh writes bundle-YYYYMMDD/ to $(pwd), and
@@ -113,7 +140,7 @@ r770-precheck-*.tar.gz
 .DS_Store
 ```
 
-- [ ] **Step 4: Fix the line that crosses the air gap**
+- [x] **Step 4: Fix the line that crosses the air gap**
 
 `scripts/r770-offline-fetch.sh:700` writes into every bundle's `BUNDLE_NOTES.md`:
 
@@ -131,7 +158,7 @@ Replace with:
     echo "   exactly the Dell firmware and licensed-appliance case.)"
 ```
 
-- [ ] **Step 5: Verify the edit without running the full fetch**
+- [x] **Step 5: Verify the edit without running the full fetch**
 
 ```bash
 bash -n scripts/r770-offline-fetch.sh && echo "parses"
@@ -142,7 +169,7 @@ grep -c 'sha256sum -c MANIFEST' scripts/r770-offline-fetch.sh
 
 Expected: `parses`, `lint clean`, the notes block naming `./r770-bundle.sh verify .`, and **0** occurrences of the old command.
 
-- [ ] **Step 6: Remediate the already-cut bundle**
+- [ ] **Step 6: Remediate the already-cut bundle** — **NOT VERIFIED FROM THIS HOST — the edit lands in `BUNDLE_NOTES.md` inside `bundle-20260908` on staging VM 9770, which this container cannot reach. Re-check on the VM before the media crosses the air gap.**
 
 `bundle-20260908` on staging VM 9770 (192.168.4.28) carries the old instruction. `BUNDLE_NOTES.md` is regenerated on every fetch run, so re-cutting is unnecessary — patch in place and regenerate the manifest so the change is covered:
 
@@ -156,7 +183,7 @@ ssh ubuntu@192.168.4.28 \
 
 Expected: step 1 of the import order names the shipped verifier, and `verify` exits **2** (the two known docs-mirror WARNs plus unstaged `dell/`), not 1.
 
-- [ ] **Step 7: Purge the credential from the untracked settings**
+- [ ] **Step 7: Purge the credential from the untracked settings** — **NOT VERIFIED FROM THIS HOST — `.claude/settings.local.json` is untracked and machine-local; it does not exist in this container.**
 
 ```bash
 grep -c sshpass .claude/settings.local.json
@@ -174,7 +201,7 @@ grep -c sshpass .claude/settings.local.json     # expect 0
 
 **Also rotate the Proxmox root password.** `state/inventory/staging-vm-9770.md:133` has recorded it as needing rotation since 2026-09-04 and it has not happened. Operator action, not a repo change.
 
-- [ ] **Step 8: Run the gate and commit**
+- [x] **Step 8: Run the gate and commit**
 
 ```bash
 bats tests/no-secrets.bats
@@ -204,7 +231,7 @@ Nine tracked references still instruct the reader to use the defective command.
 
 **Files:** `docs/plans/r770-staging-runbook.md:139,154,163,206` · `docs/plans/r770-offline-supply.md:105` · `docs/plans/r770-dependency-manifest.md:22,168` · `.claude/commands/import-bundle.md:8` · `.claude/commands/bundle.md:11` · `.claude/agents/bundle-builder.md:16` · Create `tests/no-legacy-manifest.bats`
 
-- [ ] **Step 1: Write the guard first, so the recipe cannot return**
+- [x] **Step 1: Write the guard first, so the recipe cannot return**
 
 Create `tests/no-legacy-manifest.bats`:
 
@@ -237,12 +264,12 @@ Create `tests/no-legacy-manifest.bats`:
 }
 ```
 
-- [ ] **Step 2: Run it to confirm it fails**
+- [x] **Step 2: Run it to confirm it fails**
 
 Run: `bats tests/no-legacy-manifest.bats`
 Expected: all 3 FAIL — nine references present, gate referenced from no operational path.
 
-- [ ] **Step 3: Replace each reference**
+- [x] **Step 3: Replace each reference**
 
 Same shape everywhere. Staging-side:
 
@@ -264,7 +291,7 @@ Document the exit contract wherever the command is acted on — `.claude/command
 
 > | Drive helper script | **Superseded 2026-09-09**: `scripts/r770-bundle.sh verify` is the gate. Was: manual `sha256sum -c`, which cannot see unmanifested files. |
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```bash
 bats tests/no-legacy-manifest.bats
@@ -288,7 +315,7 @@ restatements carries the figure, or if a restatement disagrees with the owner.
 bats tests/owners.bats
 ```
 
-- [ ] **Step 6: Run the gate and commit**
+- [x] **Step 6: Run the gate and commit**
 
 ```bash
 ./tests/run.sh
@@ -314,7 +341,7 @@ Written **before** any move, so Stage 3 has something to verify it.
 
 **Files:** Create `tests/references.bats`, `.github/workflows/tests.yml` · Modify `state/inventory/README.md`
 
-- [ ] **Step 1: Write the reference guard**
+- [x] **Step 1: Write the reference guard**
 
 Create `tests/references.bats`:
 
@@ -345,12 +372,12 @@ Create `tests/references.bats`:
 }
 ```
 
-- [ ] **Step 2: Run it — expect a real finding, not a clean pass**
+- [x] **Step 2: Run it — expect a real finding, not a clean pass**
 
 Run: `bats tests/references.bats`
 Expected: the first test **FAILS**, naming `state/inventory/hardware-inventory.md` — referenced at `state/inventory/README.md:8` but never created. **Correct the reference to `r770-discovery-findings.md`**, which holds that content. Do not invent a file to satisfy a test.
 
-- [ ] **Step 3: Add CI**
+- [x] **Step 3: Add CI**
 
 Create `.github/workflows/tests.yml`:
 
@@ -374,7 +401,7 @@ jobs:
 
 The suite is offline, read-only, uses synthetic fixtures, never contacts the R770, and takes ~2 seconds — it needs nothing else.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```bash
 ./tests/run.sh
@@ -404,7 +431,7 @@ Only now, with `references.bats` able to verify the result.
 | `docs/superpowers/plans/2026-09-09-repo-restructure-migration.md` | `work/plans/active/2026-09-09-repo-restructure-migration.md` |
 | `docs/superpowers/specs/` | **stays** — specs are durable design, not one-shot work orders |
 
-- [ ] **Step 1: Move with history preserved**
+- [x] **Step 1: Move with history preserved**
 
 ```bash
 mkdir -p work/plans/archive work/plans/active
@@ -417,7 +444,7 @@ git log --follow --oneline work/plans/archive/2026-09-03-bundle-integrity-gate.m
 
 Expected: `--follow` shows history across the move.
 
-- [ ] **Step 2: Add status headers so an executed plan reads as executed**
+- [x] **Step 2: Add status headers so an executed plan reads as executed**
 
 Top of the archived plan:
 
@@ -435,7 +462,7 @@ Top of the active rehearsal plan:
 > **STATUS: NOT STARTED.** Requires staging VM 9770 and `bundle-20260908`.
 ```
 
-- [ ] **Step 3: Verify nothing broke**
+- [x] **Step 3: Verify nothing broke**
 
 ```bash
 bats tests/references.bats
@@ -445,7 +472,7 @@ grep -rn 'docs/superpowers/plans' . --exclude-dir=.git
 
 Any hit from that grep is an inbound link to fix in Stage 4.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -466,7 +493,7 @@ rather than implied."
 
 **Files:** whichever the Stage 3 grep surfaced — expected `README.md`, `CLAUDE.md`, `state/BUILD-STATE.md`.
 
-- [ ] **Step 1: Fix every inbound link the move broke**
+- [x] **Step 1: Fix every inbound link the move broke**
 
 ```bash
 grep -rn 'docs/superpowers/plans' . --exclude-dir=.git
@@ -474,11 +501,11 @@ grep -rn 'docs/superpowers/plans' . --exclude-dir=.git
 
 Rewrite each to its `work/plans/{archive,active}/` destination.
 
-- [ ] **Step 2: Correct the repo map in both places it appears**
+- [x] **Step 2: Correct the repo map in both places it appears**
 
 `CLAUDE.md`'s "Repo map" and `README.md` both omit `scripts/r770-bundle.sh`, `tests/`, and `work/` — and CLAUDE.md's map is loaded into every session, so it actively misinforms. Update both, then reduce CLAUDE.md's to a pointer at README so there is one map, not two.
 
-- [ ] **Step 3: Verify and commit**
+- [x] **Step 3: Verify and commit**
 
 ```bash
 bats tests/references.bats
@@ -493,7 +520,7 @@ git commit -am "Correct inbound references after the plan move"
 
 **Files:** Create `OWNERS.md`, `tests/owners.bats`
 
-- [ ] **Step 1: Write the enforcement test first**
+- [x] **Step 1: Write the enforcement test first**
 
 Create `tests/owners.bats`:
 
@@ -526,12 +553,12 @@ Create `tests/owners.bats`:
 }
 ```
 
-- [ ] **Step 2: Run it — expect failures naming the actual violations**
+- [x] **Step 2: Run it — expect failures naming the actual violations**
 
 Run: `bats tests/owners.bats`
 Expected: failures listing every file that restates a pin, a size, or claims RHEL staging. That list is the Step 3 worklist.
 
-- [ ] **Step 3: Write `OWNERS.md` and convert each violation to a reference**
+- [x] **Step 3: Write `OWNERS.md` and convert each violation to a reference**
 
 `OWNERS.md` is a table of fact, owner, and how to reference it:
 
@@ -546,7 +573,7 @@ Expected: failures listing every file that restates a pin, a size, or claims RHE
 
 For each violation, replace the restated value with a pointer — e.g. "pins: see the pin block in `scripts/r770-offline-fetch.sh`".
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```bash
 bats tests/owners.bats
@@ -559,15 +586,15 @@ git commit -m "Declare one owner per fact and enforce it with tests"
 
 ## Stage 6 — Configuration cleanup, remainder (category 4)
 
-- [ ] **Step 1: Reconcile `.claude/` with reality**
+- [x] **Step 1: Reconcile `.claude/` with reality**
 
 `.claude/commands/status.md` lists unknowns that discovery already resolved; `discover.md` references an SSH alias `state/BUILD-STATE.md:14` still says needs confirming. Point both at the live table rather than restating it.
 
-- [ ] **Step 2: Add the test step to the phase protocol**
+- [x] **Step 2: Add the test step to the phase protocol**
 
 CLAUDE.md's phase protocol has no step that runs the suite. Add one after "Validation": *"Run `./tests/run.sh`; a phase does not advance on a red suite."*
 
-- [ ] **Step 3: Verify and commit**
+- [x] **Step 3: Verify and commit**
 
 ```bash
 ./tests/run.sh
@@ -579,7 +606,7 @@ git commit -am "Reconcile agent configuration with the discovered state"
 
 ## Stage 7 — Dead-code and dead-content removal (category 5)
 
-- [ ] **Step 1: Confirm no external citation before deleting**
+- [x] **Step 1: Confirm no external citation before deleting**
 
 ```bash
 grep -rn '§11\|§15' . --exclude-dir=.git | grep -v network-lab-buildout
@@ -587,15 +614,15 @@ grep -rn '§11\|§15' . --exclude-dir=.git | grep -v network-lab-buildout
 
 Expected: no external citation of §11 or §15. If one exists, convert it to a pointer first.
 
-- [ ] **Step 2: Delete the two superseded buildout sections**
+- [x] **Step 2: Delete the two superseded buildout sections**
 
 `docs/plans/r770-network-lab-buildout.md` §11 (Build Phases) duplicates `state/BUILD-STATE.md`'s table, which is authoritative and diverges from it. §15 (Phase 1 discovery commands) is superseded by `scripts/r770-precheck.sh`, which was executed. Together ~110 lines. **Both sit below every §-number cited elsewhere**, so removal breaks no citation.
 
-- [ ] **Step 3: Trim the fetch script's self-contradicting changelog**
+- [x] **Step 3: Trim the fetch script's self-contradicting changelog**
 
 115 of 729 lines are a changelog whose entries contradict each other (v3.3 describes behaviour v3.5 replaced). Reduce to the current version plus a pointer to `git log`.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```bash
 bash -n scripts/r770-offline-fetch.sh
@@ -610,7 +637,7 @@ git commit -am "Remove superseded sections and a self-contradicting changelog"
 
 ## Stage 8 — Final validation (category 8)
 
-- [ ] **Step 1: Run every success criterion from the spec**
+- [x] **Step 1: Run every success criterion from the spec**
 
 ```bash
 test -f .gitignore
@@ -627,7 +654,7 @@ GIT_CONFIG_GLOBAL=/dev/null git check-ignore -q bundle-20260908/
 
 Every line must succeed. A leading `!` asserts **no matches**.
 
-- [ ] **Step 2: Confirm no behaviour changed**
+- [x] **Step 2: Confirm no behaviour changed**
 
 ```bash
 git diff --stat b133628..HEAD -- scripts/
@@ -635,7 +662,7 @@ git diff --stat b133628..HEAD -- scripts/
 
 Expected: changes confined to `r770-offline-fetch.sh` — the notes `echo` block and the changelog trim. **`r770-bundle.sh` and `r770-precheck.sh` must show zero diff.** If either changed, a non-goal was violated; revert that hunk.
 
-- [ ] **Step 3: Record and commit**
+- [x] **Step 3: Record and commit**
 
 Append one line to `state/BUILD-STATE.md`'s Log, and record the two deferred items there so they cannot vanish the way Task 7 did:
 

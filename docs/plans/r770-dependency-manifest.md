@@ -57,7 +57,7 @@ Restore: `docker load -i malcolm-images-${MALCOLM_VER}.tar.gz`, then run Malcolm
 
 | Image | Pin |
 |---|---|
-| prom/prometheus | v3.14.0 |
+| prom/prometheus | see pin block, `scripts/r770-offline-fetch.sh` |
 | prom/alertmanager | see pin block, `scripts/r770-offline-fetch.sh` *(last bumped 2026-09-04 — `state/inventory/pin-review-2026-09-04.md`)* |
 | prom/blackbox-exporter | v0.28.0 |
 | grafana/grafana-oss | see pin block — **held below 13.x** (policy: §0; review dashboards before jumping majors) |
@@ -87,8 +87,8 @@ Fetched from the GNS3 registry (raw.githubusercontent.com/GNS3/gns3-registry) in
 | Image | Pin | Source | Size |
 |---|---|---|---|
 | VyOS rolling ISO (+ .minisig) | latest nightly at build time (e.g. 2026.08.28-0255-rolling) | github.com/vyos/vyos-nightly-build releases (via GitHub API) | ~600 MB |
-| MikroTik CHR raw image | 7.21.5 | download.mikrotik.com/routeros/7.21.5/chr-7.21.5.img.zip | ~50 MB |
-| OPNsense dvd ISO (+ sha256 + sig) | 26.7 | mirrors.dotsrc.org/opnsense/releases/mirror | ~2.2 GB |
+| MikroTik CHR raw image | see pin block, `scripts/r770-offline-fetch.sh` | download.mikrotik.com/routeros/${CHR_VER}/chr-${CHR_VER}.img.zip | ~50 MB |
+| OPNsense dvd ISO (+ sha256 + sig) | see pin block, `scripts/r770-offline-fetch.sh` | mirrors.dotsrc.org/opnsense/releases/mirror | ~2.2 GB |
 | Alpine virt ISO | latest-stable at build time (parsed from `latest-releases.yaml`) | dl-cdn.alpinelinux.org | ~60 MB |
 | GNS3 docker-node images (alpine, debian:stable-slim, nicolaka/netshoot, quay.io/frrouting/frr — pin: see `scripts/r770-offline-fetch.sh`) | as listed | Docker Hub / quay.io | ~1.5 GB saved |
 

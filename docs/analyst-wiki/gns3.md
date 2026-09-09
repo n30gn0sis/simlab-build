@@ -21,7 +21,7 @@ Bundled free/open-source appliances, ready to use:
 |---|---|
 | **VyOS** | General-purpose router — OSPF/BGP, VPN, firewall; the workhorse |
 | **MikroTik CHR** (RouterOS 7.21) | RouterOS environments |
-| **OPNsense** (26.7) | Firewall/router with a full web UI (the no-license pfSense alternative) |
+| **OPNsense** (pin: see `scripts/r770-offline-fetch.sh`) | Firewall/router with a full web UI (the no-license pfSense alternative) |
 | **FRR** | Pure routing stack — lightweight BGP/OSPF/IS-IS nodes |
 | **OpenWrt** | CPE/edge-device behavior |
 

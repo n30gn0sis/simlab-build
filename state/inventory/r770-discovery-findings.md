@@ -120,7 +120,7 @@ Per-node memory: node 0 = 64,068 MB, node 1 = 64,496 MB.
 
 §2.3 above records "≈6.85 TB of free extents in `ubuntu-vg0`". The digits are right and the unit is
 wrong: the figure is ≈6.85 **TiB**, and the value the design carries forward
-(`docs/plans/r770-network-lab-buildout.md` :93, :121, :341) is **≈6.84 TiB**. Read as written, 6.85 TB
+(`docs/plans/r770-network-lab-buildout.md` §3 (Proposed Storage Architecture)) is **≈6.84 TiB**. Read as written, 6.85 TB
 is only 6.23 TiB — understating the free extents by ~600 GiB, on the side that would undersize the
 lab volumes. This is a unit slip, not a re-measurement: nothing was re-read from the host, and
 ≈6.99 TiB total less the ≈147 GiB of existing LVs is ≈6.84 TiB, which is the arithmetic the original

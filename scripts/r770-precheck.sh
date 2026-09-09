@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # r770-precheck.sh — Phase 1 hardware discovery & precheck
-# Dell PowerEdge R770 network-analysis lab buildout (see r770-network-lab-buildout.md §15)
+# Dell PowerEdge R770 network-analysis lab buildout (see r770-network-lab-buildout.md)
 #
 # STRICTLY READ-ONLY. This script inspects the system and writes a report.
 # It changes NOTHING: no packages installed, no config touched, no state modified.

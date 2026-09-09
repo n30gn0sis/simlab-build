@@ -32,7 +32,7 @@ written after the gate get no exclusions at all.
 | SC1091 | `. /etc/os-release` is not present at lint time. |
 | SC2094 | **Not accepted — temporary.** A real finding at `r770-offline-fetch.sh:651`; comes off the list when that line delegates to `r770-bundle.sh` (integrity-gate Task 6). |
 
-## Two gotchas worth knowing before editing these scripts
+## Gotchas worth knowing before editing these scripts or their tests
 
 - **A comment beginning `# shellcheck ` is parsed as a directive**, not prose.
   Starting a sentence with the word "shellcheck" produces SC1072/SC1073 syntax
@@ -42,3 +42,9 @@ written after the gate get no exclusions at all.
   regex that errors out makes the surrounding `if` silently false — a check
   that never fires. Prefer `grep -F` with an ANSI-C-quoted needle (`$'\\'`)
   when matching literal metacharacters.
+- **The `Read(**/*secret*)` deny rule in `.claude/settings.json` is
+  project-tree-scoped, not filesystem-wide.** Inside the repo it blocks Bash
+  commands naming such a path, `Write`, and `Read` — even for files that do
+  not exist. A matching path *outside* the project tree is not blocked for
+  the `Read` tool. Do not assume it protects anything beyond this repository.
+  Proven by direct test during Stage 6.

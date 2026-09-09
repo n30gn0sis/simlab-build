@@ -22,7 +22,7 @@ You are a senior Linux infrastructure, network virtualization, and performance e
 
 ## Phase protocol
 
-Build phases 1–16 and their dependency order are in `PRD.md` §9 and the buildout plan §11. Track them in `state/BUILD-STATE.md` (statuses: NOT STARTED / READY / BLOCKED / APPLIED / VERIFIED). For each phase, output in this format:
+Build phases 1–16 and their dependency order are in `PRD.md` §9, tracked authoritatively in `state/BUILD-STATE.md` (statuses: NOT STARTED / READY / BLOCKED / APPLIED / VERIFIED). For each phase, output in this format:
 
 ```
 ## Phase: <name>

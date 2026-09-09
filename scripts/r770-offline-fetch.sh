@@ -15,87 +15,10 @@
 #   references were re-verified this way before the rerun; only this one
 #   was broken.
 #
-# v3.4 (2026-09-04): pin bumps for bundle-1, after a full upstream review
-#   (evidence: state/inventory/pin-review-2026-09-04.md, operator approved):
-#     - MALCOLM_VER  26.07.1 -> 26.08.0  (23 images, release assets verified)
-#     - alertmanager v0.33.0 -> v0.34.0
-#     - cadvisor     v0.57.0 -> v0.60.5
-#     - FRR_IMG      10.6.1  -> 10.7.1
-#   grafana-oss stays HELD at 12.1.0 (13.2.1 is current) until dashboards are
-#   reviewed. Policy of record: bump moved pins at cut time rather than ship
-#   stale, since ad-hoc cadence means a bundle may sit for months.
-#   Staging host also changed: RHEL 8 -> Ubuntu 24.04 Proxmox VM + Docker CE.
-#   The script is unchanged by that — everything heavy already runs in
-#   ubuntu:24.04 / python:3.12-slim containers.
-#
-# v3.3 (2026-08-31): cross-bundle seeding — a NEW bundle reuses a previous one:
-#   - At startup the script finds the newest sibling bundle-*/ directory next to
-#     the one being built (or SEED_FROM=/path/to/bundle to pick explicitly;
-#     SEED_FROM=none disables). Every identical version-pinned file it already
-#     holds — Ubuntu ISO, Malcolm/monitoring/gns3-node image tarballs, appliance
-#     images, wheelhouse, .gns3a defs — is hardlinked into the new bundle
-#     (copy fallback across filesystems) instead of re-downloaded, and each
-#     reuse is logged as a "reused from bundle-..." line in BUNDLE_NOTES.md.
-#   - Hardlinks cost no disk space and survive deleting the old bundle.
-#   - Deliberately NOT seeded (refresh-per-cycle by design): apt/ (dist-upgrade
-#     security debs must be current) and enrichment/ (rules/OUI staleness is the
-#     point of a new bundle); the wget docs mirrors are rebuilt per bundle.
-#   - Version pins are the safety: seeding matches exact relative path + filename,
-#     so a bumped pin (new Malcolm, new CHR) is fetched fresh automatically.
-#     VyOS/Alpine (resolved-to-latest) seed whatever version the old bundle holds,
-#     consistent with the resume rule; FORCE=1 disables seeding entirely.
-#
-# v3.2 (2026-08-31): resumable — safe to rerun after a failure or cancel:
-#   - Every direct download goes through fetch(): files download to <name>.part
-#     and are renamed only on success, so an existing final file means COMPLETE
-#     and is skipped on rerun; leftover .part files are resumed (curl -C -) when
-#     the server supports ranges, with a clean-restart fallback when it doesn't.
-#   - Heavy container steps (APT bundle, wheelhouse, docs mirrors) leave stamps
-#     in $BUNDLE/.stamps/ and are skipped once complete. Image tarballs
-#     (Malcolm, monitoring, gns3 nodes) skip when the tarball already exists —
-#     ctr_save also writes .part-then-rename so a killed save can't leave a
-#     truncated tarball that later masquerades as complete.
-#   - Rerunning the same day resumes automatically (same bundle dir). To resume
-#     a previous day's bundle:  BUNDLE_DIR=/path/bundle-YYYYMMDD ./r770-offline-fetch.sh
-#   - FORCE=1 re-downloads/rebuilds everything, ignoring stamps and cached files.
-#   - Verification still runs every pass (cached ISO etc. are re-checksummed);
-#     BUNDLE_NOTES.md is regenerated fresh each run; the manifest is always
-#     rebuilt at the end, so a resumed bundle gets a correct final manifest.
-#
-# v3.1 (2026-08-31): corporate proxy support:
-#   - Set HTTP_PROXY / HTTPS_PROXY / NO_PROXY (either case) before running; the
-#     script normalizes both cases, exports them for host curl/wget, and passes
-#     them into every container run (apt + pip inside containers need them too).
-#   - The DOCKER DAEMON needs its own proxy config to pull images — env vars do
-#     NOT reach it. One-time setup (see also r770-staging-runbook.md §1.5):
-#       sudo mkdir -p /etc/systemd/system/docker.service.d
-#       sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf <<'EOF'
-#       [Service]
-#       Environment="HTTP_PROXY=http://proxy.example.com:3128"
-#       Environment="HTTPS_PROXY=http://proxy.example.com:3128"
-#       Environment="NO_PROXY=localhost,127.0.0.1"
-#       EOF
-#       sudo systemctl daemon-reload && sudo systemctl restart docker
-#   - NEW [0/10] preflight: pulls ubuntu:24.04 and runs apt-get update inside it,
-#     failing fast with guidance instead of hanging mid-bundle.
-#   - Running under sudo? Use `sudo -E` so the proxy vars survive.
-#
-# v3 (2026-08-31): implements the decisions recorded in r770-dependency-manifest.md:
-#   - Staging host confirmed: RHEL 8 + Docker Engine (podman path kept but unused)
-#   - GeoIP/MaxMind DESCOPED (no account) — block removed; recover it from v2 if
-#     geo enrichment is ever wanted
-#   - NEW [6/10] GNS3 appliances: .gns3a definitions from the GNS3 registry
-#     (free + licensed-appliance definitions), free images fetched directly
-#     (VyOS rolling via GitHub API, MikroTik CHR 7.21.5, OPNsense 26.7,
-#     Alpine virt via latest-releases.yaml), GNS3 docker-node images saved
-#     (alpine, debian, netshoot, FRR)
-#   - NEW [8/10] best-effort offline docs mirrors (malcolm.fyi, Zeek, GNS3 repo
-#     docs, Wireshark user guide)
-#   - Licensed-image manual checklist written to gns3/appliances/README.txt
-#     (Cisco IOSv/IOSvL2/IOL/CSR/Cat8kv/ASAv, FortiGate, PA VM-Series, pfSense CE
-#     — pfSense now requires a Netgate account, OPNsense is the scripted alternative)
-#   - Pins re-verified 2026-08-31: Malcolm 26.07.1, Ubuntu 24.04.4,
-#     gns3-server 3.0.6 all still current
+# Earlier versions (v3 - v3.4): see `git log --follow -p -- scripts/r770-offline-fetch.sh`.
+# Some older entries describe behaviour a later version replaced (e.g. v3.3's
+# staging-host note was superseded by v3.4) — git log gives the accurate,
+# ordered history instead of a comment block that can drift out of sync.
 #
 # RUN THIS ON AN INTERNET-CONNECTED STAGING HOST — NEVER on the air-gapped server.
 # Staging host: RHEL 8 + Docker Engine (or Ubuntu; rootful podman also works).

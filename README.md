@@ -19,7 +19,7 @@ Everything needed to design, build, validate, and supply the air-gapped Dell Pow
 | `.claude/commands/` | `/discover` `/phase` `/bundle` `/import-bundle` `/validate` `/wan` `/capture-check` `/status` |
 | `.claude/agents/` | discovery-analyst · safety-reviewer · bundle-builder · validation-runner · capture-engineer |
 | `.claude/settings.json` | Permission guardrails (destructive disk commands denied; ssh/sudo/docker always prompt) |
-| `docs/plans/` | The four source plans: buildout, offline supply, dependency manifest, staging runbook |
+| `docs/plans/` | The four source plans: buildout, offline supply, dependency manifest, staging runbook — plus `r770-install-runbook.md`, the R770-side counterpart that installs what staging built |
 | `docs/analyst-wiki/` | Analyst-facing wiki (becomes the portal's MkDocs site at build Phase 13) |
 | `docs/superpowers/specs/` | Durable design specs (not one-shot work orders — those live in `work/plans/`) |
 | `scripts/r770-offline-fetch.sh` | Bundle builder — run on staging, never on the R770 |

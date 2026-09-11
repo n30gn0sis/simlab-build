@@ -30,7 +30,7 @@ One air-gapped Ubuntu Server 24.04 LTS host that concurrently provides:
 3. **WAN emulation** — `tc`/`netem` profile library (`wan-apply` / `wan-show` / `wan-clear`) with branch-wan, satellite, poor-broadband, and asymmetric profiles.
 4. **Services** — Nginx portal (`portal.lab` → `malcolm.lab`, `gns3.lab`, `monitoring.lab`, docs), dnsmasq (`.lab`, no forwarders), chrony (lab time source), Prometheus/Grafana/Alertmanager monitoring, Restic backup, MkDocs analyst wiki, internal CA (easy-rsa).
 
-All software arrives via a versioned offline bundle built on an internet-connected Ubuntu 24.04 staging VM by `scripts/r770-offline-fetch.sh` (v3.3: resumable, proxy-aware, cross-bundle seeding), transferred on checksummed ext4 media.
+All software arrives via a versioned offline bundle built on an internet-connected Ubuntu 24.04 staging VM — or, since 2026-09-11, a RHEL 8 host with rootful podman — by `scripts/r770-offline-fetch.sh` (v3.3: resumable, proxy-aware, cross-bundle seeding), transferred on checksummed ext4 media.
 
 ## 4. Hardware of Record — **owned by `state/BUILD-STATE.md`**
 

@@ -4,8 +4,8 @@ You are a senior Linux infrastructure, network virtualization, and performance e
 
 ## Run context
 
-- **You run on the internet-connected staging side.** Bundle building happens on a dedicated **Proxmox VM running Ubuntu 24.04 + Docker CE** (changed from RHEL 8 on 2026-09-04 — see `docs/plans/r770-dependency-manifest.md` §0), via `scripts/r770-offline-fetch.sh`.
-- **Check which box you are on before assuming you can build a bundle.** A session may run in a container that is *not* the staging VM: `systemd-detect-virt` must not say `lxc`, `docker info` must work, and `/` needs ≥150 GB free. Research, pin review, and document work run anywhere with egress; the fetch itself does not.
+- **You run on the internet-connected staging side.** Bundle building happens on a dedicated **Proxmox VM running Ubuntu 24.04 + Docker CE** (the default, set 2026-09-04) or on **RHEL 8 with rootful podman** (supported alternative, added 2026-09-11) — see `docs/plans/r770-dependency-manifest.md` §0 — via `scripts/r770-offline-fetch.sh`.
+- **Check which box you are on before assuming you can build a bundle.** Run `scripts/r770-staging-preflight.sh` — it answers this and refuses a host that cannot produce a valid bundle. A session may run in a container that is *not* the staging VM: `systemd-detect-virt` must not say `lxc`, a container runtime must respond (`docker info`, or `podman info` as root on RHEL), and `/` needs ≥150 GB free. Research, pin review, and document work run anywhere with egress; the fetch itself does not.
 - **The R770 is reached over SSH** (`ssh r770` — confirm the actual alias/host in `state/BUILD-STATE.md`). The R770 itself has **no internet**: never run `apt install` from upstream, `pip install`, `docker pull`, `curl`, or `wget` against the internet on it. Software reaches it only via the bundle.
 - Two machines, two roles. Fetching/building = staging. Configuring/validating = R770 over SSH. Never mix them up.
 
@@ -61,7 +61,7 @@ Discover before configuring · back up before replacing · measure before tuning
 
 ## Decisions of record (do not silently re-litigate)
 
-Ubuntu 24.04 LTS · Malcolm as the integrated analysis stack (no separate Zeek/Arkime installs; version pin owned by `scripts/r770-offline-fetch.sh` — see `OWNERS.md`) · Suricata disabled initially · GeoIP descoped · OVS deferred · Windows endpoints descoped · curated APT bundle (not a mirror) · **Ubuntu 24.04 Proxmox VM + Docker CE staging** (changed from RHEL 8 on 2026-09-04) · ext4 256 GB+ transfer media · ad-hoc bundle cadence · **bump moved pins at cut time** (grafana-oss held below 13.x is the standing exception). Changing any of these requires the operator's explicit say-so; record the change in `PRD.md` §6 and `docs/plans/r770-dependency-manifest.md` §0.
+Ubuntu 24.04 LTS · Malcolm as the integrated analysis stack (no separate Zeek/Arkime installs; version pin owned by `scripts/r770-offline-fetch.sh` — see `OWNERS.md`) · Suricata disabled initially · GeoIP descoped · OVS deferred · Windows endpoints descoped · curated APT bundle (not a mirror) · **Ubuntu 24.04 Proxmox VM + Docker CE staging by default; RHEL 8 + rootful podman a supported alternative** (default set 2026-09-04, RHEL path added 2026-09-11 — run `scripts/r770-staging-preflight.sh` before any fetch) · ext4 256 GB+ transfer media · ad-hoc bundle cadence · **bump moved pins at cut time** (grafana-oss held below 13.x is the standing exception). Changing any of these requires the operator's explicit say-so; record the change in `PRD.md` §6 and `docs/plans/r770-dependency-manifest.md` §0.
 
 ## Repo map
 

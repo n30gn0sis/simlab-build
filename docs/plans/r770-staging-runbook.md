@@ -18,7 +18,60 @@ Everything heavy still runs inside containers (`ubuntu:24.04`, `python:3.12-slim
 - [x] **E. Dell service tag** — **`G8WFGH4`** (express service code 35366715688), confirmed by Phase 1 discovery 2026-09-03. Firmware baselines to compare against in Step 4: BIOS **1.7.5** (2026-01-16) · iDRAC/LC **1.30.20.10** · PERC H975i Front **8.14.0.0.28-40** · backplane **1.92** · Broadcom NIC **233.1.181.0** (pkg) / 233.0.195.0 · PSU **1408** · CPLD **109.125.104**.
 - [ ] **F. Proxy details** if the staging host egresses through one: proxy URL (+credentials if any), and confirm the allowlist covers the domains printed by the script's preflight failure message (registries, Ubuntu archives, download.docker.com, PyPI, GitHub, and the appliance mirrors).
 
-## Step 1 — Prepare the Ubuntu 24.04 staging VM
+## Step 0.5 — Run the preflight, whichever host you are on
+
+```bash
+./scripts/r770-staging-preflight.sh
+```
+
+Exit **0** ready · **2** ready with warnings (disposition each) · **1** not ready.
+
+It refuses, before a single byte is downloaded, the conditions that otherwise
+surface hours into a fetch: an LXC container, a missing or unresponsive
+container runtime, podman below 3.0, rootless podman, Docker CE on RHEL, under
+150 GB free, or a missing `r770-bundle.sh` — which would ship a bundle with no
+verifier inside it.
+
+## Step 1 — Prepare the staging host
+
+Two supported hosts. Ubuntu 24.04 with Docker CE is the **default**; RHEL 8
+with **rootful podman** is a supported alternative. Manifest §0 owns this
+decision.
+
+The fetch script itself is portable and always was: every Ubuntu-specific
+command — `apt-get`, `dpkg-scanpackages` — runs inside a clean `ubuntu:24.04`
+container, so resolving Ubuntu packages never required an Ubuntu host, and both
+of its bind mounts already carry `:Z` for SELinux.
+
+### Step 1-RHEL — RHEL 8 with rootful podman
+
+**Use podman, not Docker CE.** Docker CE on RHEL 8 comes from a third-party
+repository outside Red Hat support and conflicts with the `container-tools`
+module that provides podman. Installing it to run this fetch trades a working,
+supported container stack for an unsupported one — and that conflict is the
+reason the default moved to Ubuntu in the first place.
+
+```bash
+sudo dnf module install -y container-tools
+podman --version                  # must be 3.0+ for --multi-image-archive
+getenforce                        # Enforcing is fine; the bind mounts carry :Z
+sudo dnf install -y pigz          # EPEL; optional, but the compress step is ~30 GB
+```
+
+Then run the fetch **with `sudo -E`** — rootful podman gives docker-identical
+ownership semantics and uses `/var/lib/containers`; `-E` carries any proxy
+variables through.
+
+`--multi-image-archive` is not optional: it is what writes the image tarballs
+in docker-archive format. The R770 has only Docker, so a tarball saved without
+it cannot be loaded there — and that failure appears at the far side of the air
+gap, after the media has crossed. RHEL 8.10 ships podman 4.9; older RHEL 8
+minors ship older podman, which is why the preflight refuses below 3.0.
+
+After the fetch, **Step 3's podman→Docker interop validation is mandatory**,
+not optional, on this path.
+
+### Step 1-Ubuntu — Ubuntu 24.04 staging VM (default)
 
 **1.0 Provision the VM.** It must be a **QEMU/KVM virtual machine, not an LXC container.** Docker inside LXC needs `nesting=1` and `keyctl=1` and still fights overlayfs — not a fight worth having in the middle of a multi-hour 65 GB fetch. On the Proxmox host:
 

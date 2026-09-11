@@ -56,11 +56,33 @@
     [ -z "$output" ]
 }
 
-@test "no document claims the staging host is RHEL" {
+# RHEL 8 became a supported ALTERNATIVE staging host on 2026-09-11 (operator
+# approved; dependency manifest §0). Ubuntu 24.04 remains the default.
+#
+# The original guard forbade the word "RHEL" outright. That was correct while
+# RHEL was abandoned and wrong the moment it came back as an option: a guard
+# that cannot tell "supported alternative" from "this is the staging host"
+# forces the RHEL path to go undocumented, which is a worse failure than the
+# drift it was protecting against.
+#
+# What must still never appear is a claim of PRIMACY -- that RHEL *is* the
+# staging host. That was the original drift, and it stays caught.
+@test "no document claims RHEL is the staging host" {
     cd "$BATS_TEST_DIRNAME/.."
-    run bash -c "git grep -n 'RHEL' -- README.md .claude/ scripts/ ':!OWNERS.md'"
+    run bash -c "git grep -nEi '(the|our) staging host is (a |an )?(rhel|red ?hat)|staging host: *(rhel|red ?hat)|staging host *= *(rhel|red ?hat)' -- README.md .claude/ scripts/ docs/ PRD.md ':!OWNERS.md'"
     echo "$output"
     [ -z "$output" ]
+}
+
+# The complement, and the reason the guard above can safely be narrowed: the
+# owner of the decision must keep naming Ubuntu as the default. Without this,
+# narrowing the guard would let the default drift silently to RHEL.
+@test "the decision record still names Ubuntu 24.04 as the default staging host" {
+    cd "$BATS_TEST_DIRNAME/.."
+    run bash -c "sed -n '/^| Staging host/p' docs/plans/r770-dependency-manifest.md"
+    echo "$output"
+    [[ "$output" == *"Ubuntu 24.04"* ]]
+    [[ "$output" == *"default"* ]]
 }
 
 # --- Free-extent capacity figure -------------------------------------------

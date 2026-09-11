@@ -18,7 +18,39 @@ Everything heavy still runs inside containers (`ubuntu:24.04`, `python:3.12-slim
 - [x] **E. Dell service tag** — **`G8WFGH4`** (express service code 35366715688), confirmed by Phase 1 discovery 2026-09-03. Firmware baselines to compare against in Step 4: BIOS **1.7.5** (2026-01-16) · iDRAC/LC **1.30.20.10** · PERC H975i Front **8.14.0.0.28-40** · backplane **1.92** · Broadcom NIC **233.1.181.0** (pkg) / 233.0.195.0 · PSU **1408** · CPLD **109.125.104**.
 - [ ] **F. Proxy details** if the staging host egresses through one: proxy URL (+credentials if any), and confirm the allowlist covers the domains printed by the script's preflight failure message (registries, Ubuntu archives, download.docker.com, PyPI, GitHub, and the appliance mirrors).
 
-## Step 0.5 — Run the preflight, whichever host you are on
+## Step 0.5 — The short path: one command
+
+```bash
+./scripts/r770-build-bundle.sh
+```
+
+Runs preflight → fetch → a pause for the manual items → manifest regeneration
+→ `verify --strict`, and stops at the first step that fails. Exit **0** gated
+clean · **2** built with warnings to disposition · **1** failed, do not move
+the media.
+
+It exists to make one ordering impossible to get wrong: the manifest is
+regenerated **after** the manual pause. The fetch writes a manifest covering
+what it downloaded; Dell firmware and licensed appliances are added by hand
+afterwards, and a manifest written before those files existed cannot see them.
+Done by hand, that step is the one that gets skipped.
+
+To build on a host with no checkout — a RHEL 8 box, say — carry one file:
+
+```bash
+./scripts/r770-build-bundle.sh --pack > r770-bundle-builder.sh
+scp r770-bundle-builder.sh staging:~/
+ssh staging 'sudo -E bash r770-bundle-builder.sh'      # sudo -E: rootful podman + proxy vars
+```
+
+The packed file carries all four scripts and is gitignored — its payload is
+base64, which would hide the version pins from the guard that keeps them in
+one place. Regenerate it whenever a pin moves; it is a snapshot, not a source.
+
+The steps below are the same pipeline done by hand, and remain the reference
+for what each stage is doing.
+
+## Step 0.6 — Run the preflight on its own, whichever host you are on
 
 ```bash
 ./scripts/r770-staging-preflight.sh

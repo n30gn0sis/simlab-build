@@ -24,6 +24,7 @@ Everything needed to design, build, validate, and supply the air-gapped Dell Pow
 | `docs/superpowers/specs/` | Durable design specs (not one-shot work orders — those live in `work/plans/`) |
 | `scripts/r770-offline-fetch.sh` | Bundle builder — run on staging, never on the R770 |
 | `scripts/r770-bundle.sh` | Bundle manifest generation and integrity verification; ships inside the bundle itself |
+| `scripts/r770-build-bundle.sh` | **One command, one verified bundle** — preflight, fetch, manual-items pause, manifest regeneration, strict gate. `--pack` emits a single self-extracting file to carry to a staging host with no checkout |
 | `scripts/r770-staging-preflight.sh` | Decides whether a host may build a bundle — Ubuntu 24.04 + Docker CE, or RHEL 8 + rootful podman. Run before every fetch |
 | `scripts/r770-precheck.sh` | Read-only Phase 1 discovery — run on the R770 |
 | `tests/` | `./tests/run.sh` — the repo's one check: shellcheck, lint, and bats suites, offline and read-only |

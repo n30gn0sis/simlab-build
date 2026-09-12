@@ -1,6 +1,6 @@
 # Rehearsal Sites Up — Implementation Plan
 
-> **STATUS: NOT STARTED.** Requires VM 9770 grown to 12 GiB (Task 0, operator) and the executed
+> **STATUS: IN PROGRESS** — started 2026-09-12; Tasks 0–1 done.
 > Malcolm rehearsal (`work/plans/active/2026-09-09-malcolm-rehearsal.md`, 2026-09-12).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -9,7 +9,7 @@
 
 **Architecture:** One host Nginx owns `0.0.0.0:443` and terminates TLS with a certificate from an internal easy-rsa CA (one cert, five SANs) so the operator imports one CA and gets clean locks everywhere. Each backend binds to `127.0.0.1` only: Malcolm's `nginx-proxy` on `:8443` (arrangement B, decided 2026-09-12), GNS3 on `:3080`, Grafana `:3000`, Prometheus `:9090`, Alertmanager `:9093`, and two static roots for the portal page and the MkDocs-built analyst wiki. Nothing is enabled at boot — the operator chose "start once, leave it".
 
-**Tech Stack:** Ubuntu 24.04 · Docker CE 29.8.0 / Compose v5.5.1 · Malcolm 26.08.0 · nginx 1.24.0 (bundle apt) · easy-rsa (bundle apt) · gns3-server 3.0.6 (bundle wheelhouse) · prom/prometheus v3.14.0, prom/alertmanager v0.34.0, grafana-oss 12.1.0, cadvisor v0.60.5, blackbox-exporter v0.28.0, squidfunk/mkdocs-material (all already loaded in the VM's daemon from the bundle)
+**Tech Stack:** Ubuntu 24.04 · Docker CE 29.8.0 / Compose v5.5.1 · Malcolm, gns3-server, Prometheus, Alertmanager, Grafana, cAdvisor, Blackbox and mkdocs-material **at the releases pinned by `scripts/r770-offline-fetch.sh`** (`OWNERS.md`) — all already loaded in the VM's daemon / present in the bundle; nginx 1.24.0 and easy-rsa from the bundle's `apt/`
 
 **Spec:** `docs/plans/r770-network-lab-buildout.md` §1 (portal diagram), §6 (GNS3), §9 (security: localhost-bound behind Nginx, internal CA, Malcolm rebind), §10 (monitoring stack); `PRD.md` §3.4; `docs/plans/r770-install-runbook.md` Parts 7, 10, 11; measured facts in `state/inventory/malcolm-rehearsal-2026-09-12.md`.
 
@@ -60,7 +60,7 @@ On the VM, the repo is not checked out. Each task ships its files with `scp` int
 
 **Interfaces:** Produces a VM with ≥ 11 GiB visible and the guarantee that VMs 100/108 are stopped. Every later task assumes both.
 
-- [ ] **Step 1: Operator runs on the Proxmox host** (this container cannot):
+- [x] **Step 1: Operator runs on the Proxmox host** (this container cannot):
 
 ```bash
 qm list                                   # 100 and 108 must show 'stopped'
@@ -70,7 +70,7 @@ qm start 9770
 free -g                                   # host: 'available' must stay >= 2 GiB with 9770 up
 ```
 
-- [ ] **Step 2: Verify from this side**
+- [x] **Step 2: Verify from this side**
 
 ```bash
 sleep 45
@@ -79,7 +79,7 @@ ssh ubuntu@192.168.4.28 'free -g | sed -n 2p; uptime -s; docker info --format "{
 
 Expected: `Mem: 11` (or 12) in the total column, a fresh boot time, Docker `29.8.0` answering. If `Mem` still reads `7`, the `qm set` did not take — stop and report.
 
-- [ ] **Step 3: Record**
+- [x] **Step 3: Record**
 
 Create `state/inventory/rehearsal-sites-2026-09-12.md`:
 
@@ -114,7 +114,7 @@ git commit -m "Start the rehearsal-sites evidence file with the 12 GiB VM gate"
 
 **Interfaces:** Produces `/etc/nginx/ssl/lab.crt` + `lab.key` (SANs: `portal.lab malcolm.lab gns3.lab monitoring.lab docs.lab`), `/etc/nginx/ssl/ca.crt` (public — the operator imports it), `/etc/nginx/lab.htpasswd` (user `analyst`, same password as Malcolm), and the two snippets every later vhost includes with `include snippets/lab-tls.conf;` / `include snippets/lab-auth.conf;`.
 
-- [ ] **Step 1: Install easy-rsa from the bundle and build the CA on the VM**
+- [x] **Step 1: Install easy-rsa from the bundle and build the CA on the VM**
 
 ```bash
 ssh ubuntu@192.168.4.28 'cd ~/r770/bundle-20260908/apt && sudo apt-get -y -o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=/dev/null install ./easy-rsa_*.deb 2>&1 | grep -E "^(Setting up|E:)"
@@ -128,7 +128,7 @@ openssl x509 -in pki/issued/lab.crt -noout -ext subjectAltName | tail -1'
 
 Expected: `pki/issued/lab.crt: OK` and a SAN line naming all five `.lab` names. If `--subject-alt-name` is rejected (older easy-rsa), use `EASYRSA_EXTRA_EXTS="subjectAltName = DNS:portal.lab,DNS:malcolm.lab,DNS:gns3.lab,DNS:monitoring.lab,DNS:docs.lab"` in the environment of the same `build-server-full` command instead.
 
-- [ ] **Step 2: Install the cert, CA and shared htpasswd into nginx**
+- [x] **Step 2: Install the cert, CA and shared htpasswd into nginx**
 
 ```bash
 ssh ubuntu@192.168.4.28 'sudo install -m 0644 ~/lab-ca/pki/issued/lab.crt /etc/nginx/ssl/lab.crt
@@ -141,7 +141,7 @@ ls -l /etc/nginx/ssl/ /etc/nginx/lab.htpasswd'
 
 Expected: three files under `ssl/` (the old self-signed pair gone), htpasswd readable by `www-data`.
 
-- [ ] **Step 3: Write the two snippets in the repo**
+- [x] **Step 3: Write the two snippets in the repo**
 
 `config/nginx/snippets/lab-tls.conf`:
 
@@ -165,7 +165,7 @@ auth_basic           "R770 Lab";
 auth_basic_user_file /etc/nginx/lab.htpasswd;
 ```
 
-- [ ] **Step 4: Point the Malcolm vhost at the snippet**
+- [x] **Step 4: Point the Malcolm vhost at the snippet**
 
 In `config/nginx/malcolm.lab.conf` replace exactly these two lines:
 
@@ -180,7 +180,7 @@ with:
     include snippets/lab-tls.conf;
 ```
 
-- [ ] **Step 5: Ship, reload, verify the chain end to end**
+- [x] **Step 5: Ship, reload, verify the chain end to end**
 
 ```bash
 ssh ubuntu@192.168.4.28 'mkdir -p ~/r770/config/nginx/snippets'
@@ -192,7 +192,7 @@ echo | openssl s_client -connect 127.0.0.1:443 -servername malcolm.lab -CAfile /
 
 Expected: `test is successful`; `Verify return code: 0 (ok)`; `subject=CN = lab`.
 
-- [ ] **Step 6: Hand the CA to the operator, record, commit**
+- [x] **Step 6: Hand the CA to the operator, record, commit**
 
 ```bash
 scp -q ubuntu@192.168.4.28:/etc/nginx/ssl/ca.crt /tmp/claude-0/-root-claude-simlab-build/d164567b-1424-488e-b894-82f2a004a479/scratchpad/r770-lab-ca.crt
@@ -330,7 +330,7 @@ git commit -m "Load a sample capture into the rehearsal Malcolm and prove it ind
 <h1>R770 Lab Portal <small>(staging rehearsal)</small></h1>
 <ul>
   <li><a href="https://malcolm.lab/">malcolm.lab</a> — capture &amp; analysis: <a href="https://malcolm.lab/arkime/">Arkime</a> · <a href="https://malcolm.lab/dashboards/">Dashboards</a> · <a href="https://malcolm.lab/netbox/">NetBox</a> · <a href="https://malcolm.lab/upload/">PCAP upload</a></li>
-  <li><a href="https://gns3.lab/">gns3.lab</a> — GNS3 server 3.0.6 (web UI; login <code>admin</code>)</li>
+  <li><a href="https://gns3.lab/">gns3.lab</a> — GNS3 server (web UI; login <code>admin</code>)</li>
   <li><a href="https://monitoring.lab/">monitoring.lab</a> — Grafana (login <code>admin</code>) · <a href="https://monitoring.lab/prometheus/">Prometheus</a> · <a href="https://monitoring.lab/alertmanager/">Alertmanager</a></li>
   <li><a href="https://docs.lab/">docs.lab</a> — Analyst Guide</li>
 </ul>
@@ -485,13 +485,16 @@ Expected: `Setting up prometheus-node-exporter…`; a count in the hundreds. (Th
 
 ```yaml
 # Monitoring stack for the portal (buildout section 10). Every port binds to
-# 127.0.0.1; nginx at monitoring.lab is the only way in. Images are the ones
-# the bundle loaded -- never pull. Grafana's admin password comes from an env
-# file that lives only on the host (~/.monitoring.env), never in git.
+# 127.0.0.1; nginx at monitoring.lab is the only way in. Image TAGS are not
+# written here: OWNERS.md keeps every pin in the fetch script, so the tags
+# come from the bundle's own docker/monitoring-image-list.txt via a .env
+# generated on the host (Task 6 step 5) -- never pull. Grafana's admin
+# password comes from an env file that lives only on the host
+# (~/.monitoring.env), never in git.
 name: monitoring
 services:
   prometheus:
-    image: prom/prometheus:v3.14.0
+    image: ${PROMETHEUS_IMAGE}
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --web.external-url=https://monitoring.lab/prometheus/
@@ -503,7 +506,7 @@ services:
     extra_hosts: ["host.docker.internal:host-gateway"]
     ports: ["127.0.0.1:9090:9090"]
   alertmanager:
-    image: prom/alertmanager:v0.34.0
+    image: ${ALERTMANAGER_IMAGE}
     command:
       - --config.file=/etc/alertmanager/alertmanager.yml
       - --web.external-url=https://monitoring.lab/alertmanager/
@@ -512,7 +515,7 @@ services:
       - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     ports: ["127.0.0.1:9093:9093"]
   grafana:
-    image: grafana/grafana-oss:12.1.0
+    image: ${GRAFANA_IMAGE}
     env_file: /home/ubuntu/.monitoring.env          # GF_SECURITY_ADMIN_PASSWORD=...
     environment:
       GF_SERVER_ROOT_URL: https://monitoring.lab/
@@ -524,7 +527,7 @@ services:
       - grafana-data:/var/lib/grafana
     ports: ["127.0.0.1:3000:3000"]
   cadvisor:
-    image: ghcr.io/google/cadvisor:v0.60.5
+    image: ${CADVISOR_IMAGE}
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -532,7 +535,7 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
     ports: ["127.0.0.1:8080:8080"]
   blackbox:
-    image: prom/blackbox-exporter:v0.28.0
+    image: ${BLACKBOX_IMAGE}
     volumes:
       - ./blackbox.yml:/etc/blackbox_exporter/config.yml:ro
       - /etc/nginx/ssl/ca.crt:/etc/blackbox_exporter/ca.crt:ro
@@ -667,7 +670,7 @@ ssh ubuntu@192.168.4.28 'umask 077; [ -s ~/.monitoring.env ] || echo "GF_SECURIT
 scp -q config/monitoring/docker-compose.yml config/monitoring/prometheus.yml config/monitoring/alertmanager.yml config/monitoring/blackbox.yml ubuntu@192.168.4.28:/home/ubuntu/r770/config/monitoring/
 scp -q config/monitoring/grafana/provisioning/datasources/prometheus.yml ubuntu@192.168.4.28:/home/ubuntu/r770/config/monitoring/grafana/provisioning/datasources/
 scp -q config/nginx/monitoring.lab.conf ubuntu@192.168.4.28:/home/ubuntu/r770/config/nginx/
-ssh ubuntu@192.168.4.28 'cd ~/r770/config/monitoring && docker compose up -d --pull never 2>&1 | grep -E "Started|Error|error" ; sleep 20; docker compose ps --format "{{.Service}} {{.Status}}"; sudo cp ~/r770/config/nginx/monitoring.lab.conf /etc/nginx/sites-available/ && sudo ln -sf /etc/nginx/sites-available/monitoring.lab.conf /etc/nginx/sites-enabled/ && sudo nginx -t 2>&1 | tail -1 && sudo systemctl reload nginx
+ssh ubuntu@192.168.4.28 'cd ~/r770/config/monitoring && L=~/r770/bundle-20260908/docker/monitoring-image-list.txt && { echo "PROMETHEUS_IMAGE=$(grep "/prom/prometheus:" $L | sed "s#^docker.io/##")"; echo "ALERTMANAGER_IMAGE=$(grep "/prom/alertmanager:" $L | sed "s#^docker.io/##")"; echo "GRAFANA_IMAGE=$(grep "/grafana/grafana-oss:" $L | sed "s#^docker.io/##")"; echo "CADVISOR_IMAGE=$(grep "/cadvisor:" $L)"; echo "BLACKBOX_IMAGE=$(grep "/blackbox-exporter:" $L | sed "s#^docker.io/##")"; } > .env && cat .env && docker compose config --images && docker compose up -d --pull never 2>&1 | grep -E "Started|Error|error" ; sleep 20; docker compose ps --format "{{.Service}} {{.Status}}"; sudo cp ~/r770/config/nginx/monitoring.lab.conf /etc/nginx/sites-available/ && sudo ln -sf /etc/nginx/sites-available/monitoring.lab.conf /etc/nginx/sites-enabled/ && sudo nginx -t 2>&1 | tail -1 && sudo systemctl reload nginx
 PW=$(cat ~/.malcolm-rehearsal-pw); R="--resolve monitoring.lab:443:127.0.0.1 --cacert /etc/nginx/ssl/ca.crt"
 curl -s $R https://monitoring.lab/login | grep -oE "<title>[^<]*"
 curl -s $R -u "analyst:$PW" https://monitoring.lab/prometheus/-/ready -w " %{http_code}\n"
@@ -676,7 +679,7 @@ sleep 30; curl -s $R -u "analyst:$PW" "https://monitoring.lab/prometheus/api/v1/
 ss -ltnp | grep -E ":(3000|9090|9093|8080|9115) " | awk "{print \$4}" | sort'
 ```
 
-Expected: five services `Up`; `<title>Grafana`; `Prometheus Server is Ready. 200`; `OK 200`; targets `prometheus`, `node`, `cadvisor` **up** and five `portal-vhosts` probes (`gns3.lab` will be **down** until Task 7 — expected); all five ports on `127.0.0.1` only. `--pull never` proves no image came from the internet.
+Expected: `.env` shows five image refs, each matching a tag already in `docker image ls`; five services `Up`; `<title>Grafana`; `Prometheus Server is Ready. 200`; `OK 200`; targets `prometheus`, `node`, `cadvisor` **up** and five `portal-vhosts` probes (`gns3.lab` will be **down** until Task 7 — expected); all five ports on `127.0.0.1` only. `--pull never` proves no image came from the internet.
 
 - [ ] **Step 6: Record and commit**
 
@@ -688,13 +691,13 @@ git commit -m "Stand up the monitoring stack behind monitoring.lab from bundled 
 
 ---
 
-### Task 7: `gns3.lab` — GNS3 server 3.0.6 from the wheelhouse
+### Task 7: `gns3.lab` — GNS3 server from the wheelhouse
 
 **Files:**
 - Create: `config/gns3/gns3_server.conf.template`, `config/nginx/gns3.lab.conf`
 - Modify: `docs/plans/r770-install-runbook.md` (Part 7, one line)
 
-**Interfaces:** Consumes the wheelhouse and `python3-venv` from the bundle. Produces `https://gns3.lab/` (GNS3's own JWT login, `admin` / `~/.gns3-admin-pw`), API at `/v3/version`. **Scope:** the server and web UI are up; running nodes (dynamips/ubridge/vpcs are not in the bundle) is out of scope and recorded as such.
+**Interfaces:** Consumes the wheelhouse and `python3-venv` from the bundle. Produces `https://gns3.lab/` (GNS3's own JWT login, `admin` / `~/.gns3-admin-pw`), API at `/v3/version` reporting the pinned release. **Scope:** the server and web UI are up; running nodes (dynamips/ubridge/vpcs are not in the bundle) is out of scope and recorded as such.
 
 - [ ] **Step 1: venv + server from the wheelhouse (`--no-index` is load-bearing)**
 
@@ -704,14 +707,14 @@ sudo rm -rf /opt/gns3 && sudo python3 -m venv /opt/gns3 && sudo /opt/gns3/bin/pi
 sudo mkdir -p /srv/gns3/{projects,images,appliances} /etc/gns3 /var/log/gns3 && sudo cp ~/r770/bundle-20260908/gns3/definitions/*.gns3a /srv/gns3/appliances/ && ls /srv/gns3/appliances | wc -l'
 ```
 
-Expected: `3.0.6`; `12` definitions. (`python3-venv` is already on this VM from the research step; the command is idempotent.)
+Expected: the gns3-server version pinned in the fetch script; `12` definitions. (`python3-venv` is already on this VM from the research step; the command is idempotent.)
 
 - [ ] **Step 2: Write the config template (secrets are substituted on the VM)**
 
 `config/gns3/gns3_server.conf.template`:
 
 ```ini
-; GNS3 server 3.0.6 -- sections map to gns3server's ServerConfig (configparser).
+; GNS3 server (release pinned by the fetch script) -- sections map to gns3server's ServerConfig (configparser).
 ; __PASSWORD__ and __JWT__ are filled on the host from files that never enter git.
 [Server]
 host = 127.0.0.1
@@ -776,7 +779,7 @@ TOKEN=$(curl -s $R -X POST https://gns3.lab/v3/access/users/login -H "Content-Ty
 curl -s $R -H "Authorization: Bearer $TOKEN" https://gns3.lab/v3/computes | python3 -c "import sys,json; print(\"computes:\", len(json.load(sys.stdin)))"'
 ```
 
-Expected: log shows the server listening on `127.0.0.1:3080` with the config path loaded; `127.0.0.1:3080`; `{"controller_host": …, "version": "3.0.6"}`; a `<title>` from the bundled web UI; `login: token issued`; `computes: 1` (the local compute). If the login returns no token, check the log for the admin-user creation line — the default password is applied only when the controller DB is first created (`rm -rf ~/.config/GNS3/3.0/` for a clean retry is safe here; nothing is in it yet).
+Expected: log shows the server listening on `127.0.0.1:3080` with the config path loaded; `127.0.0.1:3080`; `{"controller_host": …, "version": "<the pinned gns3-server version>"}`; a `<title>` from the bundled web UI; `login: token issued`; `computes: 1` (the local compute). If the login returns no token, check the log for the admin-user creation line — the default password is applied only when the controller DB is first created (`rm -rf ~/.config/GNS3/3.0/` for a clean retry is safe here; nothing is in it yet).
 
 - [ ] **Step 5: Runbook Part 7 assumption, evidence, commit**
 
@@ -793,7 +796,7 @@ Append a "Task 7" table (version, listening address, `/v3/version` body, login r
 ```bash
 ./tests/run.sh | tail -2
 git add config/gns3/ config/nginx/gns3.lab.conf docs/plans/r770-install-runbook.md state/inventory/rehearsal-sites-2026-09-12.md
-git commit -m "Run GNS3 server 3.0.6 from the wheelhouse behind gns3.lab"
+git commit -m "Run GNS3 server from the wheelhouse behind gns3.lab"
 ```
 
 ---
@@ -844,7 +847,7 @@ VMs 100 and 108 must stay stopped on Proxmox while this runs.
 Add to `state/BUILD-STATE.md` under `## Log`:
 
 ```markdown
-- 2026-09-12 · Staging · All five portal sites up on VM 9770 for interactive testing (portal, Malcolm w/ sample capture, GNS3 3.0.6 web UI, Prometheus/Grafana/Alertmanager, MkDocs wiki) behind one nginx with an internal-CA certificate; every backend on 127.0.0.1. VM grown to 12 GiB. Nothing enabled at boot. Phases 8/13/14 remain NOT STARTED — this is staging. · `inventory/rehearsal-sites-2026-09-12.md`
+- 2026-09-12 · Staging · All five portal sites up on VM 9770 for interactive testing (portal, Malcolm w/ sample capture, GNS3 web UI, Prometheus/Grafana/Alertmanager, MkDocs wiki) behind one nginx with an internal-CA certificate; every backend on 127.0.0.1. VM grown to 12 GiB. Nothing enabled at boot. Phases 8/13/14 remain NOT STARTED — this is staging. · `inventory/rehearsal-sites-2026-09-12.md`
 ```
 
 Change this plan's first line to `> **STATUS: EXECUTED 2026-09-12** — sites running; evidence in \`state/inventory/rehearsal-sites-2026-09-12.md\`.`

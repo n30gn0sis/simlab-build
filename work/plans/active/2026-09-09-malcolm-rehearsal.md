@@ -277,7 +277,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' --max-time 8 https://ghcr.io
 
 Expected: `BLOCKED (~60s)` → egress fails → `OPEN` → `200`. **If status does not return to OPEN unaided, stop and fix the timer.** SSH must stay alive throughout; if it drops, recover via Proxmox noVNC and flush the rules.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit** *(done 2026-09-12)*
 
 ```bash
 git add scripts/r770-airgap-sim.sh tests/airgap-sim.bats
@@ -459,7 +459,7 @@ time ~/r770/scripts/r770-malcolm-deploy.sh load ~/r770/bundle-20260908
 
 Expected: the pull fails; `load` prints `ok` for all 23 tags then `all images present`. **This is the headline result** — proof the bundle can populate an air-gapped daemon.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit** *(done 2026-09-12)*
 
 ```bash
 git add scripts/r770-malcolm-deploy.sh tests/malcolm-deploy.bats
@@ -553,7 +553,7 @@ git commit -m "Record Malcolm arrangement A baseline (Malcolm owns 443)"
 
 **Interfaces:** Consumes Task 3's config file, re-imported unchanged. Produces Malcolm on `127.0.0.1:8443` with host Nginx terminating TLS on 443 for `malcolm.lab`.
 
-- [ ] **Step 1: Write the compose override**
+- [x] **Step 1: Write the compose override** *(done 2026-09-12 — override file does NOT load under `./scripts/start`; replaced by a documented one-line compose edit, see `config/nginx/malcolm.lab.conf` header)*
 
 Create `config/malcolm/docker-compose.override.yml`:
 
@@ -570,7 +570,7 @@ services:
       - "127.0.0.1:9200:9200"
 ```
 
-- [ ] **Step 2: Restart onto the new binding**
+- [x] **Step 2: Restart onto the new binding** *(done 2026-09-12 — `127.0.0.1:8443` only)*
 
 The repo is not checked out on the VM — only `scripts/` is there. Sync `config/` directly (the VM accepts this container's key since 2026-09-11):
 
@@ -592,7 +592,7 @@ ss -ltnp | grep -E ':443|:8443'
 
 Expected: `8443` on `127.0.0.1`, **nothing on `0.0.0.0:443`**. If 443 is still bound, the override was not merged — the `docker compose config` output above shows whether it was.
 
-- [ ] **Step 3: Write the portal vhost**
+- [x] **Step 3: Write the portal vhost** *(done 2026-09-12 — `http2 on;` replaced for nginx 1.24)*
 
 Create `config/nginx/malcolm.lab.conf`:
 
@@ -632,7 +632,7 @@ server {
 }
 ```
 
-- [ ] **Step 4: Install Nginx from the bundle and enable the vhost**
+- [x] **Step 4: Install Nginx from the bundle and enable the vhost** *(done 2026-09-12 — air-gapped, from apt/)*
 
 Installing from `apt/` rather than the internet is the more faithful rehearsal — and it exercises the local-repo half of `import-bundle.md` step 3a:
 
@@ -651,7 +651,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 Expected: `nginx -t` reports syntax ok. If the local-repo install fails for dependencies, note it — that is itself a finding about the curated APT set.
 
-- [ ] **Step 5: The comparison that decides the arrangement**
+- [x] **Step 5: The comparison that decides the arrangement** *(done 2026-09-12 — B works; every redirect names malcolm.lab)*
 
 ```bash
 for p in / /arkime/ /dashboards/ /netbox/ /auth/; do
@@ -664,7 +664,7 @@ sudo tail -30 /var/log/nginx/error.log
 
 Expected: statuses matching arrangement A, and **every `redirect_url` naming `malcolm.lab`, never `127.0.0.1` or `:8443`**. A redirect to `127.0.0.1` means Keycloak is ignoring the forwarded headers — the specific failure this task exists to detect.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit** *(done 2026-09-12)*
 
 ```bash
 git add config/malcolm/docker-compose.override.yml config/nginx/malcolm.lab.conf

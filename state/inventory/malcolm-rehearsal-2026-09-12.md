@@ -86,3 +86,22 @@ Sequence that actually works (the plan's raw `docker compose up` does not — se
 2. `--defaults` alone still opens the TUI menu; unattended needs **`--non-interactive`** (undocumented in the plan and runbook).
 3. **`auth_setup` is a required step** between configure and start (creates htpasswd, TLS certs, keystore, `wise.ini`, …); absent from plan *and* runbook Part 8.
 4. Start with **`./scripts/start`**, not raw `docker compose up` — control.py touches `nginx_ldap.conf`, builds the OpenSearch keystore in a helper container, and fixes permissions first.
+
+## Task 4 — Arrangement B: Malcolm behind the portal (air-gapped, 2026-09-12 21:58–22:04)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| Override mechanism | `docker-compose.override.yml` rebinds 8443 | **Does not work**: `scripts/control.py:429` passes `-f docker-compose.yml`, which disables override auto-loading; the installer has no bind setting (`openPortsSelection` covers other ports only) | FAIL → replaced | `grep -n "'-f'" scripts/control.py` |
+| Rebind that works | Malcolm off 443 | one-line edit `0.0.0.0:443:443/tcp` → `127.0.0.1:8443:443/tcp` in `docker-compose.yml` (re-apply after every installer run); `./scripts/stop && ./scripts/start` | PASS | `sed -i …; diff` |
+| Binding after restart | `127.0.0.1:8443`, nothing on `0.0.0.0:443` | `127.0.0.1:8443` only; 27 services, 26 healthy at +3 min (arkime last) | PASS | `ss -ltnp` |
+| Nginx from the bundle, no network | installs | `nginx 1.24.0-2ubuntu7.17` + `nginx-common` from `apt/`, `apt rc=0`, `BLOCKED` throughout — `import-bundle.md` step 3a local-repo path proven | PASS | `apt-get install ./nginx_*.deb ./nginx-common_*.deb` (sourcelist=/dev/null) |
+| Vhost as planned | `nginx -t` ok | **FAIL**: `unknown directive "http2"` — `http2 on;` needs nginx ≥ 1.25.1; changed to `listen 443 ssl http2;` → `test is successful` | FAIL → fixed | `nginx -t` |
+| Portal bind + cert | `0.0.0.0:443`, `CN=malcolm.lab` | `0.0.0.0:443` + `127.0.0.1:8443`; `subject=CN = malcolm.lab` | PASS | `ss -ltnp; openssl s_client` |
+| Through portal, unauthenticated | 401 | `/` → 401 | PASS | `curl -sk --resolve malcolm.lab:443:127.0.0.1` |
+| Through portal, authenticated | same codes as A | `/`→200 · `/arkime/`→302 · `/dashboards/`→302 · `/netbox/`→200 · `/auth/`→302 · `/readme/`→200 | PASS | same, `-u analyst:…` |
+| Redirect targets | every one names `malcolm.lab`, never `127.0.0.1`/`:8443` | `…@malcolm.lab/arkime/sessions` · `…@malcolm.lab/dashboards/app/dashboards#/view/0ad3…` · `…@malcolm.lab/auth/admin_login.php`; raw `Location:` all relative | **PASS** | `curl -w '%{redirect_url}'; curl -I` |
+| Pages render via portal | titles | `Arkime` · `Malcolm Dashboards` · `Home \| NetBox` | PASS | `curl -L … \| grep '<title>'` |
+| API through both hops | 200 | `/dashboards/api/status` → 200 | PASS | `curl` |
+| Portal error log | 0 errors | `0` `[error\|crit\|emerg]` lines | PASS | `grep -c` |
+| Websocket upgrade on `/dashboards/` | upgrade honoured | **SKIPPED** — vhost carries `Upgrade`/`Connection` passthrough, but no websocket endpoint was identified in Malcolm 26.08 (Dashboards and Arkime use HTTP/XHR); needs a browser session to exercise | SKIPPED | — |
+| Egress during Task 4 | BLOCKED | `BLOCKED (6313s)` at the end | PASS | `sudo r770-airgap-sim.sh status` |

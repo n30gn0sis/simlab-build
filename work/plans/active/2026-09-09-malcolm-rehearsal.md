@@ -441,7 +441,7 @@ Then `chmod +x scripts/r770-malcolm-deploy.sh`.
 Run: `bats tests/malcolm-deploy.bats`
 Expected: `4 tests, 0 failures`.
 
-- [ ] **Step 5: The real offline load — remove the images first, or this proves nothing**
+- [x] **Step 5: The real offline load — remove the images first, or this proves nothing** *(done 2026-09-12 — 23/23 tags, 8m41s, egress BLOCKED; evidence file)*
 
 Run on the VM (`ssh ubuntu@192.168.4.28`), from `~/r770`; the scripts are the copies Task 0 shipped:
 

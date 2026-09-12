@@ -31,3 +31,19 @@ so every `status` call uses `sudo`.
 **Headline:** `bundle-20260908/malcolm/malcolm-images-26.08.0.tar.gz` populates an air-gapped Docker
 daemon completely — the R770 import path is proven at the image layer. Load time 8m41s on 6 vCPU /
 virtio disk; expect similar or better on the R770's NVMe.
+
+## Task 3 step 1 — BLOCKER found and fixed: installer dependencies missing from the bundle (2026-09-12)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| Installer dry-run, air-gapped | a plan of what it would write | `The ruamel.yaml module is required … The python-dotenv module is required … (ERROR) Missing one or more required libraries`, rc 1 (also: `This installer must be run as root`) | **FAIL** | `sudo python3 ./install.py --defaults --dry-run` |
+| Bundle carries them | debs in `apt/` | **none** — not in `apt/`, not in the fetch script `PKGS`, not in manifest or runbook | **FAIL** | `ls bundle-20260908/apt \| grep -iE 'ruamel\|dotenv'` |
+| Fix: fetch script + manifest | packages added | `python3-ruamel.yaml python3-dotenv` added to `PKGS` (`r770-offline-fetch.sh:284`), manifest §1 line added; suite 94/94 | PASS | repo edits |
+| Re-run APT step only | new debs land, nothing else re-fetched | stamp `01-apt.done` cleared; `apt/` 877 → **894** debs (3 target + 14 fresher security debs); every other step skipped on stamp/file | PASS | `BUNDLE_DIR=… r770-offline-fetch.sh` (egress OPEN for this step only) |
+| Manifest + gate | regenerated, PASS WITH WARNINGS | `1634 file(s), 15G`; `RESULT: PASS WITH WARNINGS — 2 warning(s)` (same accepted docs-mirror WARNs + dell/), rc 2 | PASS | `r770-bundle.sh manifest …; verify …` |
+| Install from bundle, air-gapped | both packages install with no network | `BLOCKED (5400s …)`; `Setting up python3-dotenv (1.0.1-1)`, `python3-ruamel.yaml.clib (0.2.8-1build1)`, `python3-ruamel.yaml (0.17.21-1)`; `apt rc=0`; `imports ok 0.17.21` | PASS | `apt-get install ./python3-*.deb` with sourcelist=/dev/null |
+
+**Why this matters:** bundle-20260908 as cut on 09-08 would have failed Malcolm's installer on the R770
+after the media crossed the gap — a full bundle cycle to fix. Caught and repaired on staging; the
+bundle is now correct in place (still named `bundle-20260908`; `bundles.md` row to be amended at close-out).
+Also: `install.py` refuses to run unprivileged — the runbook's Part 8 must say `sudo`.

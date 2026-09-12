@@ -39,6 +39,7 @@ Curated package list (script is authoritative):
 - **Storage/HW:** smartmontools, nvme-cli, ipmitool, edac-utils, lm-sensors
 - **Network/capture/perf:** ethtool, numactl, sysstat, tcpdump, tshark, tcpreplay, iperf3, fio, stress-ng, mtr-tiny, traceroute, dnsutils, net-tools, nmap
 - **Admin:** git, jq, tmux, htop, iotop, curl, wget, vim, lsof, strace, unzip, zip, python3-venv, python3-pip, dpkg-dev, rsync
+- **Malcolm installer:** python3-ruamel.yaml, python3-dotenv — `install.py` imports both and the cloud image ships neither. Added 2026-09-12 after the staging rehearsal hit `Missing one or more required libraries` with bundle-20260908 (`state/inventory/malcolm-rehearsal-2026-09-12.md`)
 - **Kernel tracking:** linux-generic-hwe-24.04
 
 > Curated-bundle limitation (accepted): an unplanned `apt install foo` on the gapped box fails until a package is added here and a new bundle is cut.

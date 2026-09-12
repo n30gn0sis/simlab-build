@@ -279,6 +279,9 @@ PKGS=(
     # admin / tooling
     git jq tmux htop iotop curl wget vim lsof strace unzip zip
     python3-venv python3-pip dpkg-dev rsync
+    # Malcolm's install.py imports these and the cloud image ships neither;
+    # found by the 2026-09-12 staging rehearsal after bundle-20260908 was cut
+    python3-ruamel.yaml python3-dotenv
     # kernel/security update tracking
     linux-generic-hwe-24.04
 )

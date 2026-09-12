@@ -24,7 +24,7 @@ lives. Resource decisions below were made with that in mind.
 | Guest swap | 8 GiB `/swap.img` — the cloud image ships none, and `balloon 0` gives no soft landing |
 | Network | `vmbr0`, virtio, MAC `BC:24:11:97:70:01`, DHCP → **192.168.4.28/22**, gw 192.168.4.1 |
 | Console | default VGA (noVNC) **plus** `serial0 socket` — two independent recovery paths |
-| Auth | key-only, `ubuntu` user, host's `/root/.ssh/id_rsa.pub` injected. **No password anywhere** |
+| Auth | `ubuntu` user. Keys: Proxmox host `/root/.ssh/id_rsa.pub` (injected at build) + LXC 101 session key `claude-lxc101-rehearsal` (added 2026-09-11). **A password was also set on the `ubuntu` user 2026-09-11 via cloud-init** (not recorded here; it was shared in chat — rotate or remove). That cloud-init re-run regenerated the SSH host key; current fingerprint `SHA256:ogM+/UoW+ZUDAKyv82cp9v9iqteeOOO0kdL18nSu63A` |
 | onboot | `0` — never competes for RAM at host boot |
 
 **`backup=0` is load-bearing.** `vzdump` targets `local`, which *is* the 54 GiB PVE root

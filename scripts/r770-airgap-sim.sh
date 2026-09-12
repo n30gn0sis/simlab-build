@@ -122,10 +122,24 @@ cmd_unblock() {
 # BLOCKED only if BOTH paths are closed. A half-applied block is reported as
 # PARTIAL rather than OPEN, because "OPEN" would invite a retry that stacks a
 # second set of rules on top of the first.
+# iptables -C exits 0 (rule present), 1 (rule absent), or something else when
+# it could not ask the kernel at all -- unprivileged is the common one. Only
+# 0 and 1 are answers; anything else must not be read as "absent", or status
+# says OPEN while egress is blocked (seen on the VM, 2026-09-12).
+rule_present() {
+    local rc
+    iptables -C "$@" 2>/dev/null; rc=$?
+    case "$rc" in
+        0) return 0 ;;
+        1) return 1 ;;
+        *) die "cannot query iptables (exit $rc) - status needs root" ;;
+    esac
+}
+
 cmd_status() {
     local out=0 fwd=0
-    iptables -C OUTPUT -m comment --comment "$MARK" -j DROP 2>/dev/null && out=1
-    iptables -C "$DOCKER_CHAIN" -m comment --comment "$MARK" -j DROP 2>/dev/null && fwd=1
+    rule_present OUTPUT -m comment --comment "$MARK" -j DROP && out=1
+    rule_present "$DOCKER_CHAIN" -m comment --comment "$MARK" -j DROP && fwd=1
 
     if [ "$out" = 1 ] && [ "$fwd" = 1 ]; then
         if [ -r "$TIMER" ]; then

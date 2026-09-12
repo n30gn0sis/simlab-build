@@ -1,6 +1,6 @@
 # Malcolm Offline Deployment Rehearsal Implementation Plan
 
-> **STATUS: NOT STARTED.** Requires staging VM 9770 and `bundle-20260908`.
+> **STATUS: IN PROGRESS (refreshed 2026-09-12).** Tasks 1–2 code shipped in `bda58c2` (air-gap simulator) and `e669c6e` (image loader) — their steps 1–4 and 6 are done; **Task 1 step 5 (prove the auto-revert on the real VM) and Task 2 step 5 (the real offline load) have NOT run.** Execution resumes at Task 0 below. Requires staging VM 9770 and `bundle-20260908`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -33,6 +33,9 @@ There is also **no validation criterion for the portal anywhere** — neither bu
 - **Malcolm images are already in the VM's daemon** from the fetch. Task 2 must remove them first or the offline-load test proves nothing.
 - **Evidence discipline** (`.claude/agents/validation-runner.md`): expected value vs observed value, never adjectives; capture the exact command *and* the exact output line; a check that cannot run is **SKIPPED with a reason**, never silently omitted.
 - **No secrets in git** (CLAUDE.md rule 7). Malcolm generates auth material during configure. Never commit anything under `config/*.env`.
+- **The VM is reachable directly from this container** since 2026-09-11 (`ssh ubuntu@192.168.4.28`, key auth; host key `SHA256:ogM+/UoW…` pinned). The Proxmox host is *not* — anything that must run there (`qm list`, media attach) is an operator step.
+- **Before any `docker compose up`:** operator runs `qm list` on the Proxmox host and confirms VMs **100 and 108 are stopped**. Committed memory otherwise exceeds the 29 GiB host and the OOM killer takes this VM's 8 GiB QEMU process.
+- **The VM's `~/r770/scripts/` is stale** (predates both Task 1 and Task 2). Task 0 ships the current copies by `scp` — never via `r770-build-bundle.sh --pack`, which `exec`s a full fetch (observed 2026-09-11, `state/inventory/staging-checks-2026-09-11.md`).
 - **`docker` and `ssh` are behind an `ask` gate** in `.claude/settings.json:39-45` — expect approval prompts.
 - Commit style: imperative, capitalized, no `feat:`/`fix:` prefix.
 
@@ -47,10 +50,48 @@ There is also **no validation criterion for the portal anywhere** — neither bu
 | `config/malcolm/malcolm-config-rehearsal.json` *(new)* | Exported Malcolm config — the replayable artifact. |
 | `config/malcolm/docker-compose.override.yml` *(new)* | Arrangement B: rebinds `nginx-proxy` to `127.0.0.1:8443`. |
 | `config/nginx/malcolm.lab.conf` *(new)* | Portal vhost with the forwarded headers and websocket upgrade Keycloak and Dashboards need. |
-| `state/inventory/malcolm-rehearsal-2026-09-09.md` *(new)* | Evidence table and the arrangement decision. |
+| `state/inventory/malcolm-rehearsal-2026-09-12.md` *(new)* | Evidence table and the arrangement decision. |
 | `docs/plans/r770-network-lab-buildout.md` *(modify §9, §13)* | Reconcile the design against measurement; add the missing portal criterion. |
 
 Follow the house test pattern from `tests/bundle-verify.bats:1-11` (`load helpers/fixtures`, `$BATS_TEST_TMPDIR`, `$BATS_TEST_DIRNAME/../scripts/...`). Reuse `make_bundle` from `tests/helpers/fixtures.bash:6-24` — it already models the exact tarball names the import consumes.
+
+---
+
+### Task 0: Ship the current scripts to the VM and prove the auto-revert
+
+**Files:** none in the repo. Remote: `~/r770/scripts/` on 192.168.4.28.
+
+**Interfaces:** Produces `~/r770/scripts/r770-airgap-sim.sh` and `~/r770/scripts/r770-malcolm-deploy.sh` on the VM at the committed revisions; every later task calls them from there.
+
+- [x] **Step 1: Copy the two scripts** *(done 2026-09-12)*
+
+```bash
+scp -q scripts/r770-airgap-sim.sh scripts/r770-malcolm-deploy.sh ubuntu@192.168.4.28:/home/ubuntu/r770/scripts/
+ssh ubuntu@192.168.4.28 'cd ~/r770/scripts && sha256sum r770-airgap-sim.sh r770-malcolm-deploy.sh'
+sha256sum scripts/r770-airgap-sim.sh scripts/r770-malcolm-deploy.sh
+```
+
+Expected: the two checksum pairs match.
+
+- [x] **Step 2: Prove the auto-revert on the real VM (Task 1 step 5, never run)** *(done 2026-09-12 — see evidence file; found and fixed the unprivileged-status false OPEN)*
+
+```bash
+ssh ubuntu@192.168.4.28 'sudo ~/r770/scripts/r770-airgap-sim.sh block --minutes 1 && sudo ~/r770/scripts/r770-airgap-sim.sh status'
+ssh ubuntu@192.168.4.28 'curl -sS --max-time 5 -o /dev/null -w "%{http_code}\n" https://archive.ubuntu.com/ || echo "egress blocked (correct)"'
+sleep 75
+ssh ubuntu@192.168.4.28 'sudo ~/r770/scripts/r770-airgap-sim.sh status; curl -sS --max-time 5 -o /dev/null -w "%{http_code}\n" https://archive.ubuntu.com/'
+```
+
+Expected: `BLOCKED` then the curl fails; after 75 s `OPEN` unaided and the curl returns `200`. **SSH must stay up throughout** — if any `ssh` in this step hangs, the LAN exemption is wrong: stop and use the Proxmox console.
+
+- [x] **Step 3: Record it** *(done 2026-09-12)*
+
+Append to `state/inventory/malcolm-rehearsal-2026-09-12.md` (create it with a title line) one row: `auto-revert · expected OPEN within 60 s · observed <status output> · PASS/FAIL · <command>`.
+
+```bash
+git add state/inventory/malcolm-rehearsal-2026-09-12.md
+git commit -m "Record the air-gap auto-revert proof on the staging VM"
+```
 
 ---
 
@@ -227,10 +268,10 @@ An untested safety mechanism is worth nothing — this repo has already shipped 
 
 ```bash
 sudo ./scripts/r770-airgap-sim.sh block --minutes 1
-./scripts/r770-airgap-sim.sh status
+sudo ./scripts/r770-airgap-sim.sh status
 curl -sS -o /dev/null --max-time 8 https://ghcr.io && echo "UNEXPECTED: egress open" || echo "egress blocked (expected)"
 sleep 75
-./scripts/r770-airgap-sim.sh status
+sudo ./scripts/r770-airgap-sim.sh status
 curl -sS -o /dev/null -w '%{http_code}\n' --max-time 8 https://ghcr.io
 ```
 
@@ -402,16 +443,18 @@ Expected: `4 tests, 0 failures`.
 
 - [ ] **Step 5: The real offline load — remove the images first, or this proves nothing**
 
+Run on the VM (`ssh ubuntu@192.168.4.28`), from `~/r770`; the scripts are the copies Task 0 shipped:
+
 ```bash
 docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -c '^ghcr.io/idaholab/malcolm/'   # expect 23
 docker rmi $(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep '^ghcr.io/idaholab/malcolm/')
 docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -c '^ghcr.io/idaholab/malcolm/'   # expect 0
 
-sudo ./scripts/r770-airgap-sim.sh block --minutes 60
-./scripts/r770-airgap-sim.sh status
+sudo ~/r770/scripts/r770-airgap-sim.sh block --minutes 60
+sudo ~/r770/scripts/r770-airgap-sim.sh status
 docker pull hello-world && echo "UNEXPECTED: pull worked" || echo "pull blocked (correct)"   # any image: this probes egress, not a pin
 
-time ./scripts/r770-malcolm-deploy.sh load ~/r770/bundle-20260908
+time ~/r770/scripts/r770-malcolm-deploy.sh load ~/r770/bundle-20260908
 ```
 
 Expected: the pull fails; `load` prints `ok` for all 23 tags then `all images present`. **This is the headline result** — proof the bundle can populate an air-gapped daemon.
@@ -432,7 +475,7 @@ real daemon."
 
 ### Task 3: Arrangement A — Malcolm owns 443 (baseline)
 
-**Files:** Create `config/malcolm/malcolm-config-rehearsal.json`, `state/inventory/malcolm-rehearsal-2026-09-09.md`
+**Files:** Create `config/malcolm/malcolm-config-rehearsal.json`, `state/inventory/malcolm-rehearsal-2026-09-12.md`
 
 **Interfaces:** Consumes Task 2's loaded images. Produces a Malcolm install at `~/malcolm` and an exported config Task 4 re-imports **unchanged**, so the two arrangements differ only in the port binding.
 
@@ -489,12 +532,14 @@ Expected: 200/302, not 502/504. **Record every redirect target verbatim** — wh
 
 - [ ] **Step 5: Record the baseline and commit**
 
-Write findings into `state/inventory/malcolm-rehearsal-2026-09-09.md` under "Arrangement A" using the validation-runner format (check · expected · observed · verdict · evidence line).
+Write findings into `state/inventory/malcolm-rehearsal-2026-09-12.md` under "Arrangement A" using the validation-runner format (check · expected · observed · verdict · evidence line).
 
 ```bash
-grep -icE 'password|secret|token|apikey' ~/malcolm-config-rehearsal.json
-cp ~/malcolm-config-rehearsal.json config/malcolm/
-git add config/malcolm/ state/inventory/malcolm-rehearsal-2026-09-09.md
+# on the VM: the export must carry no credentials before it may enter the repo
+ssh ubuntu@192.168.4.28 "grep -icE 'password|secret|token|apikey' ~/malcolm-config-rehearsal.json"
+# staging side: pull it into the repo only if that count was 0
+mkdir -p config/malcolm && scp -q ubuntu@192.168.4.28:/home/ubuntu/malcolm-config-rehearsal.json config/malcolm/
+git add config/malcolm/ state/inventory/malcolm-rehearsal-2026-09-12.md
 git commit -m "Record Malcolm arrangement A baseline (Malcolm owns 443)"
 ```
 
@@ -527,14 +572,13 @@ services:
 
 - [ ] **Step 2: Restart onto the new binding**
 
-The repo is not checked out on the VM — Task 2 only shipped `scripts/`. Sync `config/` the same
-way, through the Proxmox host (the VM is key-only from there):
+The repo is not checked out on the VM — only `scripts/` is there. Sync `config/` directly (the VM accepts this container's key since 2026-09-11):
 
 ```bash
 # from the repo on the staging side:
-tar czf - config/ | ssh root@192.168.4.21 'cat > /tmp/r770-config.tgz'
-ssh root@192.168.4.21 'scp -q /tmp/r770-config.tgz ubuntu@192.168.4.28:/tmp/ && \
-  ssh ubuntu@192.168.4.28 "cd ~/r770 && tar xzf /tmp/r770-config.tgz && ls config/malcolm config/nginx"'
+ssh ubuntu@192.168.4.28 'mkdir -p ~/r770/config'
+scp -qr config/malcolm config/nginx ubuntu@192.168.4.28:/home/ubuntu/r770/config/
+ssh ubuntu@192.168.4.28 'ls ~/r770/config/malcolm ~/r770/config/nginx'
 ```
 
 ```bash
@@ -636,7 +680,7 @@ Keycloak builds redirects from and the websocket upgrade Dashboards needs."
 
 ### Task 5: Decide from evidence, and close the documentation gaps it exposed
 
-**Files:** Modify `state/inventory/malcolm-rehearsal-2026-09-09.md`, `docs/plans/r770-network-lab-buildout.md` (§9, §13), `state/BUILD-STATE.md`
+**Files:** Modify `state/inventory/malcolm-rehearsal-2026-09-12.md`, `docs/plans/r770-network-lab-buildout.md` (§9, §13), `state/BUILD-STATE.md`
 
 - [ ] **Step 1: Write the comparison table**
 
@@ -663,9 +707,9 @@ Note the measured memory footprint and any service that would not stay up on 8 G
 - [ ] **Step 5: Restore the VM and commit**
 
 ```bash
-./scripts/r770-airgap-sim.sh unblock && ./scripts/r770-airgap-sim.sh status   # expect OPEN
+sudo ~/r770/scripts/r770-airgap-sim.sh unblock && sudo ~/r770/scripts/r770-airgap-sim.sh status   # expect OPEN   (on the VM)
 cd ~/malcolm && docker compose --profile malcolm down
-./tests/run.sh                                                                # expect 36 tests, 0 failures
+./tests/run.sh                                                                # expect 92 tests, 0 failures (Tasks 3-5 add none)
 git add state/ docs/plans/r770-network-lab-buildout.md
 git commit -m "Record the Malcolm portal-integration decision from measurement"
 ```
@@ -676,7 +720,7 @@ git commit -m "Record the Malcolm portal-integration decision from measurement"
 
 The rehearsal succeeds when all hold:
 
-1. `./tests/run.sh` — **36 tests, 0 failures** (26 existing + 6 airgap + 4 deploy).
+1. `./tests/run.sh` — **92 tests, 0 failures** (the count as of 2026-09-12; Tasks 3–5 add no tests).
 2. **Auto-revert proven**: `block --minutes 1` returns to `OPEN` unaided, SSH intact throughout.
 3. **Offline load proven**: with egress blocked, `docker pull` fails and `load` reports all 23 tags present.
 4. **Malcolm serves**: the malcolm profile is up, with any service that would not stay up on 8 GiB named in the evidence file.

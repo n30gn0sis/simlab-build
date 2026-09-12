@@ -80,3 +80,31 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"DOCKER-USER"* ]] || [[ "$output" == *"dry run"* ]]
 }
+
+# --- status must never guess ---------------------------------------------------
+# iptables -C exits 4 (not 1) when it cannot query the table at all -- the
+# unprivileged case. Treating that as "rule absent" reports OPEN while egress
+# is actually blocked: observed on the staging VM 2026-09-12, and it is exactly
+# the false pass the simulator exists to prevent.
+
+@test "status refuses to report OPEN when iptables cannot be queried" {
+    unset AIRGAP_DRY_RUN
+    stub="$BATS_TEST_TMPDIR/bin"; mkdir -p "$stub"
+    printf '#!/bin/sh\necho "iptables v1.8: Permission denied (you must be root)" >&2\nexit 4\n' > "$stub/iptables"
+    chmod +x "$stub/iptables"
+    PATH="$stub:$PATH" run "$SCRIPT" status
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" != *"OPEN"* ]]
+    [[ "$output" == *"root"* ]]
+}
+
+@test "status still reports OPEN when iptables answers 'rule absent'" {
+    unset AIRGAP_DRY_RUN
+    stub="$BATS_TEST_TMPDIR/bin"; mkdir -p "$stub"
+    printf '#!/bin/sh\nexit 1\n' > "$stub/iptables"
+    chmod +x "$stub/iptables"
+    PATH="$stub:$PATH" run "$SCRIPT" status
+    [ "$status" -eq 0 ]
+    [[ "$output" == "OPEN" ]]
+}

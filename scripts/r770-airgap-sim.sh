@@ -28,12 +28,27 @@ set -euo pipefail
 LAN="${AIRGAP_LAN:-192.168.4.0/22}"
 DRY="${AIRGAP_DRY_RUN:-0}"
 MARK="r770-airgap-sim"
-TIMER="/run/${MARK}.deadline"
+RUN_DIR="${AIRGAP_RUN_DIR:-/run}"      # tests relocate this; production is /run
+TIMER="$RUN_DIR/${MARK}.deadline"
+PIDFILE="$RUN_DIR/${MARK}.pid"         # the detached auto-revert sleeper
 DOCKER_CHAIN="DOCKER-USER"
 
 die() { echo "r770-airgap-sim: $*" >&2; exit 1; }
 
 apply() { if [ "$DRY" = "1" ]; then echo "iptables $*"; else iptables "$@"; fi; }
+
+# Kill a pending auto-revert sleeper, if any. Without this, block/unblock/block
+# leaves the FIRST sleeper alive and it fires later, silently removing whatever
+# block is current -- which is exactly what happened on 2026-09-12. The sleeper
+# runs as its own session, so killing the group takes the sleep and the shell.
+cancel_sleeper() {
+    [ -r "$PIDFILE" ] || return 0
+    local pid; pid="$(cat "$PIDFILE")"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE"
+}
 
 # Docker creates DOCKER-USER when the daemon starts. If the daemon has never
 # run, create it and jump FORWARD into it ourselves, so the forwarded path is
@@ -90,8 +105,15 @@ cmd_block() {
     if [ "$DRY" != "1" ]; then
         local self
         self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+        cancel_sleeper
         date -d "+${minutes} minutes" +%s > "$TIMER"
-        setsid bash -c "sleep $((minutes*60)); '$self' unblock" >/dev/null 2>&1 &
+        # The sleeper records its own session-leader PID, and removes that
+        # record before calling unblock so unblock does not kill the caller.
+        setsid bash -c "echo \$\$ > '$PIDFILE'; sleep $((minutes*60)); rm -f '$PIDFILE'; '$self' unblock" \
+            </dev/null >/dev/null 2>&1 3>&- &
+        local i=0
+        while [ ! -s "$PIDFILE" ] && [ "$i" -lt 50 ]; do sleep 0.02; i=$((i+1)); done
+        [ -s "$PIDFILE" ] || die "auto-revert sleeper did not start -- refusing to leave the block armed; run unblock"
     fi
 }
 
@@ -115,6 +137,7 @@ cmd_unblock() {
         iptables -D "$DOCKER_CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
     fi
 
+    cancel_sleeper
     rm -f "$TIMER"
     echo "egress restored"
 }

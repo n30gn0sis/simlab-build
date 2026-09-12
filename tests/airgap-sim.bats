@@ -108,3 +108,55 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == "OPEN" ]]
 }
+
+# --- the auto-revert must be cancellable ----------------------------------------
+# The revert is a detached "sleep N; unblock". On 2026-09-12 a block, an unblock
+# and a second block left the FIRST sleeper alive; it fired an hour later and
+# silently removed the second block. Both unblock and a fresh block must kill a
+# pending sleeper, and the sleeper must be findable -- so its PID is recorded.
+# These run the real (non-dry) code path against a stub iptables that accepts
+# everything, with the run dir relocated so nothing touches /run.
+
+stub_iptables() {
+    stub="$BATS_TEST_TMPDIR/bin"; mkdir -p "$stub"
+    # -D must eventually fail (unblock loops "delete until absent"); all else succeeds
+    printf '#!/bin/sh\ncase "$1" in -D) exit 1;; esac\nexit 0\n' > "$stub/iptables"; chmod +x "$stub/iptables"
+    PATH="$stub:$PATH"; export PATH
+    unset AIRGAP_DRY_RUN
+    export AIRGAP_RUN_DIR="$BATS_TEST_TMPDIR/run"; mkdir -p "$AIRGAP_RUN_DIR"
+}
+
+@test "block records the auto-revert sleeper's PID" {
+    stub_iptables
+    run "$SCRIPT" block --minutes 1
+    [ "$status" -eq 0 ]
+    [ -s "$AIRGAP_RUN_DIR/r770-airgap-sim.pid" ]
+    pid=$(cat "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
+    kill -0 "$pid"
+    "$SCRIPT" unblock >/dev/null
+}
+
+@test "unblock kills the pending auto-revert sleeper" {
+    stub_iptables
+    "$SCRIPT" block --minutes 1 >/dev/null
+    pid=$(cat "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
+    kill -0 "$pid"
+    run "$SCRIPT" unblock
+    [ "$status" -eq 0 ]
+    sleep 0.5
+    ! kill -0 "$pid" 2>/dev/null
+    [ ! -e "$AIRGAP_RUN_DIR/r770-airgap-sim.pid" ]
+}
+
+@test "a second block cancels the first block's sleeper before scheduling its own" {
+    stub_iptables
+    "$SCRIPT" block --minutes 1 >/dev/null
+    first=$(cat "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
+    "$SCRIPT" block --minutes 2 >/dev/null
+    second=$(cat "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
+    [ "$first" != "$second" ]
+    sleep 0.5
+    ! kill -0 "$first" 2>/dev/null
+    kill -0 "$second"
+    "$SCRIPT" unblock >/dev/null
+}

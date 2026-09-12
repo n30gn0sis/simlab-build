@@ -47,3 +47,16 @@ virtio disk; expect similar or better on the R770's NVMe.
 after the media crossed the gap — a full bundle cycle to fix. Caught and repaired on staging; the
 bundle is now correct in place (still named `bundle-20260908`; `bundles.md` row to be amended at close-out).
 Also: `install.py` refuses to run unprivileged — the runbook's Part 8 must say `sudo`.
+
+## Air-gap simulator — second defect found and fixed: orphaned auto-revert sleeper (2026-09-12)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| Block held for 90 min after re-block | `BLOCKED` at 21:37 (deadline 22:02) | **`OPEN`**, no deadline file, host `curl` 200, container egress open; no `unblock` in sudo log | **FAIL** | `sudo r770-airgap-sim.sh status; journalctl` |
+| Root cause | — | `block` spawns `setsid bash -c "sleep N; unblock"` and `unblock` never cancels it. Sequence block(60, 20:14) → unblock(20:31) → block(90, 20:32): the 60-min sleeper fired ~21:14 and removed the 90-min block | — | `scripts/r770-airgap-sim.sh:94` (pre-fix) |
+| Fix | sleeper PID recorded; `unblock` and a new `block` kill it | `RUN_DIR/r770-airgap-sim.pid` written by the sleeper itself; `cancel_sleeper` kills the session group; `block` refuses to arm if the sleeper failed to start. 3 bats tests (real code path, stub iptables, relocated run dir) | PASS | suite 94 → **97**, green |
+| Live proof on VM | unblock and re-block each cancel the prior sleeper | `first sleeper cancelled by unblock` · `second sleeper cancelled by re-block` · one pre-fix orphan (PID 19876, `sleep 5400`) killed by hand · `sleepers now: 1` · `BLOCKED (7183s …)` · host `curl` timeout · container `wget` blocked | PASS | see commands in this section |
+
+**What this invalidates:** Task 3's `auth_setup` (~21:25) and first `./scripts/start` (21:33) ran with
+egress open. The image load (Task 2) and the installer configure (21:03) were genuinely blocked. The
+stack is wiped and restarted under the fixed block below; the probes above are superseded.

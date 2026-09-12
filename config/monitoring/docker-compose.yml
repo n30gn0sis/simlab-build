@@ -1,0 +1,66 @@
+# Monitoring stack for the portal (buildout section 10). Every port binds to
+# 127.0.0.1; nginx at monitoring.lab is the only way in. Image TAGS are not
+# written here: OWNERS.md keeps every pin in the fetch script, so the tags
+# come from the bundle's own docker/monitoring-image-list.txt via a .env
+# generated on the host (Task 6 step 5) -- never pull. Grafana's admin
+# password comes from an env file that lives only on the host
+# (~/.monitoring.env), never in git.
+name: monitoring
+services:
+  prometheus:
+    image: ${PROMETHEUS_IMAGE}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.external-url=https://monitoring.lab/prometheus/
+      - --web.route-prefix=/prometheus/
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom-data:/prometheus
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["127.0.0.1:9090:9090"]
+  alertmanager:
+    image: ${ALERTMANAGER_IMAGE}
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --web.external-url=https://monitoring.lab/alertmanager/
+      - --web.route-prefix=/alertmanager/
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports: ["127.0.0.1:9093:9093"]
+  grafana:
+    image: ${GRAFANA_IMAGE}
+    env_file: /home/ubuntu/.monitoring.env          # GF_SECURITY_ADMIN_PASSWORD=...
+    environment:
+      GF_SERVER_ROOT_URL: https://monitoring.lab/
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports: ["127.0.0.1:3000:3000"]
+  cadvisor:
+    image: ${CADVISOR_IMAGE}
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports: ["127.0.0.1:8080:8080"]
+  blackbox:
+    image: ${BLACKBOX_IMAGE}
+    volumes:
+      - ./blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+      - /etc/nginx/ssl/ca.crt:/etc/blackbox_exporter/ca.crt:ro
+    # The .lab names must resolve to the host's nginx from inside the container.
+    extra_hosts:
+      - "portal.lab:host-gateway"
+      - "malcolm.lab:host-gateway"
+      - "gns3.lab:host-gateway"
+      - "monitoring.lab:host-gateway"
+      - "docs.lab:host-gateway"
+    ports: ["127.0.0.1:9115:9115"]
+volumes:
+  prom-data: {}
+  grafana-data: {}

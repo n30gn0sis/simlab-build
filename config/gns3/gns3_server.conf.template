@@ -1,0 +1,17 @@
+; GNS3 server (release pinned by the fetch script) -- sections map to gns3server's ServerConfig (configparser).
+; __PASSWORD__ and __JWT__ are filled on the host from files that never enter git.
+; The DIRECTORY holding this file is GNS3's state dir: it writes gns3_controller.db
+; and gns3_jwt_secret_key beside it, so the dir must be owned by the service user
+; (measured 2026-09-12: root-owned /etc/gns3 -> 'unable to open database file').
+[Server]
+host = 127.0.0.1
+port = 3080
+projects_path = /srv/gns3/projects
+images_path = /srv/gns3/images
+appliances_path = /srv/gns3/appliances
+report_errors = false
+
+[Controller]
+default_admin_username = admin
+default_admin_password = __PASSWORD__
+jwt_secret_key = __JWT__

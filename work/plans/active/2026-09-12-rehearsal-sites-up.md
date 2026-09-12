@@ -1,6 +1,6 @@
 # Rehearsal Sites Up — Implementation Plan
 
-> **STATUS: IN PROGRESS** — started 2026-09-12; Tasks 0–1 done.
+> **STATUS: EXECUTED 2026-09-12** — sites running; evidence in `state/inventory/rehearsal-sites-2026-09-12.md`. Ready to archive under `work/plans/archive/`.
 > Malcolm rehearsal (`work/plans/active/2026-09-09-malcolm-rehearsal.md`, 2026-09-12).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -219,7 +219,7 @@ the snippet; its self-signed pair is gone."
 
 **Interfaces:** Consumes Task 1's cert. Produces Malcolm running (27 services) on `127.0.0.1:8443`, reachable at `https://malcolm.lab/` through the portal, with the `analyst` password at `~/.malcolm-rehearsal-pw` on the VM.
 
-- [ ] **Step 1: Confirm the rebind survived and start with Malcolm's own script**
+- [x] **Step 1: Confirm the rebind survived and start with Malcolm's own script**
 
 ```bash
 ssh ubuntu@192.168.4.28 'cd ~/malcolm/malcolm && grep -n "8443:443" docker-compose.yml && (nohup ./scripts/start </dev/null > ~/malcolm-start-sites-$(date +%Y%m%d).log 2>&1 &) && sleep 240 && docker compose ps --format "{{.Service}} {{.Status}}" | grep -viE "\(healthy\)" || echo "all healthy"; docker compose ps -q | wc -l; ss -ltnp | grep -E ":(443|8443) " | awk "{print \$4}" | sort'
@@ -227,7 +227,7 @@ ssh ubuntu@192.168.4.28 'cd ~/malcolm/malcolm && grep -n "8443:443" docker-compo
 
 Expected: the `8443:443` line at ~1453; after 4 min at most `arkime`/`logstash` still `health: starting`; `27`; `0.0.0.0:443` and `127.0.0.1:8443`.
 
-- [ ] **Step 2: Wait for full health, probe through the portal**
+- [x] **Step 2: Wait for full health, probe through the portal**
 
 ```bash
 ssh ubuntu@192.168.4.28 'sleep 120; cd ~/malcolm/malcolm; docker compose ps --format "{{.Service}} {{.Status}}" | grep -viE "\(healthy\)" || echo "all 27 healthy"; PW=$(cat ~/.malcolm-rehearsal-pw); R="--resolve malcolm.lab:443:127.0.0.1 --cacert /etc/nginx/ssl/ca.crt"; for p in / /arkime/ /dashboards/ /netbox/ /readme/; do curl -s $R -u "analyst:$PW" "https://malcolm.lab$p" -o /dev/null -w "$p %{http_code}\n"; done; free -h | sed -n 2p'
@@ -235,7 +235,7 @@ ssh ubuntu@192.168.4.28 'sleep 120; cd ~/malcolm/malcolm; docker compose ps --fo
 
 Expected: `all 27 healthy`; `/ 200`, `/arkime/ 302`, `/dashboards/ 302`, `/netbox/ 200`, `/readme/ 200` — **with the CA, no `-k`**; memory used ≈ 7.5 Gi of 11–12.
 
-- [ ] **Step 3: Record and commit**
+- [x] **Step 3: Record and commit**
 
 Append a "Task 2" table (health count, five status codes, `free` line, the `ss` binding lines). Commit:
 
@@ -252,7 +252,7 @@ git commit -m "Bring Malcolm back up behind the portal for interactive testing"
 
 **Interfaces:** Consumes Task 2's running stack. Produces `~/sample-YYYYMMDD.pcap` on the VM, ingested, with sessions visible in Arkime and Zeek logs in Dashboards.
 
-- [ ] **Step 1: Discover the interface — never guess it**
+- [x] **Step 1: Discover the interface — never guess it**
 
 ```bash
 ssh ubuntu@192.168.4.28 'ip -o route get 1.1.1.1 | sed -E "s/.* dev ([^ ]+).*/\1/"'
@@ -260,7 +260,7 @@ ssh ubuntu@192.168.4.28 'ip -o route get 1.1.1.1 | sed -E "s/.* dev ([^ ]+).*/\1
 
 Expected: one interface name (the DHCP one, MAC `bc:24:11:97:70:01`). Use it as `IFACE` below.
 
-- [ ] **Step 2: Capture 60 seconds of mixed traffic the VM generates itself**
+- [x] **Step 2: Capture 60 seconds of mixed traffic the VM generates itself**
 
 ```bash
 ssh ubuntu@192.168.4.28 'IFACE=$(ip -o route get 1.1.1.1 | sed -E "s/.* dev ([^ ]+).*/\1/"); OUT=~/sample-$(date +%Y%m%d).pcap
@@ -274,7 +274,7 @@ wait; ls -l "$OUT"; sudo chown ubuntu "$OUT"; tcpdump -nr "$OUT" 2>/dev/null | w
 
 Expected: a `.pcap` of at least a few hundred KB and a packet count in the hundreds or more (DNS, TLS, HTTP, ICMP, some LAN TCP).
 
-- [ ] **Step 3: Hand it to Malcolm the documented way — drop it in the upload directory**
+- [x] **Step 3: Hand it to Malcolm the documented way — drop it in the upload directory**
 
 ```bash
 ssh ubuntu@192.168.4.28 'OUT=$(ls -t ~/sample-*.pcap | head -1); sudo cp "$OUT" ~/malcolm/malcolm/pcap/upload/ && sudo chown 1000:1000 ~/malcolm/malcolm/pcap/upload/$(basename "$OUT") && sleep 150 && ls -l ~/malcolm/malcolm/pcap/upload/ ~/malcolm/malcolm/pcap/processed/ 2>/dev/null | head; docker compose -f ~/malcolm/malcolm/docker-compose.yml logs --since 4m pcap-monitor 2>/dev/null | grep -iE "sample-|processed|error" | tail -5'
@@ -282,7 +282,7 @@ ssh ubuntu@192.168.4.28 'OUT=$(ls -t ~/sample-*.pcap | head -1); sudo cp "$OUT" 
 
 Expected: the file moves from `upload/` to `processed/` (Malcolm's `pcap-monitor` picks it up) within ~2 min.
 
-- [ ] **Step 4: Prove it landed — Arkime sessions and Zeek logs, through the portal**
+- [x] **Step 4: Prove it landed — Arkime sessions and Zeek logs, through the portal**
 
 ```bash
 ssh ubuntu@192.168.4.28 'PW=$(cat ~/.malcolm-rehearsal-pw); R="--resolve malcolm.lab:443:127.0.0.1 --cacert /etc/nginx/ssl/ca.crt"
@@ -292,7 +292,7 @@ echo "indices with docs:"; curl -s $R -u "analyst:$PW" "https://malcolm.lab/mapi
 
 Expected: an Arkime session count `> 0`; at least one `arkime_sessions3-*` and one `malcolm_beats_zeek*`/`zeek` index with a non-zero doc count. If the count is 0 after 5 min, `docker compose logs --since 10m arkime zeek filebeat | tail -40` and record the reason — do not retry blindly.
 
-- [ ] **Step 5: Record and commit**
+- [x] **Step 5: Record and commit**
 
 Append a "Task 3" table (interface, packet count, upload→processed move, session count, index list). Commit:
 
@@ -471,7 +471,7 @@ git commit -m "Build and serve the analyst wiki at docs.lab from the bundled MkD
 
 **Interfaces:** Consumes the five loaded images and Task 1's CA. Produces Grafana at `https://monitoring.lab/` (own login, `admin` / password in `~/.monitoring.env`), Prometheus at `/prometheus/`, Alertmanager at `/alertmanager/` (both behind the shared basic auth), with `node_exporter` installed from the bundle on the host.
 
-- [ ] **Step 1: node_exporter from the bundle (host metrics)**
+- [x] **Step 1: node_exporter from the bundle (host metrics)**
 
 ```bash
 ssh ubuntu@192.168.4.28 'cd ~/r770/bundle-20260908/apt && sudo apt-get -y -o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=/dev/null install ./prometheus-node-exporter_*.deb 2>&1 | grep -E "^(Setting up|E:)"; sudo systemctl start prometheus-node-exporter; sleep 1; curl -s http://127.0.0.1:9100/metrics | grep -c "^node_"'
@@ -479,7 +479,7 @@ ssh ubuntu@192.168.4.28 'cd ~/r770/bundle-20260908/apt && sudo apt-get -y -o Dir
 
 Expected: `Setting up prometheus-node-exporter…`; a count in the hundreds. (The Ubuntu package binds `:9100` on all interfaces; there is no UFW on the VM. Acceptable for the rehearsal; the R770 build restricts it in Phase 14.)
 
-- [ ] **Step 2: Write the compose file**
+- [x] **Step 2: Write the compose file**
 
 `config/monitoring/docker-compose.yml`:
 
@@ -552,7 +552,7 @@ volumes:
   grafana-data: {}
 ```
 
-- [ ] **Step 3: Write the Prometheus, Alertmanager and Blackbox configs**
+- [x] **Step 3: Write the Prometheus, Alertmanager and Blackbox configs**
 
 `config/monitoring/prometheus.yml`:
 
@@ -626,7 +626,7 @@ datasources:
     isDefault: true
 ```
 
-- [ ] **Step 4: Write the vhost**
+- [x] **Step 4: Write the vhost**
 
 `config/nginx/monitoring.lab.conf`:
 
@@ -663,7 +663,7 @@ server {
 }
 ```
 
-- [ ] **Step 5: Create the Grafana secret on the VM, ship, start, verify**
+- [x] **Step 5: Create the Grafana secret on the VM, ship, start, verify**
 
 ```bash
 ssh ubuntu@192.168.4.28 'umask 077; [ -s ~/.monitoring.env ] || echo "GF_SECURITY_ADMIN_PASSWORD=$(openssl rand -base64 18)" > ~/.monitoring.env; mkdir -p ~/r770/config/monitoring/grafana/provisioning/datasources'
@@ -681,7 +681,7 @@ ss -ltnp | grep -E ":(3000|9090|9093|8080|9115) " | awk "{print \$4}" | sort'
 
 Expected: `.env` shows five image refs, each matching a tag already in `docker image ls`; five services `Up`; `<title>Grafana`; `Prometheus Server is Ready. 200`; `OK 200`; targets `prometheus`, `node`, `cadvisor` **up** and five `portal-vhosts` probes (`gns3.lab` will be **down** until Task 7 — expected); all five ports on `127.0.0.1` only. `--pull never` proves no image came from the internet.
 
-- [ ] **Step 6: Record and commit**
+- [x] **Step 6: Record and commit**
 
 ```bash
 ./tests/run.sh | tail -2
@@ -699,7 +699,7 @@ git commit -m "Stand up the monitoring stack behind monitoring.lab from bundled 
 
 **Interfaces:** Consumes the wheelhouse and `python3-venv` from the bundle. Produces `https://gns3.lab/` (GNS3's own JWT login, `admin` / `~/.gns3-admin-pw`), API at `/v3/version` reporting the pinned release. **Scope:** the server and web UI are up; running nodes (dynamips/ubridge/vpcs are not in the bundle) is out of scope and recorded as such.
 
-- [ ] **Step 1: venv + server from the wheelhouse (`--no-index` is load-bearing)**
+- [x] **Step 1: venv + server from the wheelhouse (`--no-index` is load-bearing)**
 
 ```bash
 ssh ubuntu@192.168.4.28 'cd ~/r770/bundle-20260908/apt && sudo apt-get -y -o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=/dev/null install ./python3-venv_*.deb ./python3.12-venv_*.deb ./python3-pip-whl_*.deb ./python3-setuptools-whl_*.deb 2>&1 | grep -E "^(Setting up|E:)" | head -3
@@ -709,7 +709,7 @@ sudo mkdir -p /srv/gns3/{projects,images,appliances} /etc/gns3 /var/log/gns3 && 
 
 Expected: the gns3-server version pinned in the fetch script; `12` definitions. (`python3-venv` is already on this VM from the research step; the command is idempotent.)
 
-- [ ] **Step 2: Write the config template (secrets are substituted on the VM)**
+- [x] **Step 2: Write the config template (secrets are substituted on the VM)**
 
 `config/gns3/gns3_server.conf.template`:
 
@@ -730,7 +730,7 @@ default_admin_password = __PASSWORD__
 jwt_secret_key = __JWT__
 ```
 
-- [ ] **Step 3: Write the vhost**
+- [x] **Step 3: Write the vhost**
 
 `config/nginx/gns3.lab.conf`:
 
@@ -759,7 +759,7 @@ server {
 }
 ```
 
-- [ ] **Step 4: Fill the config on the VM, start under tmux, enable the vhost, verify**
+- [x] **Step 4: Fill the config on the VM, start under tmux, enable the vhost, verify**
 
 ```bash
 ssh ubuntu@192.168.4.28 'mkdir -p ~/r770/config/gns3'
@@ -781,7 +781,7 @@ curl -s $R -H "Authorization: Bearer $TOKEN" https://gns3.lab/v3/computes | pyth
 
 Expected: log shows the server listening on `127.0.0.1:3080` with the config path loaded; `127.0.0.1:3080`; `{"controller_host": …, "version": "<the pinned gns3-server version>"}`; a `<title>` from the bundled web UI; `login: token issued`; `computes: 1` (the local compute). If the login returns no token, check the log for the admin-user creation line — the default password is applied only when the controller DB is first created (`rm -rf ~/.config/GNS3/3.0/` for a clean retry is safe here; nothing is in it yet).
 
-- [ ] **Step 5: Runbook Part 7 assumption, evidence, commit**
+- [x] **Step 5: Runbook Part 7 assumption, evidence, commit**
 
 In `docs/plans/r770-install-runbook.md`, after the line `No \`pip install\` from the internet. The wheelhouse is the index.` add:
 
@@ -806,7 +806,7 @@ git commit -m "Run GNS3 server from the wheelhouse behind gns3.lab"
 **Files:**
 - Modify: `state/inventory/rehearsal-sites-2026-09-12.md`, `state/BUILD-STATE.md` (Log), this plan's status line
 
-- [ ] **Step 1: One pass over every site with the CA, plus the memory picture**
+- [x] **Step 1: One pass over every site with the CA, plus the memory picture**
 
 ```bash
 ssh ubuntu@192.168.4.28 'PW=$(cat ~/.malcolm-rehearsal-pw); C="--cacert /etc/nginx/ssl/ca.crt"
@@ -818,7 +818,7 @@ echo "--- memory:"; free -h | sed -n 2p; docker stats --no-stream --format "{{.N
 
 Expected: five `200` (or `302` for malcolm.lab) with `tls=0`; only `0.0.0.0:443`; five `probe_success 1`; memory used well under 11 GiB.
 
-- [ ] **Step 2: Write the operator section into the evidence file**
+- [x] **Step 2: Write the operator section into the evidence file**
 
 Append:
 
@@ -842,7 +842,7 @@ VMs 100 and 108 must stay stopped on Proxmox while this runs.
 
 (Write the Malcolm line exactly as shown inside an indented code block — the reference guard scans prose, and the accompanying comment says whose script it is.)
 
-- [ ] **Step 3: Build state, plan status, final commit**
+- [x] **Step 3: Build state, plan status, final commit**
 
 Add to `state/BUILD-STATE.md` under `## Log`:
 

@@ -1,0 +1,9 @@
+modules:
+  lab_https:
+    prober: http
+    timeout: 10s
+    http:
+      # 401 counts as 'answers over TLS' -- the probe carries no credentials.
+      valid_status_codes: [200, 302, 401]
+      tls_config:
+        ca_file: /etc/blackbox_exporter/ca.crt

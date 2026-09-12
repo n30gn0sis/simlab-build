@@ -1,0 +1,5 @@
+# Minimal: enough to be 'ready'. Delivery is a Phase 14 decision on the R770.
+route:
+  receiver: "null"
+receivers:
+  - name: "null"

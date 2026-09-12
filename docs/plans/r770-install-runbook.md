@@ -243,6 +243,12 @@ trusting the pool.
 
 No `pip install` from the internet. The wheelhouse is the index.
 
+`python3 -m venv` needs `python3-venv` (+ `python3.12-venv`, `python3-pip-whl`) from the
+curated set installed in Part 3 — without them the venv is created with no `pip` and the
+next line fails with "No such file or directory" (seen on staging 2026-09-12). GNS3 3.x also
+writes its controller database and JWT key **beside its config file**, so the directory
+holding `gns3_server.conf` must be owned by the user the server runs as.
+
 ```bash
 python3 -m venv /opt/gns3
 /opt/gns3/bin/pip install --no-index \

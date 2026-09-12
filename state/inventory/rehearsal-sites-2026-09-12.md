@@ -24,3 +24,19 @@ check · expected · observed · verdict · command. Run over SSH from LXC 101 a
 | Snippets + Malcolm vhost | `nginx -t` ok, reload | `test is successful`; journal `Reloaded nginx.service` | PASS | `nginx -t; systemctl reload nginx` |
 | Served chain (SNI malcolm.lab, CA trusted) | code 0, CN=lab | `Verify return code: 0 (ok)` · `subject=CN = lab` (first probe raced the reload and saw the old cert; second probe correct) | PASS | `openssl s_client -servername malcolm.lab -CAfile ca.crt` |
 | CA handed over | file fetched | `ca.crt` copied to the session scratchpad; operator: `scp ubuntu@192.168.4.28:/etc/nginx/ssl/ca.crt .` | PASS | `scp` |
+
+## Task 4 — portal.lab (2026-09-12)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| vhost enabled | `nginx -t` ok | `test is successful`, reloaded | PASS | `nginx -t; systemctl reload nginx` |
+| Unauthenticated | 401 | `unauth 401` | PASS | `curl --cacert ca.crt --resolve portal.lab:443:127.0.0.1` |
+| Authenticated | landing page | `<title>R770 Lab Portal` | PASS | same, `-u analyst:…` |
+
+## Task 5 — docs.lab (2026-09-12)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| MkDocs build with the bundled image | builds | `Documentation built in 0.27 seconds`; `site/` = `404.html access assets cli-tools gns3 index.html malcolm search sitemap.xml wan` | PASS | `docker run --rm -v $PWD:/docs squidfunk/mkdocs-material:latest build` |
+| Unauthenticated | 401 | `unauth 401` | PASS | `curl … https://docs.lab/` |
+| Authenticated | wiki | `<title>Analyst Guide — R770 Network Lab`; `/malcolm/` → `200` | PASS | same, `-u analyst:…` |

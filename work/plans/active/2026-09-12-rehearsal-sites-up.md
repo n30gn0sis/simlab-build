@@ -310,7 +310,7 @@ git commit -m "Load a sample capture into the rehearsal Malcolm and prove it ind
 
 **Interfaces:** Consumes Task 1's snippets. Produces `https://portal.lab/` (basic auth, `analyst`) linking the five sites.
 
-- [ ] **Step 1: Write the page**
+- [x] **Step 1: Write the page**
 
 `config/portal/index.html`:
 
@@ -344,7 +344,7 @@ git commit -m "Load a sample capture into the rehearsal Malcolm and prove it ind
 </html>
 ```
 
-- [ ] **Step 2: Write the vhost**
+- [x] **Step 2: Write the vhost**
 
 `config/nginx/portal.lab.conf`:
 
@@ -361,7 +361,7 @@ server {
 }
 ```
 
-- [ ] **Step 3: Ship, enable, verify**
+- [x] **Step 3: Ship, enable, verify**
 
 ```bash
 ssh ubuntu@192.168.4.28 'mkdir -p ~/r770/config/portal'
@@ -375,7 +375,7 @@ curl -s $R -u "analyst:$PW" https://portal.lab/ | grep -oE "<title>[^<]*"'
 
 Expected: `test is successful`; `unauth 401`; `<title>R770 Lab Portal`.
 
-- [ ] **Step 4: Record and commit**
+- [x] **Step 4: Record and commit**
 
 Append a "Task 4" table. Commit:
 
@@ -394,7 +394,7 @@ git commit -m "Add the portal.lab landing page"
 
 **Interfaces:** Consumes `docs/analyst-wiki/*.md` (six pages, exist) and the loaded `squidfunk/mkdocs-material:latest` image. Produces `https://docs.lab/` (basic auth).
 
-- [ ] **Step 1: Write the MkDocs config**
+- [x] **Step 1: Write the MkDocs config**
 
 `config/docs/mkdocs.yml` (lives outside the docs dir because MkDocs refuses a config inside `docs_dir`):
 
@@ -422,7 +422,7 @@ nav:
   - CLI tools: cli-tools.md
 ```
 
-- [ ] **Step 2: Write the vhost**
+- [x] **Step 2: Write the vhost**
 
 `config/nginx/docs.lab.conf`:
 
@@ -440,7 +440,7 @@ server {
 }
 ```
 
-- [ ] **Step 3: Ship the sources, build with the bundled image, install, verify**
+- [x] **Step 3: Ship the sources, build with the bundled image, install, verify**
 
 ```bash
 ssh ubuntu@192.168.4.28 'rm -rf ~/r770/wiki && mkdir -p ~/r770/wiki/docs ~/r770/config/docs'
@@ -454,7 +454,7 @@ curl -s $R -u "analyst:$PW" https://docs.lab/ | grep -oE "<title>[^<]*"; curl -s
 
 Expected: `INFO - Documentation built in …`; `site/` holds `index.html` and a dir per page; `test is successful`; `<title>Analyst Guide…` (MkDocs prefixes the page title); `malcolm page 200`. If the build reaches for the internet (it must not with `font: false`), it will still succeed — egress is open — but note it in the evidence.
 
-- [ ] **Step 4: Record and commit**
+- [x] **Step 4: Record and commit**
 
 ```bash
 ./tests/run.sh | tail -2

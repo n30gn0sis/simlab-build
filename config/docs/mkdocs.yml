@@ -1,0 +1,21 @@
+# Built on the VM with the bundled squidfunk/mkdocs-material image:
+#   docker run --rm -v ~/r770/wiki:/docs squidfunk/mkdocs-material:latest build
+# where ~/r770/wiki/mkdocs.yml is this file and ~/r770/wiki/docs/ is docs/analyst-wiki/.
+site_name: Analyst Guide — R770 Network Lab
+site_url: https://docs.lab/
+docs_dir: docs
+site_dir: site
+use_directory_urls: true
+theme:
+  name: material
+  font: false            # no Google Fonts -- the R770 has no internet, and neither should this page
+  features: [navigation.sections, search.highlight]
+plugins: [search]
+markdown_extensions: [admonition, tables, toc]
+nav:
+  - Home: index.md
+  - Access & workspaces: access.md
+  - Malcolm: malcolm.md
+  - GNS3: gns3.md
+  - WAN impairment: wan.md
+  - CLI tools: cli-tools.md

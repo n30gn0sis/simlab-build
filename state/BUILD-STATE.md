@@ -14,7 +14,7 @@
 | R770 SSH target | *`CLAUDE.md` says `ssh r770`; the host calls itself `testbed` at 10.10.10.31 — confirm the alias the operator uses before remote work* |
 | iDRAC | `https://192.168.76.231:443` · DNS `testbed-idrac` · MAC `28:00:af:df:bc:8c` · fw 1.30.20.10 · **IPMI-over-LAN disabled → use Redfish, not `ipmitool -H`** · **reachability from the operator's position NOT yet demonstrated** |
 | Staging host | **VM 9770 `r770-staging`** on Proxmox `proxmox` (192.168.4.21) — Ubuntu 24.04.4, Docker CE 29.8.0, 6 cores / 8 GiB / 400 GiB, at **192.168.4.28**. Built + snapshotted `pre-fetch` 2026-09-04; evidence in `inventory/staging-vm-9770.md`. *(Not this session's container — LXC 101 is a 40 GiB container with no Docker.)* |
-| Current bundle | **`bundle-20260908` BUILT on VM 9770** — 15 GB, 1617 files, `verify` PASS WITH WARNINGS (exit 2), Ubuntu ISO GPG-verified. **Not yet transferred to the R770** — blocked on Dell downloads + licensed appliances + media. See `inventory/bundles.md` |
+| Current bundle | **`bundle-20260908` BUILT on VM 9770, amended 2026-09-12** — 15 GB, 1634 files, `verify` PASS WITH WARNINGS (exit 2), Ubuntu ISO GPG-verified. **Not yet transferred to the R770** — blocked on Dell downloads + licensed appliances + media. See `inventory/bundles.md` |
 
 ## Phases
 
@@ -72,6 +72,8 @@
 | Site transfer-media scan policy | OPEN (operator) |
 
 ## Log
+
+- 2026-09-12 · Malcolm rehearsal (staging, Phase 10 de-risking) · Executed `work/plans/active/2026-09-09-malcolm-rehearsal.md` on VM 9770 under a real air gap: bundle images load offline (23/23, 8m41s); full `malcolm` profile healthy with 132 egress attempts dropped; **Malcolm behind the portal works** (decision recorded in buildout §9/§13, runbook Part 8). Found and fixed: two installer deps missing from the bundle (`d0c95ca`), two air-gap simulator defects (`5ca28dc`, `4e44d0a`), four runbook Part 8 gaps (root, `--non-interactive`, `auth_setup`, Malcolm's `start` script), `http2 on;` unsupported by bundled nginx 1.24. Phase 10 stays NOT STARTED — this was staging. · `inventory/malcolm-rehearsal-2026-09-12.md`
 
 *(append one line per action: date · phase · what happened · evidence file)*
 

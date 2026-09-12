@@ -11,7 +11,7 @@ updates, ET rules and OUI data are only as fresh as the last bundle.
 
 | Date | Bundle | Size | Key versions | `verify` result | WARN dispositions | Courier | Imported on R770 |
 |---|---|---|---|---|---|---|---|
-| 2026-09-08 | `bundle-20260908` | **15 GB**, 1617 files | Malcolm 26.08.0 · Ubuntu 24.04.4 · gns3-server 3.0.6 · FRR 10.7.1 · alertmanager v0.34.0 · cadvisor v0.60.5 (ghcr.io) | **PASS WITH WARNINGS (exit 2)** | 2 docs-mirror WARNs, accepted — see below | not yet transferred | no |
+| 2026-09-08 (amended 2026-09-12) | `bundle-20260908` | **15 GB**, **1634 files** (was 1617) | Malcolm 26.08.0 · Ubuntu 24.04.4 · gns3-server 3.0.6 · FRR 10.7.1 · alertmanager v0.34.0 · cadvisor v0.60.5 (ghcr.io) | **PASS WITH WARNINGS (exit 2)** | 2 docs-mirror WARNs, accepted — see below | not yet transferred | no |
 
 ### bundle-20260908 — build result
 
@@ -47,6 +47,8 @@ Neither touches software, images, or enrichment data — only offline reading ma
 bundle root and covered by its own manifest (1616 → 1617 files), so the documented
 `./r770-bundle.sh verify .` actually runs on the R770. It did not before — the bundle carried no
 verifier. Future bundles get it automatically; the fetch script now does the copy.
+
+**Amended 2026-09-12** — the Malcolm rehearsal found `install.py` needs `python3-ruamel.yaml` and `python3-dotenv`, neither in the curated APT set. Both were added to the fetch script, the APT step alone was re-run on VM 9770 (877 → 894 debs, incl. 14 fresher security debs), the manifest regenerated (1617 → 1634 files) and `verify` re-run: PASS WITH WARNINGS, same two accepted WARNs. The bundle keeps its name. Evidence: `state/inventory/malcolm-rehearsal-2026-09-12.md`.
 
 **Still blocking transfer** (both are `verify` warnings by design, not defects):
 `dell/` holds only README.txt, and the licensed GNS3 appliance set is not inventoried.

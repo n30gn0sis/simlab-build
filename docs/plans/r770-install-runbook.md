@@ -274,9 +274,36 @@ them against what you actually hold.
 sudo mkdir -p /opt/malcolm
 sudo unzip /srv/bundles/bundle-YYYYMMDD/malcolm/*.zip -d /opt/malcolm
 cd /opt/malcolm
-# Malcolm's own installer, shipped inside its zip -- not a script from this repo
-/opt/malcolm/scripts/install.py --defaults \
-    --export-malcolm-config-file /opt/malcolm/malcolm-config.json
+# Malcolm's own installer, shipped inside its zip -- not a script from this repo.
+# Needs root, needs python3-ruamel.yaml + python3-dotenv (in apt/ since
+# 2026-09-12), and needs --non-interactive or it opens a TUI menu and waits.
+sudo python3 /opt/malcolm/scripts/install.py --non-interactive --defaults --configure \
+    --skip-splash --export-malcolm-config-file /opt/malcolm/malcolm-config.json
+```
+
+The installer extracts Malcolm to `/opt/malcolm/malcolm` and sizes the JVM
+heaps to the host by itself (staging: OpenSearch 4g on an 8 GiB VM); check
+`config/opensearch.env` before trusting the default on 128 GB.
+
+### 8.1a Generate the auth material — not optional
+
+`--configure` writes the `.env` files and nothing else. `htpasswd`, the TLS
+certs, the OpenSearch keystore and `arkime/etc/wise.ini` all come from
+`auth_setup`, and compose refuses to start without them (bind sources missing).
+Unattended form, hashes generated on the box:
+
+```bash
+cd /opt/malcolm/malcolm
+H_SSL=$(openssl passwd -1 "$ADMIN_PW")
+H_HT=$(docker run --rm --entrypoint sh ghcr.io/idaholab/malcolm/nginx-proxy:<tag> \
+         -c "htpasswd -bnBC 10 '' '$ADMIN_PW'" | tr -d ':\n')
+./scripts/auth_setup --auth-noninteractive --auth-method basic \
+    --auth-admin-username analyst \
+    --auth-admin-password-openssl "$H_SSL" --auth-admin-password-htpasswd "$H_HT" \
+    --auth-generate-webcerts --auth-generate-fwcerts \
+    --auth-generate-netbox-passwords --auth-generate-valkey-password \
+    --auth-generate-postgres-password --auth-generate-opensearch-internal-creds \
+    --auth-generate-keycloak-db-password
 ```
 
 Exporting the configuration makes it a replayable artifact rather than a
@@ -295,16 +322,24 @@ the buildout plan §8, and record the value you chose.
 
 ### 8.4 Bring it up
 
+Take Malcolm off `0.0.0.0:443` first so the portal can own it (buildout §9;
+re-apply after every installer run — the installer regenerates the file, and a
+`docker-compose.override.yml` is ignored because `control.py` passes `-f`):
+
 ```bash
-docker compose --profile malcolm up -d
-docker compose ps                       # every service healthy, none restarting
+cd /opt/malcolm/malcolm
+sed -i 's|^    - 0.0.0.0:443:443/tcp$|    - 127.0.0.1:8443:443/tcp|' docker-compose.yml
+./scripts/start        # NOT raw 'docker compose up': control.py creates the
+                       # keystore and touches files compose needs first
+docker compose ps      # 27 services; arkime and logstash are the last to go healthy
+ss -ltnp | grep -E ':(443|8443) '    # expect 127.0.0.1:8443 and nothing on 0.0.0.0:443
 ```
 
-**Unresolved integration — read before Part 10.** Malcolm's stock compose
-publishes `0.0.0.0:443`, while the portal design puts every web service on
-localhost behind Nginx. How the two meet is not yet decided. The rehearsal in
-`work/plans/active/2026-09-09-malcolm-rehearsal.md` exists to settle it by
-experiment. Until it has run, do not assume Malcolm will sit behind the portal.
+**Integration decided by measurement (2026-09-12, staging).** Malcolm sits
+behind the portal: `config/nginx/malcolm.lab.conf` proxies `malcolm.lab` to
+`127.0.0.1:8443`; every site answered identically to direct access, every
+redirect stayed relative, and the stack came up healthy with all egress
+dropped. Evidence: `state/inventory/malcolm-rehearsal-2026-09-12.md`.
 
 ### 8.5 Never commit what this step generates
 

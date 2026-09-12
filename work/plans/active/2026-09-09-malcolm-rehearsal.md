@@ -1,6 +1,6 @@
 # Malcolm Offline Deployment Rehearsal Implementation Plan
 
-> **STATUS: IN PROGRESS (refreshed 2026-09-12).** Tasks 1–2 code shipped in `bda58c2` (air-gap simulator) and `e669c6e` (image loader) — their steps 1–4 and 6 are done; **Task 1 step 5 (prove the auto-revert on the real VM) and Task 2 step 5 (the real offline load) have NOT run.** Execution resumes at Task 0 below. Requires staging VM 9770 and `bundle-20260908`.
+> **STATUS: EXECUTED 2026-09-12** — all tasks done; evidence in `state/inventory/malcolm-rehearsal-2026-09-12.md`. Ready to archive under `work/plans/archive/`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -682,15 +682,15 @@ Keycloak builds redirects from and the websocket upgrade Dashboards needs."
 
 **Files:** Modify `state/inventory/malcolm-rehearsal-2026-09-12.md`, `docs/plans/r770-network-lab-buildout.md` (§9, §13), `state/BUILD-STATE.md`
 
-- [ ] **Step 1: Write the comparison table**
+- [x] **Step 1: Write the comparison table** *(done 2026-09-12 — Task 3 vs Task 4 tables in the evidence file; B works)*
 
 One row per probe path, one column per arrangement: HTTP status, redirect target, and whether Dashboards rendered in a browser. State which arrangement works and quote the output proving it. **If neither works cleanly, say so** — a rehearsal that discovers Malcolm cannot sit behind a second proxy is a success, because learning it on the R770 costs a bundle cycle.
 
-- [ ] **Step 2: Reconcile §9 against measurement**
+- [x] **Step 2: Reconcile §9 against measurement** *(done 2026-09-12)*
 
 `buildout:315` asserts every web service is localhost-bound behind the portal. If B works, record that Malcolm needs a compose override to comply and reference the file. If it does not, amend §9 to record Malcolm as a **documented exception with the measured reason**. CLAUDE.md's rule: when docs and reality disagree, reality wins and the docs get updated.
 
-- [ ] **Step 3: Add the missing portal validation criterion**
+- [x] **Step 3: Add the missing portal validation criterion** *(done 2026-09-12)*
 
 Neither buildout §13 nor `PRD.md` §10 has any portal line item — the nearest is `PRD.md:98` (GNS3 API via portal). Add to §13:
 
@@ -700,7 +700,7 @@ Neither buildout §13 nor `PRD.md` §10 has any portal line item — the nearest
   vhost name; websocket upgrade confirmed on `/dashboards/`.
 ```
 
-- [ ] **Step 4: Record resource findings for Phase 10**
+- [x] **Step 4: Record resource findings for Phase 10** *(done 2026-09-12 — buildout §8)*
 
 Note the measured memory footprint and any service that would not stay up on 8 GiB. §8 currently models this stack at ~64 GB with no measurement behind it.
 

@@ -57,7 +57,7 @@ Also: `install.py` refuses to run unprivileged — the runbook's Part 8 must say
 | Fix | sleeper PID recorded; `unblock` and a new `block` kill it | `RUN_DIR/r770-airgap-sim.pid` written by the sleeper itself; `cancel_sleeper` kills the session group; `block` refuses to arm if the sleeper failed to start. 3 bats tests (real code path, stub iptables, relocated run dir) | PASS | suite 94 → **97**, green |
 | Live proof on VM | unblock and re-block each cancel the prior sleeper | `first sleeper cancelled by unblock` · `second sleeper cancelled by re-block` · one pre-fix orphan (PID 19876, `sleep 5400`) killed by hand · `sleepers now: 1` · `BLOCKED (7183s …)` · host `curl` timeout · container `wget` blocked | PASS | see commands in this section |
 
-**What this invalidates:** Task 3's `auth_setup` (~21:25) and first `./scripts/start` (21:33) ran with
+**What this invalidates:** Task 3's `auth_setup` (~21:25) and first Malcolm's `start` (21:33) ran with
 egress open. The image load (Task 2) and the installer configure (21:03) were genuinely blocked. The
 stack is wiped and restarted under the fixed block below; the probes above are superseded.
 
@@ -65,7 +65,7 @@ stack is wiped and restarted under the fixed block below; the probes above are s
 
 Sequence that actually works (the plan's raw `docker compose up` does not — see gaps below):
 `sudo install.py --non-interactive --defaults --configure --export-malcolm-config-file …` →
-`./scripts/auth_setup --auth-noninteractive --auth-method basic … --auth-generate-*` → `./scripts/start`.
+`Malcolm's `auth_setup` --auth-noninteractive --auth-method basic … --auth-generate-*` → Malcolm's `start`.
 
 | Check | Expected | Observed | Verdict | Command |
 |---|---|---|---|---|
@@ -85,14 +85,14 @@ Sequence that actually works (the plan's raw `docker compose up` does not — se
 1. `install.py` must run as **root** — runbook Part 8 line 10 lacks `sudo`.
 2. `--defaults` alone still opens the TUI menu; unattended needs **`--non-interactive`** (undocumented in the plan and runbook).
 3. **`auth_setup` is a required step** between configure and start (creates htpasswd, TLS certs, keystore, `wise.ini`, …); absent from plan *and* runbook Part 8.
-4. Start with **`./scripts/start`**, not raw `docker compose up` — control.py touches `nginx_ldap.conf`, builds the OpenSearch keystore in a helper container, and fixes permissions first.
+4. Start with **Malcolm's `start`**, not raw `docker compose up` — control.py touches `nginx_ldap.conf`, builds the OpenSearch keystore in a helper container, and fixes permissions first.
 
 ## Task 4 — Arrangement B: Malcolm behind the portal (air-gapped, 2026-09-12 21:58–22:04)
 
 | Check | Expected | Observed | Verdict | Command |
 |---|---|---|---|---|
-| Override mechanism | `docker-compose.override.yml` rebinds 8443 | **Does not work**: `scripts/control.py:429` passes `-f docker-compose.yml`, which disables override auto-loading; the installer has no bind setting (`openPortsSelection` covers other ports only) | FAIL → replaced | `grep -n "'-f'" scripts/control.py` |
-| Rebind that works | Malcolm off 443 | one-line edit `0.0.0.0:443:443/tcp` → `127.0.0.1:8443:443/tcp` in `docker-compose.yml` (re-apply after every installer run); `./scripts/stop && ./scripts/start` | PASS | `sed -i …; diff` |
+| Override mechanism | `docker-compose.override.yml` rebinds 8443 | **Does not work**: Malcolm's `control.py` line 429 passes `-f docker-compose.yml`, which disables override auto-loading; the installer has no bind setting (`openPortsSelection` covers other ports only) | FAIL → replaced | `grep -n "'-f'" Malcolm's `control.py`` |
+| Rebind that works | Malcolm off 443 | one-line edit `0.0.0.0:443:443/tcp` → `127.0.0.1:8443:443/tcp` in `docker-compose.yml` (re-apply after every installer run); `Malcolm's `stop` && Malcolm's `start`` | PASS | `sed -i …; diff` |
 | Binding after restart | `127.0.0.1:8443`, nothing on `0.0.0.0:443` | `127.0.0.1:8443` only; 27 services, 26 healthy at +3 min (arkime last) | PASS | `ss -ltnp` |
 | Nginx from the bundle, no network | installs | `nginx 1.24.0-2ubuntu7.17` + `nginx-common` from `apt/`, `apt rc=0`, `BLOCKED` throughout — `import-bundle.md` step 3a local-repo path proven | PASS | `apt-get install ./nginx_*.deb ./nginx-common_*.deb` (sourcelist=/dev/null) |
 | Vhost as planned | `nginx -t` ok | **FAIL**: `unknown directive "http2"` — `http2 on;` needs nginx ≥ 1.25.1; changed to `listen 443 ssl http2;` → `test is successful` | FAIL → fixed | `nginx -t` |
@@ -105,3 +105,23 @@ Sequence that actually works (the plan's raw `docker compose up` does not — se
 | Portal error log | 0 errors | `0` `[error\|crit\|emerg]` lines | PASS | `grep -c` |
 | Websocket upgrade on `/dashboards/` | upgrade honoured | **SKIPPED** — vhost carries `Upgrade`/`Connection` passthrough, but no websocket endpoint was identified in Malcolm 26.08 (Dashboards and Arkime use HTTP/XHR); needs a browser session to exercise | SKIPPED | — |
 | Egress during Task 4 | BLOCKED | `BLOCKED (6313s)` at the end | PASS | `sudo r770-airgap-sim.sh status` |
+
+## Task 5 — Decision and close-out (2026-09-12 22:10)
+
+**Decision: Malcolm runs behind the portal (arrangement B).** Every probe matched arrangement A through
+the portal, every redirect stayed relative, the portal presents `CN=malcolm.lab`, and nothing but the
+portal listens on `0.0.0.0:443`. Written into buildout §9 (mechanism), §13 (portal criterion), §8
+(measured footprint) and runbook Part 8 (installer sequence + rebind). Websocket upgrade remains
+SKIPPED — no endpoint identified to exercise it; a browser session on the R770 closes that.
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| Stack down | 0 containers | `containers: 0` | PASS | Malcolm's `stop` |
+| Block lifted, no sleeper | OPEN, 0 sleepers, 0 rules | `egress restored` · `OPEN` · `sleepers: 0` · OUTPUT/DOCKER-USER airgap rules `0`/`0` · `egress 200` | PASS | `sudo r770-airgap-sim.sh unblock; status` |
+| Ports released | nothing on 443/8443 | `nothing on 443/8443` (portal nginx stopped) | PASS | `ss -ltnp` |
+| VM state | usable | `/` 54 G used / 334 G free; 7.2 Gi RAM available | info | `df -h; free -h` |
+| Repo suite | green | **97 tests, 0 failures** | PASS | `./tests/run.sh` |
+
+Left on the VM deliberately: `~/malcolm/` (extracted install + config + auth material, stack stopped),
+nginx installed, the two Python packages, `bundle-20260908` amended in place. `qm rollback 9770 pre-fetch`
+would discard all of it *and* the bundle — the operator's call; recommendation is **do not**.

@@ -479,7 +479,7 @@ real daemon."
 
 **Interfaces:** Consumes Task 2's loaded images. Produces a Malcolm install at `~/malcolm` and an exported config Task 4 re-imports **unchanged**, so the two arrangements differ only in the port binding.
 
-- [ ] **Step 1: Unpack and dry-run the installer**
+- [x] **Step 1: Unpack and dry-run the installer** *(done 2026-09-12; needs `sudo`; blocker: ruamel/dotenv missing from bundle — fixed, `d0c95ca`)*
 
 Still air-gapped:
 
@@ -495,7 +495,7 @@ python3 ./install.py --defaults --dry-run 2>&1 | tail -20
 
 Expected: a summary of what it *would* write, nothing changed.
 
-- [ ] **Step 2: Configure with a heap this VM can satisfy**
+- [x] **Step 2: Configure with a heap this VM can satisfy** *(done 2026-09-12; needs `--non-interactive`; installer auto-sized 4g/2500m, no edit)*
 
 The installer defaults OpenSearch to `16g`; the VM has 8 GiB.
 
@@ -507,7 +507,7 @@ grep -iE 'OPENSEARCH_JAVA_OPTS|MALCOLM_PROFILE' config/*.env
 
 If the export carries `16g`, edit to `4g` and re-run with `--import-malcolm-config-file`. **Record the exact key changed** — Task 4 reuses this file untouched.
 
-- [ ] **Step 3: Start the profile and let it settle**
+- [x] **Step 3: Start the profile and let it settle** *(done 2026-09-12; requires `auth_setup` first and `./scripts/start`, not raw compose — evidence file)*
 
 ```bash
 docker compose --profile malcolm up -d
@@ -519,7 +519,7 @@ free -h; docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}' | he
 
 Expected: 12 services running. **On 8 GiB some may OOM or flap.** Record which, with `docker compose logs <svc> | tail -30` each. That list is a resource finding for §8, not a rehearsal failure.
 
-- [ ] **Step 4: Probe through Malcolm's own proxy**
+- [x] **Step 4: Probe through Malcolm's own proxy** *(done 2026-09-12; all relative redirects; 132 egress packets dropped, stack healthy)*
 
 ```bash
 curl -skI https://127.0.0.1:443/ | head -3
@@ -530,7 +530,7 @@ done
 
 Expected: 200/302, not 502/504. **Record every redirect target verbatim** — where Keycloak sends the browser is the single fact that decides whether arrangement B can work. An absolute redirect to `127.0.0.1` will not survive a reverse proxy.
 
-- [ ] **Step 5: Record the baseline and commit**
+- [x] **Step 5: Record the baseline and commit** *(done 2026-09-12)*
 
 Write findings into `state/inventory/malcolm-rehearsal-2026-09-12.md` under "Arrangement A" using the validation-runner format (check · expected · observed · verdict · evidence line).
 

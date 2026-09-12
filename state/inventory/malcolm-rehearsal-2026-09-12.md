@@ -60,3 +60,29 @@ Also: `install.py` refuses to run unprivileged — the runbook's Part 8 must say
 **What this invalidates:** Task 3's `auth_setup` (~21:25) and first `./scripts/start` (21:33) ran with
 egress open. The image load (Task 2) and the installer configure (21:03) were genuinely blocked. The
 stack is wiped and restarted under the fixed block below; the probes above are superseded.
+
+## Task 3 — Arrangement A: Malcolm owns 443 (air-gapped, 2026-09-12 21:50–21:57)
+
+Sequence that actually works (the plan's raw `docker compose up` does not — see gaps below):
+`sudo install.py --non-interactive --defaults --configure --export-malcolm-config-file …` →
+`./scripts/auth_setup --auth-noninteractive --auth-method basic … --auth-generate-*` → `./scripts/start`.
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| Block active for the whole start | BLOCKED before, during, after | `BLOCKED (7071s)` at 21:50:46 → `BLOCKED (6725s)` at 21:56:32; one sleeper | PASS | `sudo r770-airgap-sim.sh status` |
+| Installer sizes heap for the host | 16g default overridden | installer **auto-sized** `OPENSEARCH_JAVA_OPTS -Xmx4g`, `LS_JAVA_OPTS -Xmx2500m`; export carries `osMemory: 4g`, `lsMemory: 2500m` — no manual edit | PASS | `grep -h JAVA_OPTS config/*.env` |
+| Auth mode | — | `NGINX_AUTH_MODE=basic` (installer default); Keycloak container runs but is not in the auth path | info | `grep NGINX_AUTH_MODE config/nginx.env` |
+| Stack health | 12+ services, none failing | **27 services, 27 healthy** at +6 min (arkime, logstash last to pass) | PASS | `docker compose ps` |
+| Bind | `0.0.0.0:443` | `0.0.0.0:443` (nginx-proxy) | PASS | `ss -ltnp` |
+| Unauthenticated | 401 everywhere | `/ /arkime/ /dashboards/ /netbox/ /auth/` → **401** | PASS | `curl -sk …` |
+| Authenticated (basic) | 200/302, no 5xx | `/`→200 · `/arkime/`→302 · `/dashboards/`→302 · `/netbox/`→**200** · `/auth/`→302 · `/readme/`→200 | PASS | `curl -sk -u analyst:… -w '%{http_code}'` |
+| Pages render | real titles | `Arkime` · `Malcolm Dashboards` · `Home \| NetBox` | PASS | `curl -L … \| grep '<title>'` |
+| Redirect targets (the arrangement-B question) | not absolute to 127.0.0.1 | **all relative**: `Location: sessions` (Arkime), `/dashboards/app/home` (Dashboards), `admin_login.php` (htadmin); unchanged with `Host: malcolm.lab` | PASS | `curl -skI … \| grep -i location` |
+| Egress attempts by the stack | some, all dropped | **132 packets dropped** at `DOCKER-USER`; stack healthy regardless | PASS | `iptables -L DOCKER-USER -v -n` |
+| Memory (8 GiB VM) | tight | used 7.4 Gi / 7.8 Gi, 332 Mi available; opensearch 4.60 GiB, logstash 1.72 GiB, netbox 247 MiB, dashboards 98 MiB, arkime 56 MiB | info → §8 | `free -h; docker stats` |
+
+**Plan / runbook gaps found in Task 3** (each cost a failed step):
+1. `install.py` must run as **root** — runbook Part 8 line 10 lacks `sudo`.
+2. `--defaults` alone still opens the TUI menu; unattended needs **`--non-interactive`** (undocumented in the plan and runbook).
+3. **`auth_setup` is a required step** between configure and start (creates htpasswd, TLS certs, keystore, `wise.ini`, …); absent from plan *and* runbook Part 8.
+4. Start with **`./scripts/start`**, not raw `docker compose up` — control.py touches `nginx_ldap.conf`, builds the OpenSearch keystore in a helper container, and fixes permissions first.

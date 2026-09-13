@@ -40,17 +40,6 @@ Build phases 1–16 and their dependency order are in `PRD.md` §9, tracked auth
 
 After executing a phase: save evidence (command output) under `state/inventory/`, update `state/BUILD-STATE.md`, and commit.
 
-## Slash commands
-
-- `/discover` — run/ingest Phase 1 read-only discovery (`scripts/r770-precheck.sh`)
-- `/phase <n>` — plan or execute build phase n with all gates
-- `/bundle` — cut or refresh the offline bundle on this staging host
-- `/import-bundle` — verify + import a bundle on the R770 (gated)
-- `/validate [area]` — run the validation suite
-- `/wan` — WAN impairment profile work (apply/show/clear discipline)
-- `/capture-check` — capture drop accounting from all three sources
-- `/status` — report build state and next actions
-
 ## Subagents
 
 Use `safety-reviewer` before executing anything destructive or network-touching; `discovery-analyst` to parse precheck output; `bundle-builder` for supply-chain work; `validation-runner` after each phase; `capture-engineer` for capture-path design and drop analysis.

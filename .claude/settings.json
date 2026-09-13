@@ -37,24 +37,8 @@
       "Read(**/*secret*)"
     ],
     "ask": [
-      "Bash(ssh:*)",
-      "Bash(scp:*)",
-      "Bash(rsync:*)",
-      "Bash(sudo:*)",
-      "Bash(docker:*)",
-      "Bash(./scripts/r770-offline-fetch.sh:*)"
+      "Bash(rsync:*)"
     ]
-  },
-  "enabledPlugins": {
-    "superpowers@superpowers-marketplace": true
-  },
-  "extraKnownMarketplaces": {
-    "superpowers-marketplace": {
-      "source": {
-        "source": "github",
-        "repo": "obra/superpowers-marketplace"
-      }
-    }
   },
   "hooks": {
     "SessionStart": [
@@ -67,5 +51,17 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "superpowers@superpowers-marketplace": true
+  },
+  "extraKnownMarketplaces": {
+    "superpowers-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "obra/superpowers-marketplace"
+      },
+      "autoUpdate": true
+    }
   }
 }

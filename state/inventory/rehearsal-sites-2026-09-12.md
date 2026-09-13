@@ -113,3 +113,23 @@ check · expected · observed · verdict · command. Run over SSH from LXC 101 a
     tmux new -d -s gns3 "/opt/gns3/bin/gns3server --config /etc/gns3/gns3_server.conf --logfile /var/log/gns3/server.log"
 
 VMs 100 and 108 must stay stopped on Proxmox while this runs.
+
+## Teardown (2026-09-12, operator-confirmed scope: remove the test, keep the bundle)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| Malcolm | wiped, dir removed | Malcolm's `wipe` → 0 containers; `~/malcolm`, `~/.malcolm-rehearsal-pw`, exported config, `~/GNS3` removed | PASS | `wipe; rm -rf` |
+| Monitoring | down, volumes gone | `compose down -v` → 8 removed; `~/.monitoring.env` removed | PASS | `docker compose down -v` |
+| GNS3 | stopped, removed | `gns3server` outlived its tmux session (still on `:3080`) → `pkill`; `/opt/gns3 /etc/gns3 /srv/gns3 /var/log/gns3`, pw + jwt files removed | PASS | `pkill -f gns3server; rm -rf` |
+| nginx | sites/CA gone, service stopped | five vhosts, snippets, `ssl/`, `lab.htpasswd`, `/srv/www` removed; default site relinked; `nginx -t` ok; stopped (package left installed) | PASS | `rm; nginx -t; systemctl stop nginx` |
+| node_exporter | purged | `node_exporter purged` | PASS | `apt-get purge` |
+| Test files | gone | `~/lab-ca`, `~/r770/config`, `~/r770/wiki`, sample PCAP, start logs, `scripts-20260911/` (partial `bundle-20260911`), packed builder, apt-refresh log removed | PASS | `rm -rf` |
+| Docker leftovers | 0 volumes, 0 containers | 16 anonymous dangling volumes pruned → `volumes: 0 containers: 0`; **38 images kept** (23 Malcolm + monitoring, from the bundle) | PASS | `docker volume prune -f` |
+| Listeners | none of the test ports | `no test listeners` | PASS | `ss -ltnp` |
+| Bundle | intact | `bundle-20260908`: 13 entries, `verify` → `PASS WITH WARNINGS — 2 warning(s)` (the accepted pair) | PASS | `r770-bundle.sh verify` |
+| VM at rest | — | disk 51 G used / 336 G free; mem 665 Mi used / 11 Gi available; VM still 12 GiB (Proxmox) | info | `df; free` |
+
+**Kept on purpose:** `bundle-20260908` (amended, the only correct copy), `~/r770/scripts/` (current), the loaded images,
+and the bundle-installed `easy-rsa`, `python3-venv`, `python3-ruamel.yaml`, `python3-dotenv`, `nginx` packages.
+**Operator follow-ups:** remove the imported `R770 Lab CA (staging rehearsal)` from the browser trust store — the CA
+no longer exists; drop the `.lab` hosts line; optionally `qm set 9770 --memory 8192` to return host RAM.

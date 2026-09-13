@@ -1,6 +1,6 @@
 # Rehearsal Sites Up — Implementation Plan
 
-> **STATUS: EXECUTED 2026-09-12** — sites running; evidence in `state/inventory/rehearsal-sites-2026-09-12.md`. Ready to archive under `work/plans/archive/`.
+> **STATUS: EXECUTED 2026-09-12; TORN DOWN 2026-09-12** — evidence (incl. teardown) in `state/inventory/rehearsal-sites-2026-09-12.md`. Ready to archive under `work/plans/archive/`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

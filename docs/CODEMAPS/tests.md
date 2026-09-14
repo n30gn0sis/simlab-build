@@ -2,7 +2,7 @@
 # Tests — what each guard protects
 
 `./tests/run.sh` = shellcheck on every script + `bats tests/*.bats`. Offline, read-only, synthetic
-fixtures only (`tests/helpers/fixtures.bash`, versions are `0.0.0-fixture`). 97 tests; CI runs the same command.
+fixtures only (`tests/helpers/fixtures.bash`, versions are `0.0.0-fixture`). 100 tests; CI runs the same command.
 
 | File | Tests | Guards |
 |---|---|---|
@@ -16,7 +16,7 @@ fixtures only (`tests/helpers/fixtures.bash`, versions are `0.0.0-fixture`). 97 
 | `lint.bats` | 4 | new scripts and hooks shellcheck-clean with no exclusions, legacy scripts clean bar accepted house-style codes, every script parses |
 | `no-credentials.bats` | 4 | `.gitignore` keeps keys/tokens/pcaps out; no secret-looking strings tracked |
 | `no-legacy-manifest.bats` | 4 | the defective manifest recipe cannot return |
-| `references.bats` | 3 | every repo path named in `.claude/` or under `state/` exists; every script a slash command names is executable |
+| `references.bats` | 6 | every repo path named in `.claude/` or under `state/` exists; every script a slash command names is executable; every `PRD.md §N` cited by `CLAUDE.md`, `OWNERS.md` or `.claude/` is a real heading (self-tested on fixtures) |
 
 Rules the suite enforces on new content:
 - Write "Malcolm's start script", not a `scripts/start` path, under `state/` (references guard).

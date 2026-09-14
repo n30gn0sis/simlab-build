@@ -139,3 +139,11 @@ order() { cut -d' ' -f1 "$ORDER" | tr '\n' ' '; }
     run git check-ignore -q r770-bundle-builder.sh
     [ "$status" -eq 0 ]
 }
+
+@test "--only and --skip are handed to the fetch verbatim, and nothing else changes" {
+    run "$SCRIPT" --only apt,iso --skip docs
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q '^fetch --only apt,iso --skip docs$' "$ORDER"
+    [ "$(order)" = "preflight fetch manifest verify " ]
+}

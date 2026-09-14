@@ -16,7 +16,7 @@ scripts accept any container runtime; the bundle fetch runs a section at a time.
 
 | Task | RED | GREEN | Commits |
 |---|---|---|---|
-| Preflight by capability | `bats tests/staging-preflight.bats` → 6 of 17 fail (refusals still exit 1, nerdctl and `STAGING_CTR` unknown, no save-format probe) | 17/17; shellcheck clean | test `5c1…`→ see `git log --grep 'runtime-agnostic'` |
+| Preflight by capability | `bats tests/staging-preflight.bats` → 6 of 17 fail (refusals still exit 1, nerdctl and `STAGING_CTR` unknown, no save-format probe) | 17/17; shellcheck clean | `git log --grep 'runtime-agnostic'` |
 | Fetch sections + runtime | `bats tests/offline-fetch.bats` → 9 of 9 fail (no argument parser) | 9/9; `bash -n` and shellcheck (accepted legacy codes) clean; full suite 114 | `git log --grep 'sectioned'` |
 | Builder passthrough | `bats tests/build-bundle.bats` → test 14 fails (`--only` unknown) | 14/14; full suite 114 | `git log --grep 'passthrough'` |
 | Docs | n/a | full suite 115 (pin, owners, references guards green) | `git log --grep 'runtime-by-capability'` |

@@ -28,6 +28,21 @@ assert_named_paths_exist() {
     [ -z "$missing" ]
 }
 
+# Every `PRD.md §N` citation under the given roots must name a "## N." heading
+# in the given PRD. Prints the cited-but-missing numbers so the failure says
+# which rule points nowhere.
+assert_prd_sections_exist() {  # <prd> <root>...
+    local prd="$1"; shift
+    local headings missing=""
+    headings="$(grep -oE '^## [0-9]+\.' "$prd" | grep -oE '[0-9]+')"
+    while read -r n; do
+        printf '%s\n' "$headings" | grep -qx "$n" || missing="$missing §$n"
+    done < <(grep -rhoE 'PRD\.md`? *§[0-9]+( and §[0-9]+)*' "$@" 2>/dev/null \
+                 | grep -oE '§[0-9]+' | grep -oE '[0-9]+' | sort -un)
+    echo "cited under $* but no such heading in $prd:$missing"
+    [ -z "$missing" ]
+}
+
 @test "every repo path named in .claude/ or BUILD-STATE.md exists" {
     cd "$BATS_TEST_DIRNAME/.."
     assert_named_paths_exist .claude/ state/BUILD-STATE.md

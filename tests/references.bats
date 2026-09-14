@@ -46,3 +46,30 @@ assert_named_paths_exist() {
         [ -x "$s" ] || { echo "not executable: $s"; false; }
     done < <(grep -rhoE 'scripts/[a-z0-9-]+\.sh' .claude/ | sort -u)
 }
+
+# PRD.md is cited by section number from CLAUDE.md, OWNERS.md and the agent
+# prompts ("PRD.md §10"). A restructure that renumbers the PRD would leave those
+# rules pointing at the wrong section, silently. Every cited §N must be a
+# "## N." heading in PRD.md. "§7 and §11" on one line cites both.
+@test "the PRD-anchor check fails when a cited section has no heading, and names it" {
+    d="$BATS_TEST_TMPDIR/anchors"; mkdir -p "$d/cfg"
+    printf '## 1. Problem\n\n## 2. Users\n' > "$d/PRD.md"
+    printf 'See `PRD.md` §2 and §9.\n' > "$d/cfg/rule.md"
+    run assert_prd_sections_exist "$d/PRD.md" "$d/cfg"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"§9"* ]]
+    [[ "$output" != *"§2"* ]]
+}
+
+@test "the PRD-anchor check passes when every cited section exists" {
+    d="$BATS_TEST_TMPDIR/anchors-ok"; mkdir -p "$d/cfg"
+    printf '## 1. Problem\n\n## 2. Users\n' > "$d/PRD.md"
+    printf 'See `PRD.md` §2 and PRD.md §1.\n' > "$d/cfg/rule.md"
+    run assert_prd_sections_exist "$d/PRD.md" "$d/cfg"
+    [ "$status" -eq 0 ]
+}
+
+@test "every PRD.md section cited by CLAUDE.md, OWNERS.md or .claude/ exists as a heading" {
+    cd "$BATS_TEST_DIRNAME/.."
+    assert_prd_sections_exist PRD.md CLAUDE.md OWNERS.md .claude/
+}

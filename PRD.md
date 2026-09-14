@@ -1,27 +1,36 @@
 # PRD — Sim Lab: Air-Gapped Network Simulation & Packet-Capture Server (Dell R770)
 
-**Version:** 1.1 · 2026-09-03
+**Version:** 2.0 · 2026-09-14
 **Owner:** Stephen (lab operator)
-**Status:** Approved for build — **Phase 1 (discovery) VERIFIED 2026-09-03**; §4 now defers to `state/BUILD-STATE.md`, §11 re-dispositioned
+**Status:** Approved for build — **Phase 1 (discovery) VERIFIED 2026-09-03**. Restructured 2026-09-14 into problem/hypothesis form (§1–§3, §5 rewritten; §9 gains one sentence; §4 and §6–§12 otherwise unchanged). Phase status lives in `state/BUILD-STATE.md`, not here.
 **Sources distilled:** project build-agent charter, `docs/plans/r770-network-lab-buildout.md`, `docs/plans/r770-offline-supply.md`, `docs/plans/r770-dependency-manifest.md`, `docs/plans/r770-staging-runbook.md`, `docs/analyst-wiki/`
 
 ---
 
-## 1. Problem & Purpose
+## 1. Problem Statement
 
-Analysts need a single, self-contained platform for realistic network work that cannot depend on internet access: full-packet capture and analysis of TAP/SPAN feeds and imported PCAPs, simulation of arbitrary network topologies, WAN impairment for protocol behavior studies, and a workbench for case artifacts — all on one air-gapped Dell PowerEdge R770.
+Network analysts need to capture and analyse real traffic, rebuild network topologies, and study protocol behaviour under WAN conditions — inside an environment with no internet access. Nothing coherent provides that today: capture, simulation and impairment are separate, per-person tools with no shared storage, no retention policy, and no way to keep them fed with software and rules across the air gap. The cost of leaving it unsolved is analysis that cannot be done inside the gap at all, and evidence handled ad hoc.
 
-Today this capability doesn't exist as a coherent system. The purpose of this project is to design, build, validate, and document that server, and to maintain the offline supply chain that keeps it fed with software, rules, and images.
+**Evidence**
 
-## 2. Users
+- The hardware exists and has been measured, not assumed: `state/inventory/r770-precheck-report-2026-09-02.md`, `state/inventory/r770-idrac-inventory-G8WFGH4.md`, analysed in `state/inventory/r770-discovery-findings.md`.
+- The supply chain has been exercised end to end: a bundle was built, verified, and used to deploy the full analysis stack under a real air gap on the staging VM (`state/inventory/bundles.md`, `state/inventory/malcolm-rehearsal-2026-09-12.md`, `state/inventory/rehearsal-sites-2026-09-12.md`).
+- **Assumption — needs validation:** what analysts do today without the box (per-laptop tools, or no capture at all) and what that costs. Nobody has written it down.
 
-| User | Needs |
-|---|---|
-| **Network analysts** | Search captured traffic (Arkime), read protocol metadata (Zeek), visual exploration (Dashboards), import/export PCAP, build GNS3 topologies, apply WAN impairments, per-analyst workspaces |
-| **Lab operator** (also the builder) | Repeatable build, monitoring/alerting, retention enforcement, backup/restore, bundle refresh cycles, account provisioning |
-| **Claude Code (build agent)** | A directory of rules, plans, commands, and state that lets it execute the build safely from a staging host over SSH — see `CLAUDE.md` |
+## 2. Users & Context
 
-## 3. Product Overview
+| User | Today | Trigger | Success state |
+|---|---|---|---|
+| **Network analysts** | *Assumption:* per-laptop tools, no shared capture store | A TAP/SPAN feed or PCAP to examine; a topology or protocol behaviour to test | Search (Arkime), metadata (Zeek), dashboards, PCAP import/export, GNS3 topologies, WAN impairment and per-analyst workspaces in one place, with evidence protected by policy |
+| **Lab operator** (also the builder) | Builds and feeds the box by hand from a staging host | A build phase, a bundle refresh, an alert, an account request | Repeatable build, monitoring/alerting, retention enforced, backup/restore proven, bundles refreshed on demand |
+
+**Job to be done.** When I have traffic or a topology to investigate inside the gap, I want one platform that captures, simulates and impairs, so I can finish the analysis without leaving the environment.
+
+**Non-users.** Anyone outside the air gap; Windows-endpoint workloads (§6). Claude Code is the build agent, not a user (§9).
+
+**Population, team and skill level:** *assumption* — generic analysts; not yet specified.
+
+## 3. Proposed Solution & Key Hypothesis
 
 One air-gapped Ubuntu Server 24.04 LTS host that concurrently provides:
 
@@ -31,6 +40,10 @@ One air-gapped Ubuntu Server 24.04 LTS host that concurrently provides:
 4. **Services** — Nginx portal (`portal.lab` → `malcolm.lab`, `gns3.lab`, `monitoring.lab`, docs), dnsmasq (`.lab`, no forwarders), chrony (lab time source), Prometheus/Grafana/Alertmanager monitoring, Restic backup, MkDocs analyst wiki, internal CA (easy-rsa).
 
 All software arrives via a versioned offline bundle built on an internet-connected Ubuntu 24.04 staging VM — or, since 2026-09-11, a RHEL 8 host with rootful podman — by `scripts/r770-offline-fetch.sh` (v3.3: resumable, proxy-aware, cross-bundle seeding), transferred on checksummed ext4 media.
+
+**Key hypothesis.** We believe one air-gapped R770 running Malcolm, GNS3 and a `netem` profile library behind a single portal, fed only by a verified offline bundle, will give analysts capture, simulation and impairment they cannot get today. We'll know we're right when the §10 validation suite passes and the §5 success metrics are met in the first period of real use.
+
+**Alternatives.** No evaluation of alternatives is on record; the integrated-stack choice (Malcolm rather than separate Zeek/Arkime installs) is a decision of record in `CLAUDE.md`.
 
 ## 4. Hardware of Record — **owned by `state/BUILD-STATE.md`**
 
@@ -51,7 +64,7 @@ consequence rather than the measurement: §5 goal 2 for the NUMA socket split
 ranges), §7 for the storage layout and network zones, and §11 for what discovery
 closed and what it newly opened (PERC key custody, NVMe link width).
 
-## 5. Goals
+## 5. Goals & Success Metrics
 
 1. Reliable, drop-accounted packet capture on dedicated, unaddressed, promiscuous ports (offloads disabled on capture ports only; AF_PACKET first, escalate only on measured loss).
 2. Concurrent heavy capture and large GNS3 topologies via a NUMA socket split — **decided from discovery: node 0 is capture/analysis (it owns the PERC, the management bond and OCP Slot 10), node 1 is the lab socket** (≈12.5 infrastructure cores / 16 guaranteed lab cores; ~64 GB infra / ~48 GB lab RAM). Node numbering is interleaved (node 0 = even CPUs), so pinning must use explicit lists, never ranges.
@@ -59,6 +72,15 @@ closed and what it newly opened (PERC key custody, NVMe link width).
 4. Full offline operation: local APT repo only, no snapd, no phone-home, local time and DNS authority, internal CA, all updates by bundle.
 5. Repeatability and recoverability: config repo (`/opt/network-lab-config/`, git), idempotent scripts, documented rollback for every change, nightly Restic backups of configs/projects/curated artifacts.
 6. A complete validation suite — the build is not done because services start; it is done when every capability is proven (see §10).
+
+**Success metrics** — user-level signals. The technical proof that the build works is §10; these say whether the problem in §1 is solved.
+
+| Metric | Target | How measured |
+|---|---|---|
+| Analyst work completed on the box | *Assumption:* at least one real case or protocol study in the first month | Operator log |
+| Time from feed connected to searchable sessions | *Assumption:* same day | First Arkime session timestamp vs. connection time |
+| Evidence lost to retention | Zero from `cases/`, `archived/`, `/srv/work/` | Retention job logs; Restic restore test (§10) |
+| Bundle refresh without internet on the box | Every cycle | `state/inventory/bundles.md` |
 
 ## 6. Non-Goals / Descoped (decisions of record, 2026-08-31)
 
@@ -92,6 +114,8 @@ closed and what it newly opened (PERC key custody, NVMe link width).
 ## 9. Operating Model & Safety (binding on the build agent)
 
 Work proceeds in 16 dependency-ordered phases (discovery → BIOS/firmware → storage → base OS → mgmt networking → Docker → KVM → GNS3 → capture-prep → Malcolm → mirror/import → WAN scripts → portal/DNS/docs → monitoring → backup → full validation). For every phase: inspect → report → state assumptions → classify destructiveness → produce exact commands → execute only when authorized → validate → record → provide rollback.
+
+Claude Code is the build agent that executes these phases from the staging host over SSH under `CLAUDE.md`; it is a tool, not a user.
 
 Hard rules: never guess device/interface names; never touch RAID, partitions, bootloader, firmware, SSH, Netplan, default route, or firewall without an explicit gate; `netplan try` for remote network changes; iDRAC verified before any networking phase; never mark VERIFIED without evidence; never fabricate command output. Full text in `CLAUDE.md`.
 

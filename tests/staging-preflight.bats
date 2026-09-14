@@ -92,24 +92,65 @@ preflight() { PATH="$PREFLIGHT_PATH" "$SCRIPT"; }
     [[ "$output" == *"multi-image-archive"* ]] || [[ "$output" == *"3.0"* ]]
 }
 
-@test "rootless podman is refused, and says to use sudo" {
+@test "rootless podman warns and says how to go rootful, but does not refuse" {
     os_release rhel 8.10
     unstub docker
     stub podman 'case "$1" in --version) echo "podman version 4.9.4";; info) exit 0;; esac'
     stub id 'echo 1000'
     run preflight
     echo "$output"
-    [ "$status" -eq 1 ]
+    [ "$status" -eq 2 ]
     [[ "$output" == *"sudo"* ]]
 }
 
-@test "Docker CE on RHEL is refused — it conflicts with container-tools" {
+@test "Docker CE on RHEL warns about the container-tools conflict, but does not refuse" {
     os_release rhel 8.10
     stub docker 'case "$1" in --version) echo "Docker version 29.8.0";; info) exit 0;; esac'
     run preflight
     echo "$output"
-    [ "$status" -eq 1 ]
+    [ "$status" -eq 2 ]
     [[ "$output" == *"container-tools"* ]]
+}
+
+@test "a host with nerdctl and nothing else passes" {
+    unstub docker
+    stub nerdctl 'case "$1" in --version) echo "nerdctl version 2.1.3";; info) exit 0;; esac'
+    run preflight
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"nerdctl"* ]]
+}
+
+@test "STAGING_CTR names the runtime to use, whatever it is called" {
+    unstub docker
+    stub crtl 'case "$1" in --version) echo "crtl 1.0";; info) exit 0;; esac'
+    STAGING_CTR=crtl run preflight
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"crtl"* ]]
+}
+
+@test "a runtime whose save output is not a docker archive is refused" {
+    export PREFLIGHT_SKIP_EGRESS=0
+    stub timeout 'shift; exec "$@"'
+    stub docker 'case "$1" in --version) echo "Docker version 29.8.0";; info) exit 0;;
+                  run) exit 0;; save) tar -cf - -C "$BATS_TEST_TMPDIR" os-release;; esac'
+    run preflight
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"manifest.json"* ]]
+}
+
+@test "a runtime whose save output is a docker archive passes the format probe" {
+    export PREFLIGHT_SKIP_EGRESS=0
+    stub timeout 'shift; exec "$@"'
+    printf '' > "$BATS_TEST_TMPDIR/manifest.json"
+    stub docker 'case "$1" in --version) echo "Docker version 29.8.0";; info) exit 0;;
+                  run) exit 0;; save) tar -cf - -C "$BATS_TEST_TMPDIR" manifest.json;; esac'
+    run preflight
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"docker-archive"* ]]
 }
 
 @test "too little free disk is refused before any download starts" {

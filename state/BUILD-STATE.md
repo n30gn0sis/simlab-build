@@ -23,7 +23,7 @@
 | 1 | Hardware & OS discovery (read-only) | — | No — **DONE, VERIFIED 2026-09-03** | **VERIFIED** | `inventory/r770-precheck-report-2026-09-02.md`, `inventory/r770-idrac-inventory-G8WFGH4.md`, analysis in `inventory/r770-discovery-findings.md` |
 | 2 | BIOS/firmware/iDRAC assessment; RAID VD verification | 1 | Only if changes chosen (each gated) | **READY** | — |
 | 3 | Storage: LVM/filesystem layout | 1,2 | **Lower than planned** — discovery found ≈6.84 TiB of free extents, so this is `lvcreate`/`mkfs`/`mount` plus one online `lvextend` of `lv-var`. **No repartitioning, no RAID change, no reinstall.** Still gated: it writes filesystems | **READY** *(no repartitioning needed — ≈6.84 TiB free extents in existing VG `ubuntu-vg0`)* | — |
-| 4 | Base OS: users, SSH hardening, UFW, packages, auditd | 3 | Low (SSH/firewall steps gated) | NOT STARTED | — |
+| 4 | Base OS: users, SSH hardening, UFW, packages, auditd | 3 | Low (SSH/firewall steps gated) | NOT STARTED | — (account model proposed 2026-09-14: `docs/superpowers/specs/2026-09-14-account-provisioning-design.md`) |
 | 5 | Management networking (Netplan, dnsmasq, chrony) | 4 | **High** — the mgmt path is an 802.3ad bond + tagged VLAN (`lacp-trunk.10`), not a single port. Blocked until iDRAC is proven reachable (§12 risk 2) | **BLOCKED** — iDRAC reachability unproven; mgmt is a bond + tagged VLAN | — |
 | 6 | Docker Engine + Compose on lv_docker | 4 | No | NOT STARTED | — |
 | 7 | KVM/libvirt + lab bridges + NAT zone | 5 | Low | NOT STARTED | — |

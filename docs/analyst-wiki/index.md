@@ -42,7 +42,7 @@ These are the things this guide deliberately does *not* state yet, because they 
 - **Final service URLs and hostnames.** The design calls for friendly internal names served through a portal (working names: `portal.lab`, `malcolm.lab`, `gns3.lab`, `monitoring.lab`), but nothing is live and names/addresses are unconfirmed.
 - **Retention windows.** Usable disk is now known — **7.68 TB on one RAID-1 volume**, with **3.25 TiB allocated to PCAP** — but PCAP retention still depends on measured feed rates, so the windows below remain estimates until the build measures real feeds. Plan on **days, not weeks**.
 - **Capture feed inventory.** Which physical ports carry which TAP/SPAN feeds, and their names, are set during build.
-- **Account provisioning.** How analysts get SSH keys, Malcolm logins, and GNS3 accounts — process TBD by the lab operator.
+- **Account provisioning.** How analysts get SSH keys, Malcolm logins, and GNS3 accounts — process TBD by the lab operator; a design is proposed in `docs/superpowers/specs/2026-09-14-account-provisioning-design.md` and takes effect at build Phases 4, 8, 10, 13 and 14.
 - **Licensed GNS3 appliances.** Free/open-source appliances (VyOS, MikroTik CHR, OPNsense, FRR, etc.) are bundled; which licensed images (Cisco, Fortinet, Palo Alto) get staged depends on entitlement inventory, still open.
 - **Suricata.** Present inside Malcolm but **disabled** at initial build. If it is enabled later, IDS alerts appear as an additional data source; the CPU budget must be re-checked first.
 - **GeoIP.** Descoped — no MaxMind account. Geo fields (country, ASN maps) will be **absent** in Arkime and Dashboards unless this decision is reversed.

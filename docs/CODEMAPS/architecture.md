@@ -1,4 +1,4 @@
-<!-- Generated: 2026-09-14 | Files scanned: 85 | Token estimate: ~650 -->
+<!-- Generated: 2026-09-14 | Files scanned: 92 | Token estimate: ~650 -->
 # Architecture — R770 Sim Lab Build
 
 Two machines, two roles. Nothing crosses between them except the bundle on ext4 media.
@@ -22,7 +22,8 @@ Rehearsal loop (staging VM only): `r770-airgap-sim.sh block` → deploy from the
 Egress is dropped in both OUTPUT and DOCKER-USER so containers are cut off too.
 
 ## Sources of truth
-- `PRD.md` requirements · `docs/plans/r770-network-lab-buildout.md` design
+- `PRD.md` requirements, problem/hypothesis form since 2026-09-14 (§1–§3, §5); §6–§12 are cited by number from `CLAUDE.md` and `OWNERS.md` and guarded by `tests/references.bats`
+- `docs/plans/r770-network-lab-buildout.md` design · `docs/superpowers/specs/` durable designs, including the **proposed, not yet approved** account-provisioning spec (2026-09-14) that would land in Phases 4, 8, 10, 13, 14
 - `OWNERS.md` one owner per fact; version pins live only in `scripts/r770-offline-fetch.sh`
 - `state/BUILD-STATE.md` phase status · `state/inventory/` evidence (append-only)
 - `work/plans/` one-shot plans: `active/` in flight, `archive/` executed (frozen)

@@ -1,4 +1,4 @@
-<!-- Generated: 2026-09-14 | Files scanned: 85 | Token estimate: ~550 -->
+<!-- Generated: 2026-09-14 | Files scanned: 92 | Token estimate: ~550 -->
 # Config — what ships to the R770 and which phase consumes it
 
 Nothing under `config/` runs on staging. Files are copied into the bundle or onto the R770 by the
@@ -31,3 +31,5 @@ Malcolm itself has no config here: its installer is driven non-interactively (ru
 auth via its own `auth_setup`, and started with its own start script (a compose override is ignored).
 
 Secrets never live in `config/`: the CA key, htpasswd, GNS3 password and JWT are generated on the box.
+
+Proposed, not applied: per-person accounts replacing the shared basic-auth user across nginx, Malcolm, GNS3 and Grafana. Design in `docs/superpowers/specs/2026-09-14-account-provisioning-design.md`; nothing under `config/` reflects it yet.

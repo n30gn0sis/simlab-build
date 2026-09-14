@@ -1,4 +1,4 @@
-<!-- Generated: 2026-09-14 | Files scanned: 85 | Token estimate: ~900 -->
+<!-- Generated: 2026-09-14 | Files scanned: 92 | Token estimate: ~900 -->
 # Scripts — entry points and call graph
 
 All bash, all under `scripts/`. No script imports another; they invoke each other by path.

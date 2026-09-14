@@ -1,4 +1,4 @@
-<!-- Generated: 2026-09-14 | Files scanned: 85 | Token estimate: ~500 -->
+<!-- Generated: 2026-09-14 | Files scanned: 92 | Token estimate: ~500 -->
 # Dependencies — everything that crosses the air gap
 
 Only `scripts/r770-offline-fetch.sh` talks to the internet, and only on staging. Exact versions and

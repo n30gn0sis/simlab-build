@@ -84,6 +84,15 @@ assert_prd_sections_exist() {  # <prd> <root>...
     [ "$status" -eq 0 ]
 }
 
+@test "the PRD-anchor check fails, not passes, when it finds no citation at all" {
+    d="$BATS_TEST_TMPDIR/anchors-none"; mkdir -p "$d/cfg"
+    printf '## 1. Problem\n' > "$d/PRD.md"
+    printf 'No section is cited here.\n' > "$d/cfg/rule.md"
+    run assert_prd_sections_exist "$d/PRD.md" "$d/cfg" "$d/does-not-exist"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no PRD.md section citation found"* ]]
+}
+
 @test "every PRD.md section cited by CLAUDE.md, OWNERS.md or .claude/ exists as a heading" {
     cd "$BATS_TEST_DIRNAME/.."
     assert_prd_sections_exist PRD.md CLAUDE.md OWNERS.md .claude/

@@ -4,6 +4,12 @@
 #
 #   ./r770-build-bundle.sh              build here
 #   ./r770-build-bundle.sh --pack       emit a self-extracting builder to stdout
+#   ./r770-build-bundle.sh --only s,s   / --skip s,s   run a selection of fetch
+#                                       stages (see the fetch's --list); the
+#                                       pause, manifest and strict gate still
+#                                       run, so a partial bundle fails the gate
+#                                       by design -- use the fetch script
+#                                       directly for section-by-section work
 #
 # Chains the four steps that have to happen in this order, and refuses to
 # continue when one of them fails:
@@ -43,6 +49,7 @@ ASSUME_YES="${BUILD_ASSUME_YES:-0}"
 INTERACTIVE=1
 BUNDLE_DIR="${BUILD_BUNDLE_DIR:-}"
 DO_PACK=0
+FETCH_ARGS=()     # --only/--skip, handed to the fetch verbatim
 
 die()  { echo "r770-build-bundle: $*" >&2; exit 1; }
 step() { printf '\n== %s\n' "$*"; }
@@ -99,6 +106,7 @@ while [ $# -gt 0 ]; do
         --bundle-dir)      BUNDLE_DIR="${2:-}"; [ -n "$BUNDLE_DIR" ] || die "--bundle-dir needs a path"; shift ;;
         --yes|-y)          ASSUME_YES=1 ;;
         --non-interactive) INTERACTIVE=0 ;;
+        --only|--skip)     [ -n "${2:-}" ] || die "$1 needs a stage list"; FETCH_ARGS+=("$1" "$2"); shift ;;
         -h|--help)         sed -n '2,28p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *)                 die "unknown argument: $1 (try --help)" ;;
     esac
@@ -133,9 +141,9 @@ esac
 # ── 2. fetch ─────────────────────────────────────────────────────────────────
 step "2/5  Fetch — this is the long one, and it is resumable"
 if [ -n "$BUNDLE_DIR" ]; then
-    BUNDLE_DIR="$BUNDLE_DIR" "$FETCH" || die "fetch failed — rerun to resume; completed items are skipped"
+    BUNDLE_DIR="$BUNDLE_DIR" "$FETCH" "${FETCH_ARGS[@]}" || die "fetch failed — rerun to resume; completed items are skipped"
 else
-    "$FETCH" || die "fetch failed — rerun to resume; completed items are skipped"
+    "$FETCH" "${FETCH_ARGS[@]}" || die "fetch failed — rerun to resume; completed items are skipped"
     BUNDLE_DIR="$(pwd)/bundle-$(date +%Y%m%d)"
 fi
 

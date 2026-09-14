@@ -60,15 +60,22 @@ Exit **0** ready · **2** ready with warnings (disposition each) · **1** not re
 
 It refuses, before a single byte is downloaded, the conditions that otherwise
 surface hours into a fetch: an LXC container, a missing or unresponsive
-container runtime, podman below 3.0, rootless podman, Docker CE on RHEL, under
-150 GB free, or a missing `r770-bundle.sh` — which would ship a bundle with no
-verifier inside it.
+container runtime, podman below 3.0, a runtime whose `save` does not write
+docker-archive (probed for real in the egress check), under 150 GB free, or a
+missing `r770-bundle.sh` — which would ship a bundle with no verifier inside it.
+Since 2026-09-14 rootless podman and Docker CE on RHEL **warn** (exit 2) rather
+than refuse: they work, they are not the recommended setup, and you accept the
+warning knowingly. `STAGING_CTR=<command>` names a runtime the script would not
+find on its own.
 
 ## Step 1 — Prepare the staging host
 
-Two supported hosts. Ubuntu 24.04 with Docker CE is the **default**; RHEL 8
-with **rootful podman** is a supported alternative. Manifest §0 owns this
-decision.
+Two exercised hosts. Ubuntu 24.04 with Docker CE is the **recommended
+default**; RHEL 8 with **rootful podman** is the exercised alternative. Since
+2026-09-14 any container runtime is accepted if it passes the preflight's
+capability probes — docker, podman, nerdctl, or whatever `STAGING_CTR` names —
+but the two paths below are the ones that have actually been run end to end.
+Manifest §0 owns this decision.
 
 The fetch script itself is portable and always was: every Ubuntu-specific
 command — `apt-get`, `dpkg-scanpackages` — runs inside a clean `ubuntu:24.04`
@@ -77,11 +84,12 @@ of its bind mounts already carry `:Z` for SELinux.
 
 ### Step 1-RHEL — RHEL 8 with rootful podman
 
-**Use podman, not Docker CE.** Docker CE on RHEL 8 comes from a third-party
+**Prefer podman over Docker CE.** Docker CE on RHEL 8 comes from a third-party
 repository outside Red Hat support and conflicts with the `container-tools`
 module that provides podman. Installing it to run this fetch trades a working,
 supported container stack for an unsupported one — and that conflict is the
-reason the default moved to Ubuntu in the first place.
+reason the default moved to Ubuntu in the first place. The preflight no longer
+refuses it (since 2026-09-14 it warns); the trade-off is yours to accept.
 
 ```bash
 sudo dnf module install -y container-tools
@@ -207,9 +215,30 @@ What to expect: a multi-GB download (Malcolm images dominate) — see `state/inv
 
 If container storage filled up mid-pull, reclaim it between attempts with `sudo docker system prune -a` — the saved tarballs in the bundle directory are independent of container storage, so pruning never loses bundle progress.
 
-## Step 3 — Podman→Docker interop validation (only if staging with podman)
+### Step 2.1 — One section at a time
 
-Not applicable on the chosen Docker path — tarballs are natively docker-format. If podman is ever used instead: the bundle's image tarballs come from `podman save -m` (docker-archive format); before the media crosses the gap, `docker load -i bundle-YYYYMMDD/docker/monitoring-images.tar.gz` on any Docker box and confirm every tag in `docker/monitoring-image-list.txt` appears. Record the check in `BUNDLE_NOTES.md`.
+The fetch is eleven stages in a fixed order; each is a function the driver
+runs, so you can run any subset and come back for the rest:
+
+```bash
+./scripts/r770-offline-fetch.sh --list                    # stages, and which look complete
+./scripts/r770-offline-fetch.sh --only apt,iso --dry-run  # what would run, touching nothing
+./scripts/r770-offline-fetch.sh --only apt,iso            # run just those two
+./scripts/r770-offline-fetch.sh --skip docs,appliances    # everything except those
+./scripts/r770-offline-fetch.sh --only manifest           # last: manifest + verifier copy
+```
+
+Stages: `preflight apt iso malcolm monitoring gns3 appliances enrichment docs
+manual manifest`. `--only` never implies `manifest`; a sectioned run appends a
+dated header to `BUNDLE_NOTES.md` instead of starting it over. `--list` reports
+a coarse completion marker per stage — the proof is still `r770-bundle.sh
+verify`. Use the fetch script directly for this; `r770-build-bundle.sh` passes
+`--only`/`--skip` through but still gates the result, so a partial bundle fails
+its gate by design.
+
+## Step 3 — Podman→Docker interop validation (only if staging with a non-Docker runtime)
+
+Not applicable on the chosen Docker path — tarballs are natively docker-format. The preflight now probes the save format up front, but a probe on one image is not a load test of the whole bundle. If podman, nerdctl, or a `STAGING_CTR` runtime is used instead: the bundle's image tarballs come from `podman save -m` (docker-archive format); before the media crosses the gap, `docker load -i bundle-YYYYMMDD/docker/monitoring-images.tar.gz` on any Docker box and confirm every tag in `docker/monitoring-image-list.txt` appears. Record the check in `BUNDLE_NOTES.md`.
 
 ## Step 4 — Manual additions (cannot be scripted)
 

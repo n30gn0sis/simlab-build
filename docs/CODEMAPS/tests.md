@@ -2,14 +2,15 @@
 # Tests — what each guard protects
 
 `./tests/run.sh` = shellcheck on every script + `bats tests/*.bats`. Offline, read-only, synthetic
-fixtures only (`tests/helpers/fixtures.bash`, versions are `0.0.0-fixture`). Eleven suites; CI runs the same command. Count with `grep -c ^@test tests/*.bats` rather than trusting a number here.
+fixtures only (`tests/helpers/fixtures.bash`, versions are `0.0.0-fixture`). Twelve suites; CI runs the same command. Count with `grep -c ^@test tests/*.bats` rather than trusting a number here.
 
 | File | Tests | Guards |
 |---|---|---|
 | `bundle-verify.bats` | 21 | every `check_*` in the verifier: hash mismatch, uncovered file, bad parts, missing notes/manual/required, strict vs. lenient exit codes |
 | `airgap-sim.bats` | 15 | generated iptables rules (stub `iptables`), unprivileged `status` must not report OPEN, sleeper PID lifecycle and cancel |
-| `build-bundle.bats` | 13 | step order, preflight failure aborts before any download, unaccepted warnings stop unattended runs, manifest regenerated after the manual pause, strict gate, `--pack` output is valid bash and gitignored |
-| `staging-preflight.bats` | 13 | distro paths, lxc refusal, runtime/daemon/rootful checks, free-space threshold, verifier presence. The script under test runs with a PATH of stubs plus a fixed list of real tools, so a real docker/podman/pigz on the runner cannot answer for the host under test |
+| `build-bundle.bats` | 14 | step order, preflight failure aborts before any download, unaccepted warnings stop unattended runs, manifest regenerated after the manual pause, strict gate, `--pack` output is valid bash and gitignored |
+| `staging-preflight.bats` | 17 | distro paths, lxc refusal, runtime/daemon/rootful checks, free-space threshold, verifier presence. The script under test runs with a PATH of stubs plus a fixed list of real tools, so a real docker/podman/pigz on the runner cannot answer for the host under test |
+| `offline-fetch.bats` | 9 | the fetch's selection logic only: `--list`, `--dry-run`, `--only` order and no implied manifest, `--skip`, rejections, one real network-free `--only manual` run, notes appended on sectioned runs. Network tools are stubbed to log and fail |
 | `bundle-manifest.bats` | 7 | manifest writer: full coverage, excludes itself and `.stamps`, refuses empty or half-downloaded bundles, reproducible, spaces in names, no temp file left behind |
 | `malcolm-deploy.bats` | 7 | load then assert-tags; a missing tag fails loudly |
 | `owners.bats` | 6 | **pin guard**: no version pin or size restated outside its owner (scans tracked md/sh/bats/bash, excluding state/, work/plans/archive/, OWNERS.md, the fetch script) |

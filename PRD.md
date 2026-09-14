@@ -39,7 +39,7 @@ One air-gapped Ubuntu Server 24.04 LTS host that concurrently provides:
 3. **WAN emulation** — `tc`/`netem` profile library (`wan-apply` / `wan-show` / `wan-clear`) with branch-wan, satellite, poor-broadband, and asymmetric profiles.
 4. **Services** — Nginx portal (`portal.lab` → `malcolm.lab`, `gns3.lab`, `monitoring.lab`, docs), dnsmasq (`.lab`, no forwarders), chrony (lab time source), Prometheus/Grafana/Alertmanager monitoring, Restic backup, MkDocs analyst wiki, internal CA (easy-rsa).
 
-All software arrives via a versioned offline bundle built on an internet-connected Ubuntu 24.04 staging VM — or, since 2026-09-11, a RHEL 8 host with rootful podman — by `scripts/r770-offline-fetch.sh` (v3.3: resumable, proxy-aware, cross-bundle seeding), transferred on checksummed ext4 media.
+All software arrives via a versioned offline bundle built on an internet-connected Ubuntu 24.04 staging VM — or, since 2026-09-14, any host whose container runtime passes the staging preflight's capability probes — by `scripts/r770-offline-fetch.sh` (resumable, proxy-aware, cross-bundle seeding, runnable a section at a time), transferred on checksummed ext4 media.
 
 **Key hypothesis.** We believe one air-gapped R770 running Malcolm, GNS3 and a `netem` profile library behind a single portal, fed only by a verified offline bundle, will give analysts capture, simulation and impairment they cannot get today. We'll know we're right when the §10 validation suite passes and the §5 success metrics are met in the first period of real use.
 
@@ -105,7 +105,7 @@ closed and what it newly opened (PERC key custody, NVMe link width).
 
 ## 8. Offline Supply Chain Requirements
 
-- Bundle built by `scripts/r770-offline-fetch.sh` on a **dedicated Proxmox VM running Ubuntu 24.04 + Docker CE** (changed from RHEL 8, operator approved 2026-09-04 — see dependency manifest §0); proxy-aware, resumable, seeds from previous bundle; scripted size — see `state/inventory/bundles.md` for measured cycle sizes — plus manual Dell firmware and licensed GNS3 images (10–100+ GB).
+- Bundle built by `scripts/r770-offline-fetch.sh` on a **dedicated Proxmox VM running Ubuntu 24.04 + Docker CE** (changed from RHEL 8, operator approved 2026-09-04 — see dependency manifest §0); proxy-aware, resumable, seeds from previous bundle; scripted size — see `state/inventory/bundles.md` for measured cycle sizes — plus manual Dell firmware and licensed GNS3 images (10–100+ GB). Runtime policy since 2026-09-14: any container runtime that answers `info` and writes docker-archive is accepted, judged by the preflight rather than by name (manifest §0); the fetch runs whole or a section at a time (`--only`, `--skip`, `--list`).
 - Pins: see the pin block in `scripts/r770-offline-fetch.sh` (reviewed 2026-09-04, evidence in `state/inventory/pin-review-2026-09-04.md`). Policy: bump moved pins at cut time; grafana is the standing exception.
 - Trust established on staging (GPG/sha256 verification), asserted across the gap by `MANIFEST.sha256`, re-verified on the R770 before import; previous bundle retained as rollback; each cycle logged in `inventory/bundles.md`.
 - Cadence: ad-hoc (accepted, documented risk: security updates and rules staleness between bundles).

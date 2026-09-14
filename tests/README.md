@@ -10,10 +10,15 @@ installs shellcheck in web sessions; on the staging VM,
 
 ## What is covered
 
-Eleven suites. `./tests/run.sh` runs them all; the table below is the whole gate.
+Twelve suites. `./tests/run.sh` runs them all; the table below is the whole gate.
 
 | Suite | Covers |
 |---|---|
+| `airgap-sim.bats` | the air-gap simulator's generated rules (stub iptables), the unprivileged `status` refusal, and the auto-revert sleeper's PID lifecycle |
+| `build-bundle.bats` | the builder's order and refusals: preflight before fetch, pause before manifest, strict gate last, `--pack` output valid and gitignored, `--only`/`--skip` passed through |
+| `malcolm-deploy.bats` | offline image load then tag assertion; a missing tag or list fails loudly |
+| `offline-fetch.bats` | the fetch's selection logic: `--list`, `--dry-run`, `--only` in fixed order with no implied manifest, `--skip`, rejections, one real network-free `--only manual` run, notes appended on sectioned runs |
+| `staging-preflight.bats` | host fitness under an isolated PATH: runtime found by name or `STAGING_CTR`, capability probes (engine, egress, save format), refusals vs. warnings, disk, tools, verifier |
 | `bundle-manifest.bats` | `r770-bundle.sh manifest` — coverage, exclusions, the empty-bundle and `.part` refusals, reproducibility, spaces in filenames |
 | `bundle-verify.bats` | `r770-bundle.sh verify` — one test per confirmed defect, plus WARN triage, `--strict`, and exit-code precedence |
 | `lint.bats` | shellcheck over every script, and `bash -n` over all of them |

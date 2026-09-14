@@ -13,7 +13,10 @@ r770-malcolm-deploy.sh  standalone (R770 or rehearsal VM, offline)
 r770-precheck.sh        standalone (R770, read-only)
 ```
 
-## r770-offline-fetch.sh (660 lines) — staging only
+## r770-offline-fetch.sh (792 lines) — staging only
+`[--only s,s] [--skip s,s] [--list] [--dry-run]`; stages are `stage_<name>()` functions run by a driver in fixed order,
+`--list`/`--dry-run` answer before any runtime is needed, `--only` never implies manifest, sectioned runs append to notes.
+Runtime: `STAGING_CTR`, else docker, podman, nerdctl; `ctr_save` adds `--multi-image-archive` when `save --help` offers it.
 Stages, resumable via stamp files: 0 preflight egress · 1 apt · 2 ubuntu iso · 3 malcolm ·
 4 monitoring+portal images · 5 gns3 server+wheelhouse+base images · 6 gns3 appliances ·
 7 enrichment · 8 docs mirrors · 9 manual reminders · 10 manifest.
@@ -28,14 +31,15 @@ Owns every version pin and image reference (OWNERS.md).
 → `summary`. Exit 0 pass · 2 pass-with-warnings · non-zero fail; `--strict` turns WARN into FAIL.
 Support: `bundle_files part_files manifest_paths first_match fail warn pass die cleanup usage`.
 
-## r770-build-bundle.sh (188 lines)
+## r770-build-bundle.sh (196 lines)
 `step` 1/5 preflight → 2/5 fetch → 3/5 manual-items pause (skipped by `--non-interactive`) →
-4/5 manifest regen → 5/5 strict gate. Flags: `--bundle-dir --non-interactive --pack`. `cmd_pack` builds the carry-file.
+4/5 manifest regen → 5/5 strict gate. Flags: `--bundle-dir --non-interactive --pack --only --skip` (the last two pass through to the fetch; the gate still runs). `cmd_pack` builds the carry-file.
 
-## r770-staging-preflight.sh (197 lines)
-`pass/warn/fail` checks: distro path (Ubuntu default, RHEL 8 alternative) · not lxc · runtime present,
-daemon answers, podman rootful + multi-image-archive · SELinux label mode · free space on the bundle dir ·
-host tools (pigz optional) · verifier present and executable · registry pull + in-container apt egress.
+## r770-staging-preflight.sh (219 lines)
+`pass/warn/fail` checks: distro (informational) · not lxc · runtime found (`STAGING_CTR`, docker, podman, nerdctl),
+engine answers `info`, podman 3.0+ (refusal) and rootful (warning), Docker CE on RHEL (warning) · SELinux label mode ·
+free space on the bundle dir · host tools (pigz optional) · verifier present and executable · registry pull +
+in-container apt egress · **save-format probe**: `save` output must contain `manifest.json` (docker-archive).
 
 ## r770-airgap-sim.sh (185 lines)
 `block [--minutes N] | unblock | status`. `cmd_block` → `apply` iptables rules: allow lo, loopback net,

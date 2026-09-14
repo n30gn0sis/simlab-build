@@ -9,7 +9,7 @@ Two ways in, same server, same projects:
 - **Web UI** — GNS3 v3 ships a built-in web interface, reached through the portal. Good for most topology work.
 - **Desktop GNS3 GUI** — install the GNS3 client on your workstation and point it at the lab server as a *remote server* through the portal address. Familiar if you've used GNS3 standalone; nothing runs on your workstation except the GUI.
 
-Authentication is enforced by the server (accounts **TBD** until provisioning is defined). Projects live server-side under `/srv/gns3/projects` — they persist between sessions and are included in nightly backups, so your topology survives both logout and disaster.
+Authentication is enforced by the server (accounts **TBD** until provisioning is defined — proposed design: `docs/superpowers/specs/2026-09-14-account-provisioning-design.md`). Projects live server-side under `/srv/gns3/projects` — they persist between sessions and are included in nightly backups, so your topology survives both logout and disaster.
 
 ## What you can build with
 

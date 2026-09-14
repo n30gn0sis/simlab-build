@@ -11,13 +11,13 @@ All analyst access happens over the **management network**. The capture side of 
 | Access | Mechanism | Notes |
 |---|---|---|
 | Web services | HTTPS through the Nginx portal | One entry point fans out to Malcolm, GNS3, Grafana, and the docs site. Final URLs **(TBD)** — working names are `portal.lab`, `malcolm.lab`, `gns3.lab`, `monitoring.lab` |
-| Shell | SSH, **key-only** (no passwords, no root login) | Management IP only. Key enrollment process **(TBD)** |
+| Shell | SSH, **key-only** (no passwords, no root login) | Management IP only. Key enrollment process **(TBD** — proposed: send your public key to the lab operator; design in `docs/superpowers/specs/2026-09-14-account-provisioning-design.md`**)** |
 | PCAP drop-off | SFTP to the staging area | Scoped account; see [Importing PCAP](malcolm.md#importing-pcap) |
 | GNS3 desktop client | Connects to the GNS3 server API through the portal | Same credentials as the GNS3 web UI |
 
 **TLS certificates:** the lab has no public CA. Services present certificates from the lab's **internal CA** — you will need to trust the internal CA certificate on your workstation once (browser + OS store), or you'll see warnings on every service. Get the CA cert from the lab operator.
 
-**Logins:** GNS3 v3 enforces its own authentication, Malcolm has its own account system, and Grafana has its own admin/viewer accounts. These are separate credential sets **(TBD** until provisioning is defined**)**.
+**Logins:** GNS3 v3 enforces its own authentication, Malcolm has its own account system, and Grafana has its own admin/viewer accounts. These are separate credential sets **(TBD** until provisioning is defined — the proposed model is in `docs/superpowers/specs/2026-09-14-account-provisioning-design.md`**)**.
 
 ## Storage and retention
 

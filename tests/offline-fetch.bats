@@ -26,20 +26,20 @@ stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$BIN/$1"; chmod +x "$BIN/$1"
 ALL="preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual manifest"
 
 # selected <output> -- the stage names the dry run says it would execute, in order
-selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z]+' | awk '{print $NF}' | tr '\n' ' ' | sed 's/ $//'; }
+selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print $NF}' | tr '\n' ' ' | sed 's/ $//'; }
 
 @test "--list names every stage in fixed order" {
     run "$SCRIPT" --list
     echo "$output"
     [ "$status" -eq 0 ]
     for s in $ALL; do [[ "$output" == *"$s"* ]]; done
-    [ "$(echo "$output" | grep -oE '^\s*[a-z]+' | tr -d ' ' | tr '\n' ' ' | sed 's/ $//')" = "$ALL" ]
+    [ "$(echo "$output" | grep -oE '^\s*[a-z0-9]+' | tr -d ' ' | tr '\n' ' ' | sed 's/ $//')" = "$ALL" ]
     [ ! -s "$NET" ]
 }
 
 @test "--list shows a stage as done when its completion marker exists" {
     mkdir -p "$BUNDLE_DIR/.stamps" "$BUNDLE_DIR/dell"
-    touch "$BUNDLE_DIR/.stamps/01-apt.done" "$BUNDLE_DIR/dell/README.txt"
+    touch "$BUNDLE_DIR/.stamps/01-apt.done"; echo x > "$BUNDLE_DIR/dell/README.txt"
     run "$SCRIPT" --list
     echo "$output"
     [[ "$(echo "$output" | grep -E '^\s*apt ')" == *done* ]]

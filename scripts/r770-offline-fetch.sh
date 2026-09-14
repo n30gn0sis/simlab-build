@@ -2,20 +2,20 @@
 #
 # r770-offline-fetch.sh — build the air-gap supply bundle for the R770 lab server.
 #
-# v3.5 (2026-09-08): cadvisor REGISTRY fix (not just a tag bump).
-#   The bundle-1 fetch failed at [4/10] with:
-#     failed to resolve reference "gcr.io/cadvisor/cadvisor:v0.60.5": not found
-#   gcr.io/cadvisor/cadvisor stopped publishing at v0.55.1. The PREVIOUS pin
-#   (v0.57.0) 404s there too, so this was already broken before the 2026-09-04
-#   bump -- the bundle would have failed here either way. cadvisor images now
-#   live at ghcr.io/google/cadvisor (v0.57.0 and v0.60.5 both resolve).
-#   Lesson recorded: a GitHub release existing does NOT mean an image was
-#   published at that tag. Pin review must verify the image REFERENCE
-#   (docker manifest inspect), not the version number. All 15 image
-#   references were re-verified this way before the rerun; only this one
-#   was broken.
+# v3.6 (2026-09-14): sections, and any container runtime.
+#   Every stage is now a function run by a driver, so the fetch can be run a
+#   section at a time:  --only apt,iso   --skip docs   --list   --dry-run
+#   (see usage below). --only never implies the manifest stage; finish with
+#   --only manifest or let r770-build-bundle.sh do it. A sectioned run appends
+#   to BUNDLE_NOTES.md instead of starting it over.
+#   The runtime is STAGING_CTR if set, else docker, podman, nerdctl -- judged
+#   by capability: `save --help` decides whether --multi-image-archive is
+#   needed, and the staging preflight probes that `save` writes docker-archive.
+#   Standing lesson from v3.5 (cadvisor moved registries): a GitHub release
+#   existing does NOT mean an image was published at that tag -- pin review
+#   must verify the image REFERENCE (docker manifest inspect), not the version.
 #
-# Earlier versions (v3 - v3.4): see `git log --follow -p -- scripts/r770-offline-fetch.sh`.
+# Earlier versions (v3 - v3.5): see `git log --follow -p -- scripts/r770-offline-fetch.sh`.
 # Some older entries describe behaviour a later version replaced (e.g. v3's
 # original staging-host line named the OS since replaced by v3.4's move to
 # Ubuntu 24.04 + Docker CE) — git log gives the accurate, ordered history
@@ -30,6 +30,7 @@
 #   - curl, gpg, sha256sum, unzip, wget (docs mirrors; skipped with a WARN if absent)
 #
 # Output: ./bundle-YYYYMMDD/  with MANIFEST.sha256 and BUNDLE_NOTES.md
+# Usage:  r770-offline-fetch.sh [--only s,s] [--skip s,s] [--list] [--dry-run]
 #
 # Manual steps it will REMIND you about (cannot be scripted):
 #   - Dell firmware/perccli downloads (dell.com, per service tag)
@@ -80,6 +81,54 @@ GNS3A_DEFS=(
 UBUNTU_BUILD_IMG="docker.io/library/ubuntu:24.04"
 PYTHON_BUILD_IMG="docker.io/library/python:3.12-slim"
 
+# ── stages: run all, or a selection ──────────────────────────────────────────
+# Fixed order. --only picks from it (given in any order), --skip removes from it.
+STAGES=(preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual manifest)
+ONLY=""; SKIP=""; LIST=0; DRY_RUN=0
+usage() {
+    cat <<'USAGE'
+usage: r770-offline-fetch.sh [--only s1,s2,...] [--skip s1,s2,...] [--list] [--dry-run] [-h]
+
+Runs every stage in order unless told otherwise. The stages, in run order:
+  preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual manifest
+
+  --only s,s   run just these (fixed order applies). NEVER implies manifest:
+               finish with  --only manifest  or let r770-build-bundle.sh do it
+  --skip s,s   run everything except these
+  --list       show each stage and whether its completion marker exists, then exit
+  --dry-run    show which stages this command line would run, then exit
+
+Environment: BUNDLE_DIR  FORCE=1  SEED_FROM=<dir|none>  STAGING_CTR=<runtime>  HTTP(S)_PROXY
+A sectioned run appends to BUNDLE_NOTES.md; a full run starts it over.
+USAGE
+}
+stage_known() { local s; for s in "${STAGES[@]}"; do [ "$s" = "$1" ] && return 0; done; return 1; }
+check_stage_list() {  # check_stage_list <flag> <csv>
+    local s
+    for s in ${2//,/ }; do
+        stage_known "$s" || { echo "ERROR: $1: unknown stage '$s' — stages are: ${STAGES[*]}" >&2; exit 1; }
+    done
+}
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --only)    ONLY="${2:-}"; [ -n "$ONLY" ] || { echo "ERROR: --only needs a stage list" >&2; exit 1; }
+                   check_stage_list --only "$ONLY"; shift ;;
+        --skip)    SKIP="${2:-}"; [ -n "$SKIP" ] || { echo "ERROR: --skip needs a stage list" >&2; exit 1; }
+                   check_stage_list --skip "$SKIP"; shift ;;
+        --list)    LIST=1 ;;
+        --dry-run) DRY_RUN=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *)         echo "ERROR: unknown option: $1" >&2; usage >&2; exit 1 ;;
+    esac
+    shift
+done
+want() {  # want <stage> — selected by this command line?
+    if [ -n "$ONLY" ]; then case ",$ONLY," in *",$1,"*) ;; *) return 1 ;; esac; fi
+    if [ -n "$SKIP" ]; then case ",$SKIP," in *",$1,"*) return 1 ;; esac; fi
+    return 0
+}
+PARTIAL=0; [ -n "$ONLY$SKIP" ] && PARTIAL=1
+
 # The manifest is generated by its own tested script, which is also copied INTO
 # the bundle so the air-gapped R770 can run `./r770-bundle.sh verify .` without a
 # separate transfer. Checked here, at startup, rather than at [10/10] -- the
@@ -99,37 +148,86 @@ if [ -n "$(ls -A "$B/.stamps" 2>/dev/null)" ]; then
     echo "NOTE: resuming previous run in $B — completed items will be skipped (FORCE=1 to redo everything)"
 fi
 NOTES="$B/BUNDLE_NOTES.md"
-echo "# R770 offline bundle ${TS}" > "$NOTES"
+if [ "$LIST" = "1" ] || [ "$DRY_RUN" = "1" ]; then
+    :   # neither touches the bundle
+elif [ "$PARTIAL" = "1" ] && [ -s "$NOTES" ]; then
+    printf '\n## section rerun %s — %s%s\n' "$(date -Is)" "${ONLY:+only=$ONLY }" "${SKIP:+skip=$SKIP}" >> "$NOTES"
+else
+    echo "# R770 offline bundle ${TS}" > "$NOTES"
+fi
 note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
 
-# ── container runtime detection (docker or podman) ───────────────────────────
+# ── --list / --dry-run answer here, before any runtime is needed ─────────────
+stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker for --list; not proof
+    case "$1" in
+        preflight)  return 1 ;;
+        apt)        [ -f "$B/.stamps/01-apt.done" ] ;;
+        iso)        ls "$B/isos"/ubuntu-*-live-server-amd64.iso >/dev/null 2>&1 ;;
+        malcolm)    ls "$B/malcolm"/malcolm-images-*.tar.gz >/dev/null 2>&1 ;;
+        monitoring) [ -s "$B/docker/monitoring-images.tar.gz" ] ;;
+        gns3)       [ -f "$B/.stamps/05-wheelhouse.done" ] && [ -s "$B/images/noble-server-cloudimg-amd64.img" ] ;;
+        appliances) [ -s "$B/gns3/docker-nodes/gns3-node-images.tar.gz" ] ;;
+        enrichment) [ -s "$B/enrichment/oui.txt" ] ;;
+        docs)       [ "$(ls "$B/.stamps"/08-docs-*.done 2>/dev/null | wc -l)" -ge 3 ] ;;
+        manual)     [ -s "$B/dell/README.txt" ] ;;
+        manifest)   [ -s "$B/MANIFEST.sha256" ] ;;
+        *)          return 1 ;;
+    esac
+}
+if [ "$LIST" = "1" ]; then
+    echo "== stages in $B  (marker = looks complete; proof is r770-bundle.sh verify) =="
+    for s in "${STAGES[@]}"; do
+        if stage_marker "$s"; then m="done"; elif [ "$s" = "preflight" ]; then m="runs every time"; else m="-"; fi
+        printf '  %-11s %s\n' "$s" "$m"
+    done
+    exit 0
+fi
+if [ "$DRY_RUN" = "1" ]; then
+    echo "== dry run: stages this command line would run, in order =="
+    for s in "${STAGES[@]}"; do want "$s" && printf '  would run  %s\n' "$s"; done
+    exit 0
+fi
+
+# ── container runtime: STAGING_CTR, else docker, podman, nerdctl ─────────────
+# Fitness is judged by capability (the staging preflight probes the save
+# format for real); the name only decides how to call it.
 CTR=""
-if command -v docker >/dev/null 2>&1 && ! docker --version 2>/dev/null | grep -qi podman; then
+if [ -n "${STAGING_CTR:-}" ]; then
+    command -v "$STAGING_CTR" >/dev/null 2>&1 || { echo "ERROR: STAGING_CTR=$STAGING_CTR is not on PATH" >&2; exit 1; }
+    CTR="$STAGING_CTR"
+elif command -v docker >/dev/null 2>&1 && ! docker --version 2>/dev/null | grep -qi podman; then
     CTR="docker"
 elif command -v podman >/dev/null 2>&1; then
     CTR="podman"
+elif command -v nerdctl >/dev/null 2>&1; then
+    CTR="nerdctl"
     if [ "$(id -u)" -ne 0 ]; then
         echo "ERROR: with podman, run this script with sudo (rootful podman gives"
         echo "       docker-identical ownership/semantics and uses /var/lib/containers)."
         exit 1
     fi
 else
-    echo "ERROR: need docker or podman on the staging host."
+    echo "ERROR: need a container runtime on the staging host: docker, podman or nerdctl on PATH, or STAGING_CTR=<command>."
     echo "  Ubuntu 24.04 Docker CE: https://docs.docker.com/engine/install/  (chosen staging setup)"
     exit 1
 fi
-note "Staging container runtime: $CTR ($($CTR --version 2>/dev/null | head -1))"
+note "Staging container runtime: $CTR ($("$CTR" --version 2>/dev/null | head -1))"
 
-# multi-image save: podman needs --multi-image-archive for docker-archive format.
+# multi-image save: a runtime whose `save` knows --multi-image-archive (podman)
+# needs it to write several images as ONE docker-archive; docker and nerdctl do
+# that by default. Decided from `save --help`, once, the first time it matters.
 # Writes .part then renames, so a killed save never leaves a truncated tarball
 # that a later resume would mistake for complete.
+CTR_SAVE=()
 ctr_save() {  # ctr_save <output.tar.gz> <image...>
     local out="$1"; shift
-    if [ "$CTR" = "podman" ]; then
-        $CTR save --multi-image-archive "$@" | $GZ > "${out}.part"
-    else
-        $CTR save "$@" | $GZ > "${out}.part"
+    if [ "${#CTR_SAVE[@]}" -eq 0 ]; then
+        CTR_SAVE=("$CTR" save)
+        if "$CTR" save --help 2>&1 | grep -q -- '--multi-image-archive'; then
+            CTR_SAVE+=(--multi-image-archive)
+        fi
     fi
+    "${CTR_SAVE[@]}" "$@" | $GZ > "${out}.part"
     mv "${out}.part" "$out"
 }
 GZ="$(command -v pigz || command -v gzip)"   # pigz parallelizes the ~30 GB compress step
@@ -220,8 +318,9 @@ fi
 # 0. Preflight — prove the daemon can pull AND containers have egress,
 #    before committing to hours of downloads. Tests the exact path step 1 uses.
 # ═════════════════════════════════════════════════════════════════════════════
+stage_preflight() {
 echo "==== [0/10] Preflight: registry pull + container egress ===="
-if ! timeout 300 $CTR run --rm "${PROXY_ENV[@]}" "$UBUNTU_BUILD_IMG" \
+if ! timeout 300 "$CTR" run --rm "${PROXY_ENV[@]}" "$UBUNTU_BUILD_IMG" \
         bash -ec "apt-get update -qq" >/dev/null 2>&1; then
     cat <<'PREFLIGHT_EOF'
 ERROR: preflight failed. One of two proxy problems, in order of likelihood:
@@ -256,11 +355,13 @@ PREFLIGHT_EOF
     exit 1
 fi
 note "Preflight OK: daemon pull + in-container apt egress verified"
+}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 1. Curated APT bundle — resolved in a clean ubuntu:24.04 container
 #    (:Z relabels the mount for SELinux hosts; ignored where SELinux is absent)
 # ═════════════════════════════════════════════════════════════════════════════
+stage_apt() {
 echo "==== [1/10] APT package bundle ===="
 PKGS=(
     # virtualization
@@ -288,7 +389,7 @@ PKGS=(
 if stamped 01-apt.done; then
     note "APT bundle: skipped — complete in a previous run ($(ls "$B/apt"/*.deb 2>/dev/null | wc -l) debs cached; FORCE=1 to rebuild)"
 else
-$CTR run --rm "${PROXY_ENV[@]}" -v "$B/apt:/out:Z" "$UBUNTU_BUILD_IMG" bash -ec "
+"$CTR" run --rm "${PROXY_ENV[@]}" -v "$B/apt:/out:Z" "$UBUNTU_BUILD_IMG" bash -ec "
     apt-get update -qq
     apt-get -y --download-only -o Dir::Cache::archives=/out dist-upgrade -qq
     apt-get -y --download-only -o Dir::Cache::archives=/out install ${PKGS[*]} -qq
@@ -309,10 +410,12 @@ $CTR run --rm "${PROXY_ENV[@]}" -v "$B/apt:/out:Z" "$UBUNTU_BUILD_IMG" bash -ec 
 note "APT bundle: $(ls "$B/apt"/*.deb 2>/dev/null | wc -l) debs incl. docker-ce + dist-upgrade security debs; Packages.gz generated (serve as a trivial repo)"
 stamp_done 01-apt.done
 fi
+}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 2. Ubuntu ISO + checksums
 # ═════════════════════════════════════════════════════════════════════════════
+stage_iso() {
 echo "==== [2/10] Ubuntu Server ISO ===="
 ISO="ubuntu-${UBUNTU_ISO_VER}-live-server-amd64.iso"
 fetch "$B/isos/$ISO"            "https://releases.ubuntu.com/noble/$ISO"
@@ -320,10 +423,12 @@ fetch "$B/isos/SHA256SUMS"      "https://releases.ubuntu.com/noble/SHA256SUMS"
 fetch "$B/isos/SHA256SUMS.gpg"  "https://releases.ubuntu.com/noble/SHA256SUMS.gpg"
 ( cd "$B/isos" && grep "$ISO" SHA256SUMS | sha256sum -c - )
 note "Ubuntu ISO $UBUNTU_ISO_VER verified against SHA256SUMS (verify the GPG sig per site policy)"
+}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 3. Malcolm — install package + all container images
 # ═════════════════════════════════════════════════════════════════════════════
+stage_malcolm() {
 echo "==== [3/10] Malcolm ${MALCOLM_VER} ===="
 fetch "$B/malcolm/malcolm-${MALCOLM_VER}-docker_install.zip" \
     "https://github.com/idaholab/Malcolm/releases/download/v${MALCOLM_VER}/malcolm-${MALCOLM_VER}-docker_install.zip"
@@ -339,30 +444,34 @@ seed "$MTAR"
 if have "$MTAR"; then
     note "Malcolm ${MALCOLM_VER}: images tarball already present ($(du -h "$MTAR" | cut -f1)) — pulls/save skipped"
 else
-    for img in $MALCOLM_IMAGES; do $CTR pull "$img"; done
+    for img in $MALCOLM_IMAGES; do "$CTR" pull "$img"; done
     # shellcheck disable=SC2086
     ctr_save "$MTAR" $MALCOLM_IMAGES
     note "Malcolm ${MALCOLM_VER}: install zip + $(echo "$MALCOLM_IMAGES" | wc -l) images saved ($(du -h "$MTAR" | cut -f1)). Restore with: docker load -i malcolm-images-${MALCOLM_VER}.tar.gz"
 fi
 note "GeoIP DESCOPED by decision 2026-08-31: no MaxMind account — Malcolm runs without geo tagging (v2 of this script has the fetch block if reversed)"
+}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 4. Monitoring / portal images
 # ═════════════════════════════════════════════════════════════════════════════
+stage_monitoring() {
 echo "==== [4/10] Monitoring & portal images ===="
 seed "$B/docker/monitoring-images.tar.gz"
 if have "$B/docker/monitoring-images.tar.gz"; then
     note "Monitoring/portal images: tarball already present — pulls/save skipped"
 else
-    for img in "${MONITOR_IMAGES[@]}"; do $CTR pull "$img"; done
+    for img in "${MONITOR_IMAGES[@]}"; do "$CTR" pull "$img"; done
     ctr_save "$B/docker/monitoring-images.tar.gz" "${MONITOR_IMAGES[@]}"
     note "Monitoring/portal images: ${#MONITOR_IMAGES[@]} saved"
 fi
 printf '%s\n' "${MONITOR_IMAGES[@]}" > "$B/docker/monitoring-image-list.txt"
+}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 5. GNS3 wheelhouse + VM base images
 # ═════════════════════════════════════════════════════════════════════════════
+stage_gns3() {
 echo "==== [5/10] GNS3 server + VM base images ===="
 # seed the wheelhouse from a previous bundle; if the pinned gns3-server dist
 # came over, the set is complete (pip downloaded it with its deps) — stamp it
@@ -376,7 +485,7 @@ fi
 if stamped 05-wheelhouse.done; then
     note "GNS3 wheelhouse: skipped — complete in a previous run"
 else
-    $CTR run --rm "${PROXY_ENV[@]}" -v "$B/gns3/wheelhouse:/wh:Z" "$PYTHON_BUILD_IMG" bash -ec "
+    "$CTR" run --rm "${PROXY_ENV[@]}" -v "$B/gns3/wheelhouse:/wh:Z" "$PYTHON_BUILD_IMG" bash -ec "
         pip download --no-cache-dir -d /wh gns3-server==${GNS3_VER} pip setuptools wheel
     "
     stamp_done 05-wheelhouse.done
@@ -389,10 +498,12 @@ fetch "$B/images/noble-server-cloudimg-amd64.img" \
 fetch "$B/images/cirros-0.6.3-x86_64-disk.img" \
     "https://download.cirros-cloud.net/0.6.3/cirros-0.6.3-x86_64-disk.img"
 note "VM base images: noble cloud image + cirros (validation-suite test VM)"
+}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 6. GNS3 appliances — definitions + free images + docker-node images
 # ═════════════════════════════════════════════════════════════════════════════
+stage_appliances() {
 echo "==== [6/10] GNS3 appliances ===="
 # 6a. .gns3a definitions from the GNS3 registry (tolerant: missing names WARN)
 for a in "${GNS3A_DEFS[@]}"; do
@@ -489,7 +600,7 @@ if have "$B/gns3/docker-nodes/gns3-node-images.tar.gz"; then
 else
     NODE_PULLED=()
     for img in "${GNS3_NODE_IMAGES[@]}"; do
-        if $CTR pull "$img"; then NODE_PULLED+=("$img"); else note "WARN: pull failed for $img — check the tag (FRR tags: quay.io/repository/frrouting/frr?tab=tags)"; fi
+        if "$CTR" pull "$img"; then NODE_PULLED+=("$img"); else note "WARN: pull failed for $img — check the tag (FRR tags: quay.io/repository/frrouting/frr?tab=tags)"; fi
     done
     if [ "${#NODE_PULLED[@]}" -gt 0 ]; then
         ctr_save "$B/gns3/docker-nodes/gns3-node-images.tar.gz" "${NODE_PULLED[@]}"
@@ -517,10 +628,12 @@ with versions and sha256 sums, in BUNDLE_NOTES.md before building the manifest �
 or rerun the manifest step ([10/10] in the fetch script) after adding files here.
 EOF
 note "Licensed GNS3 images: MANUAL — see gns3/appliances/README.txt"
+}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 7. Enrichment / rules data  (GeoIP descoped — see section 3 note)
 # ═════════════════════════════════════════════════════════════════════════════
+stage_enrichment() {
 echo "==== [7/10] Enrichment data ===="
 fetch "$B/enrichment/oui.txt"            "https://standards-oui.ieee.org/oui/oui.txt" || note "WARN: oui.txt fetch failed — retry manually"
 fetch "$B/enrichment/public_suffix_list.dat" "https://publicsuffix.org/list/public_suffix_list.dat" || true
@@ -537,10 +650,12 @@ elif ET_CODE=$(curl -sIL -o /dev/null -w '%{http_code}' "$ET_URL" || echo 000); 
 else
     note "WARN: ET Open ${ET_SURICATA_PATH} path returned HTTP ${ET_CODE} — branch may be retired; set ET_SURICATA_PATH (e.g. suricata-8.0) to match the target's Suricata version and rerun"
 fi
+}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 8. Offline docs mirrors — best effort, never fails the bundle
 # ═════════════════════════════════════════════════════════════════════════════
+stage_docs() {
 echo "==== [8/10] Docs mirrors ===="
 if command -v wget >/dev/null 2>&1; then
     docs_mirror() {  # docs_mirror <name> <url> — stamped complete; partial mirrors re-run
@@ -566,10 +681,12 @@ if command -v wget >/dev/null 2>&1; then
 else
     note "WARN: wget not installed on staging host — docs mirrors SKIPPED (dnf -y install wget, then rerun)"
 fi
+}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 9. Manual-download placeholders
 # ═════════════════════════════════════════════════════════════════════════════
+stage_manual() {
 echo "==== [9/10] Manual items ===="
 cat > "$B/dell/README.txt" <<'EOF'
 MANUAL DOWNLOADS from dell.com/support — service tag G8WFGH4
@@ -608,10 +725,12 @@ these existed, and sha256sum -c cannot see files it never listed:
     ./scripts/r770-bundle.sh verify   <bundle-dir> --strict
 EOF
 note "Dell firmware/tools: MANUAL — see dell/README.txt"
+}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 10. Manifest
 # ═════════════════════════════════════════════════════════════════════════════
+stage_manifest() {
 echo "==== [10/10] Manifest ===="
 {
     echo; echo "## Versions"
@@ -634,9 +753,9 @@ echo "==== [10/10] Manifest ===="
     echo "4. docker load -i malcolm/malcolm-images-*.tar.gz && docker load -i docker/monitoring-images.tar.gz && docker load -i gns3/docker-nodes/gns3-node-images.tar.gz"
     echo "5. gns3 wheelhouse, definitions/, appliances/, images/, enrichment/, docs/ into place per buildout doc"
     echo "6. Keep previous bundle until this one validates"
-    if [ "$CTR" = "podman" ]; then
-        echo; echo "## Podman-built bundle note"
-        echo "Image tarballs were produced by 'podman save --multi-image-archive' (docker-archive"
+    if [ "$CTR" != "docker" ]; then
+        echo; echo "## Non-Docker-built bundle note (${CTR})"
+        echo "Image tarballs were produced by '${CTR_SAVE[*]:-"$CTR" save}' (docker-archive"
         echo "format). Before the transfer, test 'docker load' of monitoring-images.tar.gz on any"
         echo "Docker host and confirm tags with 'docker image ls'. After load on the R770, verify"
         echo "tags match malcolm/image-list.txt and docker/monitoring-image-list.txt (docker.io/"
@@ -646,7 +765,20 @@ echo "==== [10/10] Manifest ===="
 
 cp "$BUNDLE_TOOL" "$B/"          # the verifier travels with the media
 "$BUNDLE_TOOL" manifest "$B"
+}
 
+# ── driver ───────────────────────────────────────────────────────────────────
+RAN=""
+for s in "${STAGES[@]}"; do
+    if want "$s"; then "stage_$s"; RAN="$RAN $s"; else echo "==== skip: $s ===="; fi
+done
+
+if ! want manifest; then
+    echo
+    echo "Sections run:$RAN — no manifest written. When the bundle is complete, run:"
+    echo "  $0 --only manifest      (or r770-build-bundle.sh, which also gates it)"
+    exit 0
+fi
 echo
 echo "Bundle complete: $B"
 du -sh "$B"

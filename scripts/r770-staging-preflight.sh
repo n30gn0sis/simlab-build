@@ -6,25 +6,27 @@
 # the fetch downloads for hours, and every condition checked here is one that
 # would otherwise surface somewhere in the middle of that.
 #
-# TWO SUPPORTED STAGING HOSTS
+# ANY CONTAINER RUNTIME, JUDGED BY WHAT IT CAN DO (decision 2026-09-14)
 #
-#   Ubuntu 24.04 + Docker CE   the default (dependency manifest §0)
-#   RHEL 8 + rootful podman    supported alternative
+# The fetch is portable: every Ubuntu-specific command -- apt-get,
+# dpkg-scanpackages -- runs inside a clean ubuntu:24.04 container, and its bind
+# mounts carry :Z, which relabels for SELinux and is ignored elsewhere. So the
+# host distro is informational. What matters is the runtime, and what matters
+# about the runtime is capability, not name:
 #
-# The fetch itself was always portable: every Ubuntu-specific command --
-# apt-get, dpkg-scanpackages -- runs inside a clean ubuntu:24.04 container, so
-# resolving Ubuntu packages never required an Ubuntu host. Both of its bind
-# mounts already carry :Z, which relabels for SELinux and is ignored where
-# SELinux is absent. What was missing was a check that a RHEL host is actually
-# fit to run it, which is this script.
+#   - it is found: STAGING_CTR=<command> if set, else docker, podman, nerdctl
+#   - its daemon/engine answers `info`
+#   - it can pull the build image and give a container egress
+#   - its `save` writes a docker archive (manifest.json in the tar) -- the one
+#     format `docker load` on the R770 reads. This is probed for real in the
+#     egress stage, so a runtime nobody here has heard of is judged the same way.
 #
-# WHY RHEL MUST USE PODMAN, NOT DOCKER CE
-#
-# Docker CE on RHEL 8 comes from a third-party repository outside Red Hat
-# support and conflicts with the container-tools module that provides podman.
-# Installing it to run this fetch trades a working supported container stack
-# for an unsupported one. That conflict is why the default moved to Ubuntu on
-# 2026-09-04; on RHEL the answer is podman, which ships in container-tools.
+# Still refused: no runtime, an engine that does not answer, an LXC host, and
+# podman below 3.0 (no --multi-image-archive, so multi-image tarballs cannot
+# be written in that format). Rootless podman and Docker CE on RHEL used to be
+# refusals and are now warnings with the reason: they work, they are just not
+# the recommended setup, and the operator dispositions warnings before fetch day.
+# Ubuntu 24.04 + Docker CE remains the recommended default (manifest §0).
 #
 #   0  ready
 #   1  not ready -- at least one refusal
@@ -65,14 +67,14 @@ case "$OS_ID" in
         fi ;;
     rhel|rocky|almalinux|centos)
         if [ "$OS_MAJOR" = "8" ]; then
-            pass "staging OS: RHEL ${OS_VER} — supported alternative path, podman required"
+            pass "staging OS: RHEL ${OS_VER} — exercised alternative; rootful podman recommended"
         else
             warn "staging OS: RHEL-family ${OS_VER}; only 8 is exercised"
         fi ;;
     "")
         warn "cannot read ${OS_RELEASE} — staging OS unidentified" ;;
     *)
-        warn "unsupported distro '${OS_ID}' — only Ubuntu 24.04 and RHEL 8 are exercised" ;;
+        warn "distro '${OS_ID}' not exercised here — only Ubuntu 24.04 and RHEL 8 have been; the runtime checks below decide" ;;
 esac
 
 # ── 2. A VM, never a container ───────────────────────────────────────────────
@@ -83,24 +85,34 @@ else
     pass "virtualization: ${VIRT} — not lxc"
 fi
 
-# ── 3. Container runtime ─────────────────────────────────────────────────────
+# ── 3. Container runtime — found by override or by name, judged by capability ─
 CTR=""
-if command -v docker >/dev/null 2>&1 && ! docker --version 2>/dev/null | grep -qi podman; then
+if [ -n "${STAGING_CTR:-}" ]; then
+    if command -v "$STAGING_CTR" >/dev/null 2>&1; then
+        CTR="$STAGING_CTR"
+    else
+        fail "STAGING_CTR=${STAGING_CTR} is not on PATH"
+    fi
+elif command -v docker >/dev/null 2>&1 && ! docker --version 2>/dev/null | grep -qi podman; then
     CTR="docker"
 elif command -v podman >/dev/null 2>&1; then
     CTR="podman"
+elif command -v nerdctl >/dev/null 2>&1; then
+    CTR="nerdctl"
 fi
 
 IS_RHEL=0
 case "$OS_ID" in rhel|rocky|almalinux|centos) IS_RHEL=1 ;; esac
 
 if [ -z "$CTR" ]; then
-    fail "no container runtime — install Docker CE (Ubuntu) or the container-tools module (RHEL)"
-elif [ "$CTR" = "docker" ] && [ "$IS_RHEL" = "1" ]; then
-    fail "Docker CE on RHEL conflicts with the container-tools module that provides podman — use rootful podman instead"
+    [ -n "${STAGING_CTR:-}" ] || fail "no container runtime — none of docker, podman, nerdctl on PATH (or set STAGING_CTR=<command>)"
 else
     CTR_VER=$("$CTR" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
-    pass "container runtime: ${CTR} ${CTR_VER:-unknown}"
+    pass "container runtime: ${CTR} ${CTR_VER:-unknown}$([ -n "${STAGING_CTR:-}" ] && echo ' (STAGING_CTR override)')"
+
+    if [ "$CTR" = "docker" ] && [ "$IS_RHEL" = "1" ]; then
+        warn "Docker CE on RHEL comes from a repo outside Red Hat support and conflicts with the container-tools module — it works for the fetch, but rootful podman is the supported setup there"
+    fi
 
     if [ "$CTR" = "podman" ]; then
         # podman save --multi-image-archive is how the image tarballs are written
@@ -115,7 +127,7 @@ else
         fi
 
         if [ "$(id -u)" -ne 0 ]; then
-            fail "rootless podman — rerun with sudo; rootful gives docker-identical ownership and uses /var/lib/containers"
+            warn "rootless podman — works, but image storage lands under \$HOME and bundle files are owned by you; rerun with sudo for docker-identical ownership and /var/lib/containers"
         else
             pass "podman is rootful"
         fi
@@ -173,13 +185,23 @@ else
     fail "r770-bundle.sh missing or not executable — the bundle would ship with no verifier"
 fi
 
-# ── 8. Egress, through the runtime that will actually do the pulling ─────────
+# ── 8. Egress and save format, through the runtime that will do the work ─────
 if [ "$SKIP_EGRESS" = "1" ]; then
-    echo "SKIP  registry egress check (PREFLIGHT_SKIP_EGRESS=1)"
+    echo "SKIP  registry egress + save-format probe (PREFLIGHT_SKIP_EGRESS=1)"
 elif [ -n "$CTR" ]; then
     if timeout 300 "$CTR" run --rm "$UBUNTU_BUILD_IMG" \
             bash -ec "apt-get update -qq" >/dev/null 2>&1; then
         pass "registry pull and in-container apt egress verified"
+        # The bundle's image tarballs are read by `docker load` on the R770,
+        # which understands docker-archive: a tar with manifest.json at its
+        # root. Probe the format the runtime actually writes instead of
+        # trusting its name -- this is what makes an unknown runtime safe.
+        if timeout 300 "$CTR" save "$UBUNTU_BUILD_IMG" 2>/dev/null | tar -tf - 2>/dev/null \
+                | grep -qE '^(\./)?manifest\.json$'; then
+            pass "${CTR} save writes docker-archive (manifest.json present) — the R770's docker load can read it"
+        else
+            fail "${CTR} save output has no manifest.json — not docker-archive; the R770's docker load could not read the bundle's image tarballs"
+        fi
     else
         fail "cannot pull ${UBUNTU_BUILD_IMG} or reach archive.ubuntu.com from inside it — see the fetch script's proxy notes"
     fi

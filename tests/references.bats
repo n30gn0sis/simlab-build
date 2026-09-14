@@ -33,12 +33,19 @@ assert_named_paths_exist() {
 # which rule points nowhere.
 assert_prd_sections_exist() {  # <prd> <root>...
     local prd="$1"; shift
-    local headings missing=""
+    local headings cited missing=""
     headings="$(grep -oE '^## [0-9]+\.' "$prd" | grep -oE '[0-9]+')"
+    cited="$(grep -rhoE 'PRD\.md`? *§[0-9]+( and §[0-9]+)*' "$@" 2>/dev/null \
+                 | grep -oE '§[0-9]+' | grep -oE '[0-9]+' | sort -un)"
+    # An empty list means the roots are wrong or the citations moved, not
+    # that everything resolves. Fail rather than report coverage we lack.
+    if [ -z "$cited" ]; then
+        echo "no PRD.md section citation found under $* -- nothing to check"
+        return 1
+    fi
     while read -r n; do
         printf '%s\n' "$headings" | grep -qx "$n" || missing="$missing §$n"
-    done < <(grep -rhoE 'PRD\.md`? *§[0-9]+( and §[0-9]+)*' "$@" 2>/dev/null \
-                 | grep -oE '§[0-9]+' | grep -oE '[0-9]+' | sort -un)
+    done <<< "$cited"
     echo "cited under $* but no such heading in $prd:$missing"
     [ -z "$missing" ]
 }

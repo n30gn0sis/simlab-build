@@ -1,6 +1,6 @@
 # Rehearsal sites up — evidence (staging VM 9770, 192.168.4.28)
 
-Plan: `work/plans/active/2026-09-12-rehearsal-sites-up.md`. Format per `.claude/agents/validation-runner.md`:
+Plan: `work/plans/archive/2026-09-12-rehearsal-sites-up.md`. Format per `.claude/agents/validation-runner.md`:
 check · expected · observed · verdict · command. Run over SSH from LXC 101 as `ubuntu`.
 
 ## Task 0 — VM grown to 12 GiB (2026-09-12)

@@ -1,6 +1,6 @@
 # Malcolm offline-deployment rehearsal — evidence (staging VM 9770, 192.168.4.28)
 
-Plan: `work/plans/active/2026-09-09-malcolm-rehearsal.md`. Format per `.claude/agents/validation-runner.md`:
+Plan: `work/plans/archive/2026-09-09-malcolm-rehearsal.md`. Format per `.claude/agents/validation-runner.md`:
 check · expected · observed · verdict · command. Run over SSH from LXC 101 as `ubuntu`.
 
 ## Task 0 — scripts shipped, auto-revert proven (2026-09-12)

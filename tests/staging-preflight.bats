@@ -11,7 +11,16 @@ setup() {
     SCRIPT="$BATS_TEST_DIRNAME/../scripts/r770-staging-preflight.sh"
     BIN="$BATS_TEST_TMPDIR/bin"
     mkdir -p "$BIN"
-    export PATH="$BIN:$PATH"
+    # The script under test sees ONLY the stubs plus a fixed list of real host
+    # tools. Inheriting the runner's PATH lets a real docker, podman or pigz
+    # answer for the host under test after `unstub` (GitHub's ubuntu-latest
+    # ships all three), which is exactly the leak these tests exist to catch.
+    REAL="$BATS_TEST_TMPDIR/real"
+    mkdir -p "$REAL"
+    for t in bash env sh awk grep head tail free id dirname rm tar sha256sum curl gzip getenforce; do
+        p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$REAL/$t"
+    done
+    PREFLIGHT_PATH="$BIN:$REAL"
     export PREFLIGHT_SKIP_EGRESS=1          # never touch a registry from a test
     export PREFLIGHT_BUNDLE_DIR="$BATS_TEST_TMPDIR"
     os_release ubuntu 24.04
@@ -33,9 +42,11 @@ stub() {  # stub <name> <body>
 
 unstub() { rm -f "$BIN/$1"; }
 
+preflight() { PATH="$PREFLIGHT_PATH" "$SCRIPT"; }
+
 @test "a healthy Ubuntu host with docker passes" {
     stub docker 'case "$1" in --version) echo "Docker version 29.8.0";; info) exit 0;; esac'
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [ "$status" -eq 0 ]
 }
@@ -45,7 +56,7 @@ unstub() { rm -f "$BIN/$1"; }
     unstub docker
     stub podman 'case "$1" in --version) echo "podman version 4.9.4";; info) exit 0;; esac'
     stub id 'echo 0'
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [ "$status" -eq 0 ]
 }
@@ -55,7 +66,7 @@ unstub() { rm -f "$BIN/$1"; }
     unstub docker
     stub podman 'case "$1" in --version) echo "podman version 4.9.4";; info) exit 0;; esac'
     stub id 'echo 0'
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [[ "$output" == *"rhel"* ]] || [[ "$output" == *"RHEL"* ]]
     [[ "$output" != *"unsupported"* ]]
@@ -64,7 +75,7 @@ unstub() { rm -f "$BIN/$1"; }
 @test "an LXC container is refused — Docker in LXC fights overlayfs" {
     stub docker 'case "$1" in --version) echo "Docker version 29.8.0";; info) exit 0;; esac'
     stub systemd-detect-virt 'echo lxc'
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [ "$status" -eq 1 ]
     [[ "$output" == *"lxc"* ]]
@@ -75,7 +86,7 @@ unstub() { rm -f "$BIN/$1"; }
     unstub docker
     stub podman 'case "$1" in --version) echo "podman version 2.2.1";; info) exit 0;; esac'
     stub id 'echo 0'
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [ "$status" -eq 1 ]
     [[ "$output" == *"multi-image-archive"* ]] || [[ "$output" == *"3.0"* ]]
@@ -86,7 +97,7 @@ unstub() { rm -f "$BIN/$1"; }
     unstub docker
     stub podman 'case "$1" in --version) echo "podman version 4.9.4";; info) exit 0;; esac'
     stub id 'echo 1000'
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [ "$status" -eq 1 ]
     [[ "$output" == *"sudo"* ]]
@@ -95,7 +106,7 @@ unstub() { rm -f "$BIN/$1"; }
 @test "Docker CE on RHEL is refused — it conflicts with container-tools" {
     os_release rhel 8.10
     stub docker 'case "$1" in --version) echo "Docker version 29.8.0";; info) exit 0;; esac'
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [ "$status" -eq 1 ]
     [[ "$output" == *"container-tools"* ]]
@@ -104,7 +115,7 @@ unstub() { rm -f "$BIN/$1"; }
 @test "too little free disk is refused before any download starts" {
     stub docker 'case "$1" in --version) echo "Docker version 29.8.0";; info) exit 0;; esac'
     stub df 'echo "/dev/x 1 1 1048576 99% /"'      # 1 GiB free, in 1K blocks
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [ "$status" -eq 1 ]
     [[ "$output" == *"150"* ]]
@@ -113,14 +124,14 @@ unstub() { rm -f "$BIN/$1"; }
 @test "no container runtime at all is refused" {
     unstub docker
     unstub podman
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [ "$status" -eq 1 ]
 }
 
 @test "a broken daemon is refused even when the client exists" {
     stub docker 'case "$1" in --version) echo "Docker version 29.8.0";; info) exit 1;; esac'
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [ "$status" -eq 1 ]
 }
@@ -128,14 +139,14 @@ unstub() { rm -f "$BIN/$1"; }
 @test "an unsupported distro warns but does not fail" {
     os_release fedora 41
     stub docker 'case "$1" in --version) echo "Docker version 29.8.0";; info) exit 0;; esac'
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [ "$status" -eq 2 ]
 }
 
 @test "the verifier that must ship inside the bundle is checked for" {
     stub docker 'case "$1" in --version) echo "Docker version 29.8.0";; info) exit 0;; esac'
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [[ "$output" == *"r770-bundle.sh"* ]]
 }
@@ -143,7 +154,7 @@ unstub() { rm -f "$BIN/$1"; }
 @test "pigz absent warns but does not fail — gzip still works, just slower" {
     stub docker 'case "$1" in --version) echo "Docker version 29.8.0";; info) exit 0;; esac'
     unstub pigz
-    run "$SCRIPT"
+    run preflight
     echo "$output"
     [ "$status" -eq 2 ]
     [[ "$output" == *"pigz"* ]]

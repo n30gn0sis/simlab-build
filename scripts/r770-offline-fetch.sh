@@ -294,6 +294,19 @@ seed_glob() {  # seed_glob <glob relative to bundle root> — seed every match
     return 0
 }
 
+# resolve_latest_tag <api-url> — print a GitHub releases/latest "tag_name",
+# or nothing on failure. `grep -m1` exits the instant it matches, closing its
+# end of the pipe while curl may still be writing; under this script's
+# set -euo pipefail, curl's resulting EPIPE (exit 23) would otherwise kill the
+# whole fetch here — which is exactly what happened on 2026-09-08 (logged then
+# as "transient, not reproducible" — it was neither) and again on 2026-09-15.
+# The Alpine block two sections below has the same curl|grep -m1 shape and
+# has always carried this guard; this is that same guard, given its own name
+# so nobody re-adds the unguarded form.
+resolve_latest_tag() {
+    curl -fsSL "$1" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' || true
+}
+
 # ── proxy handling ───────────────────────────────────────────────────────────
 # Normalize either case into both, export for host curl/wget, and build the
 # env-injection list for container runs (apt/pip inside containers need these).
@@ -531,8 +544,7 @@ if [ -n "$VYOS_EXISTING" ] && [ "$FORCE" = "0" ]; then
     VYOS_TAG=$(basename "$VYOS_EXISTING" | sed -E 's/^vyos-(.*)-generic-amd64\.iso$/\1/')
     note "VyOS rolling ${VYOS_TAG}: already present — skipped"
 else
-    VYOS_TAG=$(curl -fsSL https://api.github.com/repos/vyos/vyos-nightly-build/releases/latest \
-        | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
+    VYOS_TAG=$(resolve_latest_tag "https://api.github.com/repos/vyos/vyos-nightly-build/releases/latest")
     if [ -n "$VYOS_TAG" ]; then
         VYOS_ISO="vyos-${VYOS_TAG}-generic-amd64.iso"
         fetch "$B/gns3/appliances/$VYOS_ISO" \

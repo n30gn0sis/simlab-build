@@ -23,6 +23,21 @@ setup() {
 
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$BIN/$1"; chmod +x "$BIN/$1"; }
 
+# load_fn <script> <fn> -- eval just that function's literal definition from
+# the shipped script, so a test can call the real code without running the
+# rest of the file (which would touch the network). Fails loudly if the
+# function is not found, rather than silently defining nothing.
+load_fn() {
+    local out
+    out="$(awk -v fn="$2" '''
+        $0 ~ "^"fn"\\(\\) \\{" { p=1 }
+        p { print }
+        p && /^}/ { exit }
+    ''' "$1")"
+    [ -n "$out" ] || return 1
+    eval "$out"
+}
+
 ALL="preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual manifest"
 
 # selected <output> -- the stage names the dry run says it would execute, in order
@@ -101,4 +116,33 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
     [ "$status" -eq 0 ]
     grep -q 'Malcolm images saved' "$BUNDLE_DIR/BUNDLE_NOTES.md"
     grep -qE 'rerun|section' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+@test "resolve_latest_tag survives grep -m1 closing the pipe early under set -euo pipefail" {
+    # Reproduces the VyOS-block defect that killed the fetch on 2026-09-08 and
+    # again on 2026-09-15: grep -m1 exits right after its first match, closing
+    # its read end while curl may still be writing; unguarded, curl's
+    # resulting EPIPE (exit 23) kills the whole fetch under
+    # set -euo pipefail. The stub curl writes a match line, then ~500k lines
+    # of filler -- far past the pipe buffer -- so the race resolves the same
+    # way every run.
+    load_fn "$SCRIPT" resolve_latest_tag || { echo "resolve_latest_tag not found in $SCRIPT"; false; }
+    stub curl 'printf "%s\n" "{\"tag_name\": \"2026.09.01-0034-rolling\"}"; seq 1 500000 | sed "s/^/padding /"'
+    harness="$BATS_TEST_TMPDIR/harness.sh"
+    {
+        echo 'set -euo pipefail'
+        declare -f resolve_latest_tag
+        echo 'TAG=$(resolve_latest_tag http://fake)'
+        echo 'echo "TAG=$TAG"'
+    } > "$harness"
+    run env PATH="$BIN:$PATH" bash "$harness"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"TAG=2026.09.01-0034-rolling"* ]]
+}
+
+@test "the VyOS tag lookup goes through resolve_latest_tag, not a bare unguarded pipe" {
+    run grep -c 'VYOS_TAG=\$(resolve_latest_tag' "$SCRIPT"
+    [ "$status" -eq 0 ]
+    [ "$output" -ge 1 ]
 }

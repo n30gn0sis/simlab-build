@@ -12,6 +12,30 @@ updates, ET rules and OUI data are only as fresh as the last bundle.
 | Date | Bundle | Size | Key versions | `verify` result | WARN dispositions | Courier | Imported on R770 |
 |---|---|---|---|---|---|---|---|
 | 2026-09-08 (amended 2026-09-12) | `bundle-20260908` | **15 GB**, **1634 files** (was 1617) | Malcolm 26.08.0 · Ubuntu 24.04.4 · gns3-server 3.0.6 · FRR 10.7.1 · alertmanager v0.34.0 · cadvisor v0.60.5 (ghcr.io) | **PASS WITH WARNINGS (exit 2)** | 2 docs-mirror WARNs, accepted — see below | not yet transferred | no |
+| 2026-09-15 | `bundle-20260915` | **14 GB**, **1594 files** | same pins as bundle-20260908 | **PASS WITH WARNINGS (exit 2)** | 3 WARN lines (CHR download + 2 docs mirrors), accepted — see below | test artifact, not transferred | no |
+
+### bundle-20260915 — deployment test of the runtime-by-capability preflight and sectioned fetch, not a transfer candidate
+
+Cut on staging VM 9770 to validate the 2026-09-14 script changes against a real, full bundle
+build, after the VM was wiped to init state. Full evidence, including a real defect found and
+fixed test-first during the run: `state/inventory/staging-sections-2026-09-15.md`.
+
+Same version pins as `bundle-20260908` (no pin review — this is not a supply cycle). `verify`:
+**PASS WITH WARNINGS, exit 2** — CHR 7.21.5 download (network reset, retries exhausted, accepted
+and retryable) plus the same two accepted docs-mirror WARNs `bundle-20260908` carries. `--strict`
+correctly FAILs, as intended.
+
+**Found and fixed en route**: the fetch's VyOS appliance block killed the whole run with
+`curl: (23) Failure writing output to destination` — `grep -m1` closing its pipe while curl
+was still writing, unguarded, under `set -euo pipefail`. This is the same failure
+`bundle-20260908`'s build logged on 2026-09-08 at the identical point and dismissed as
+"transient, not reproducible" — it was neither. Fixed test-first in `scripts/r770-offline-fetch.sh`
+(`resolve_latest_tag()`, guarded the way the adjacent Alpine block already was); the fetch
+chain resumed from where it died and completed clean. Full root-cause writeup and RED/GREEN
+evidence: `state/inventory/staging-sections-2026-09-15.md`.
+
+**Left on the VM, not imported anywhere, not a candidate to replace `bundle-20260908`** in the
+phase tracker or on transfer media. Its purpose was proving the scripts, not supplying software.
 
 ### bundle-20260908 — build result
 

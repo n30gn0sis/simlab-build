@@ -1,4 +1,4 @@
-<!-- Generated: 2026-09-14 | Files scanned: 92 | Token estimate: ~500 -->
+<!-- Generated: 2026-09-16 | Files scanned: 92 | Token estimate: ~500 -->
 # Dependencies — everything that crosses the air gap
 
 Only `scripts/r770-offline-fetch.sh` talks to the internet, and only on staging. Exact versions and
@@ -19,7 +19,9 @@ and `docs/plans/r770-dependency-manifest.md`.
 
 ## Staging host requirements
 Ubuntu VM with Docker CE (default) or RHEL 8 with rootful podman; ~150 GB free; curl gpg sha256sum unzip wget; pigz optional.
-`scripts/r770-staging-preflight.sh` refuses anything else.
+`scripts/r770-staging-preflight.sh` accepts any runtime that passes its capability probes (`info`, egress, `save`
+writes docker-archive) — not by name; rootless podman and Docker CE on RHEL warn rather than refuse. It still
+refuses `lxc`, an unreachable runtime, or a `save` that isn't docker-archive.
 
 ## Tooling this repo itself needs
 bash, shellcheck, bats (tests) · git · Claude Code plugins: superpowers, ecc (not required by any script).

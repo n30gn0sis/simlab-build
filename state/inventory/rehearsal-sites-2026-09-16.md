@@ -98,3 +98,36 @@ running** at close-out — no Teardown section in this file.
 | Web UI title (follows a 308 redirect from `/`) | a title from the bundled UI | `<title>GNS3 Web UI` | PASS | `curl -L …` |
 | Login | token issued | `login: token issued` | PASS | `POST /v3/access/users/login` |
 | **Finding, not blocking:** server log shows the local compute created and WebSocket-connected (`Create compute local`, `Connected to compute 'local'`), but `GET /v3/computes` returns `[]` for the logged-in admin token — likely an API-permission-scope change in 3.0.6 vs the version the 2026-09-12 baseline used. Node execution is out of scope for this plan regardless (dynamips/ubridge/vpcs not in the bundle), so not chased further; worth a look if a future plan needs the compute API. | `computes: 1` (2026-09-12 baseline) | `computes: 0` via REST; compute visibly live in the server log | WARN (info) | `GET /v3/computes` vs `server.log` |
+
+## Task 9 — Whole portal, measured, left running (2026-09-16)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| All five sites, one pass, with the CA | five `200`/`302`/`308` with `tls=0` | `portal.lab 200`, `malcolm.lab 200`, `gns3.lab 308`, `monitoring.lab 302`, `docs.lab 200` — all `tls=0` | PASS | `curl --resolve … --cacert ca.crt -u analyst:…` |
+| Only nginx on `0.0.0.0` | only `443` | `0.0.0.0:443` — nothing else in that list | PASS | `ss -ltnp` |
+| `probe_success` for all five, real `gns3.lab` this time | all `1` | `docs.lab 1`, `malcolm.lab 1`, `gns3.lab 1`, `portal.lab 1`, `monitoring.lab 1` — the Task 7 false-positive is now a real pass since the actual vhost exists | PASS | `prometheus/api/v1/query?query=probe_success` |
+| Memory at rest, all five sites + capture up | comfortable headroom | `Mem: 11Gi total, 2.4Gi available` — tighter than the 12 GiB / ~7.5Gi-used 2026-09-12 baseline (this VM is 11 GiB now), but stable across every task, no OOM/restart observed | PASS (info) | `free -h` |
+
+## How to use it (operator)
+
+1. Hosts line on your machine: `192.168.4.28 portal.lab malcolm.lab gns3.lab monitoring.lab docs.lab`
+2. Trust the CA — **a new one, generated 2026-09-16; the 2026-09-12 CA is no longer valid anywhere**: `scp ubuntu@192.168.4.28:/etc/nginx/ssl/ca.crt .` → import as a trusted root.
+3. Start at https://portal.lab/ (login `analyst`).
+4. Passwords, on the VM only: `cat ~/.malcolm-rehearsal-pw` (analyst), `cat ~/.monitoring.env` (Grafana admin), `cat ~/.gns3-admin-pw` (GNS3 admin).
+5. GNS3 node execution (dynamips/ubridge/vpcs) is out of scope — server + web UI only, same as 2026-09-12.
+
+## This deployment is intentionally left running
+
+**No teardown was executed as part of this plan.** Unlike the 2026-09-12 rehearsal, this stack stays
+up for open-ended manual testing until the operator says otherwise. No auto-revert timer, no
+scheduled teardown. If VM 9770 is needed for something else (a fresh bundle cut, another rehearsal),
+that is a conscious decision the operator makes, not something this plan does automatically.
+
+## If the VM reboots (nothing is enabled at boot, by decision — nginx and node_exporter are the package-enabled exceptions)
+
+    sudo systemctl start nginx prometheus-node-exporter
+    cd ~/malcolm/malcolm/scripts && ./start             # Malcolm's own start script
+    cd ~/r770/config/monitoring && docker compose up -d --pull never
+    tmux new -d -s gns3 "/opt/gns3/bin/gns3server --config /etc/gns3/gns3_server.conf --logfile /var/log/gns3/server.log"
+
+VMs 100 and 108 must stay stopped on Proxmox while this runs (same standing requirement as 2026-09-12).

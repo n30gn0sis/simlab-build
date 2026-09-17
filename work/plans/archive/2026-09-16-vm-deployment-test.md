@@ -1,6 +1,6 @@
 # VM Deployment Test — Rehearsal Sites Up, Left Running — Implementation Plan
 
-> **STATUS: EXECUTED 2026-09-16** — all five sites running; left up for manual testing, no teardown. Evidence in `state/inventory/rehearsal-sites-2026-09-16.md`.
+> **STATUS: EXECUTED 2026-09-16; TORN DOWN 2026-09-17** (full wipe, including the bundle, per operator request) — evidence (incl. teardown) in `state/inventory/rehearsal-sites-2026-09-16.md`. Archived 2026-09-17.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

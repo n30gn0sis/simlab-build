@@ -1,6 +1,6 @@
 # Rehearsal sites up (redeploy, left running) — evidence (staging VM 9770, 192.168.4.28)
 
-Plan: `work/plans/active/2026-09-16-vm-deployment-test.md`. Format per `.claude/agents/validation-runner.md`:
+Plan: `work/plans/archive/2026-09-16-vm-deployment-test.md`. Format per `.claude/agents/validation-runner.md`:
 check · expected · observed · verdict · command. Run over SSH from LXC 101 as `ubuntu`.
 
 Unlike `state/inventory/rehearsal-sites-2026-09-12.md`, this deployment is from `bundle-20260915`
@@ -131,3 +131,27 @@ that is a conscious decision the operator makes, not something this plan does au
     tmux new -d -s gns3 "/opt/gns3/bin/gns3server --config /etc/gns3/gns3_server.conf --logfile /var/log/gns3/server.log"
 
 VMs 100 and 108 must stay stopped on Proxmox while this runs (same standing requirement as 2026-09-12).
+
+## Teardown (2026-09-17, operator-confirmed scope: full wipe, including the bundle)
+
+Unlike the 2026-09-12 teardown (which kept `bundle-20260908`), the operator chose a full wipe to init
+state this time — no bundle survives on the VM. Any future rehearsal needs a fresh bundle cut first.
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| Malcolm | wiped, 0 containers | Malcolm's own `wipe` → `docker compose ps -q \| wc -l` = `0` | PASS | Malcolm's own `wipe` script |
+| Monitoring | down, volumes gone | `alertmanager`/`prometheus` removed, `monitoring_grafana-data`/`monitoring_prom-data` volumes removed, network removed | PASS | `docker compose down -v` |
+| GNS3 | stopped, removed | `gns3server` outlived its tmux session (same finding as 2026-09-12) → `pkill`; `/opt/gns3 /etc/gns3 /srv/gns3 /var/log/gns3 ~/GNS3`, admin pw + JWT removed | PASS | `pkill gns3server; rm -rf` |
+| nginx | sites/CA/htpasswd gone, package purged | all site confs, snippets, `ssl/`, `lab.htpasswd`, `/srv/www` removed; `nginx`/`nginx-common` purged | PASS | `rm -f …; apt-get purge nginx nginx-common` |
+| Rehearsal packages | purged | `easy-rsa`, `python3-venv`, `python3.12-venv`, `python3-ruamel.yaml(.clib)`, `python3-dotenv`, `python3-pip-whl`, `python3-setuptools-whl`, `prometheus-node-exporter` all purged; `dpkg-query` finds none | PASS | `apt-get purge …` |
+| Test files, incl. the bundle | gone | `~/r770` (bundle-20260915 14G, config, wiki incl. root-owned MkDocs build output, fetch logs), `~/malcolm`, `~/lab-ca`, `~/malcolm-config-rehearsal.json`, start log, sample pcap, both password files removed; `~/r770/scripts/` recreated empty (matches the 2026-09-15 convention) | PASS | `rm -rf …` (root-owned MkDocs output needed `sudo rm -rf`) |
+| Docker leftovers | 0 images/containers/volumes | `docker system prune -a --volumes` → `Images 0, Containers 0, Local Volumes 0, Build Cache 0` (ran long — 37 images / ~30GB — moved to background, confirmed via polling) | PASS | `docker system prune -a --volumes -f`; `docker system df` |
+| Listeners | only ssh + resolved | `0.0.0.0:22`, `127.0.0.53%lo:53`, `127.0.0.54:53`, `[::]:22` | PASS | `ss -ltnp` |
+| No stray iptables/hosts/cron/tmux | none | no DROP rules, no `.lab` hosts lines, no crontab, no tmux server running | PASS | `iptables -S OUTPUT; grep .lab /etc/hosts; crontab -l; tmux ls` |
+| VM at rest | — | disk `11G used / 376G free / 387G total (3%)`; mem `624Mi used / 10Gi available`; VM still 11 GiB (unchanged, no resize this run) | info | `df; free` |
+
+**Kept on purpose:** `~/r770/scripts/` (empty, ready for the next fetch), base staging tooling (docker, curl,
+gpg, sha256sum, unzip, wget, pigz, jq, rsync, `~/.gnupg`, `~/.ssh`) — matches the 2026-09-15 init-state baseline.
+**Nothing else survives** — this was a full wipe, not a "keep the bundle" teardown like 2026-09-12.
+**Operator follow-up:** remove the 2026-09-16 lab CA from any browser trust store where it was imported —
+the CA no longer exists on the VM; drop the `.lab` hosts line; a future rehearsal needs `scripts/r770-offline-fetch.sh` run again from scratch.

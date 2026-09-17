@@ -73,3 +73,16 @@ running** at close-out — no Teardown section in this file.
 |---|---|---|---|---|
 | MkDocs build with the bundled image | builds | `Documentation built in 0.25 seconds`; `site/` = `404.html access assets cli-tools gns3 index.html malcolm search sitemap.xml` (one deprecation notice about a future mkdocs-material major version — informational, no error) | PASS | `docker run --rm -v $PWD:/docs squidfunk/mkdocs-material:latest build` |
 | Served | title + a real page | `<title>Analyst Guide — R770 Network Lab`; `malcolm page 200` | PASS | `curl --cacert ca.crt -u analyst:…` |
+
+## Task 7 — monitoring.lab (2026-09-16)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| node_exporter from bundle | base package only (not `-collectors`, which pulls deps not in this curated set) | first attempt with `-collectors` failed (`moreutils`, `python3-prometheus-client` unmet deps, not this bundle's problem to fix); base package alone: `Setting up prometheus-node-exporter (1.7.0-1ubuntu0.3)`, `2514` `node_` metrics | PASS (after correcting my own mistake) | `apt-get install ./prometheus-node-exporter_*.deb` |
+| `.env` from `bundle-20260915`'s image list | 5 image refs, each matching a tag already in `docker image ls` | `prom/prometheus:v3.14.0`, `prom/alertmanager:v0.34.0`, `grafana/grafana-oss:12.1.0`, `ghcr.io/google/cadvisor:v0.60.5`, `prom/blackbox-exporter:v0.28.0` — all matched pre-loaded tags | PASS | `docker compose config --images` |
+| Stack up, `--pull never` | five services `Up` | all five `Up`/`Up (healthy)` within 15s | PASS | `docker compose up -d --pull never` |
+| Reachable | Grafana title, Prometheus/Alertmanager ready | `<title>Grafana`; `Prometheus Server is Ready. 200`; `OK 200` | PASS | `curl --cacert ca.crt -u analyst:…` |
+| Targets | prometheus/node/cadvisor up; portal-vhosts probed | all up, incl. `portal.lab malcolm.lab monitoring.lab docs.lab` | PASS | `prometheus/api/v1/targets` |
+| **Finding:** `gns3.lab` probe already reports `up` even though GNS3 doesn't exist yet (Task 8 not done) — nginx has no `gns3.lab` vhost, so the unmatched SNI falls back to whichever vhost nginx treats as default, which answers `401` (a status Blackbox's `lab_https` module accepts as "answers over TLS"). Not a monitoring-stack defect; it means this probe can't distinguish a real `gns3.lab` from an unrelated fallback vhost until the real vhost is enabled in Task 8 — worth re-checking there. | `down` until Task 8 (per 2026-09-12 baseline expectation) | `up` (false positive via fallback vhost) | WARN (info) | `prometheus/api/v1/targets` |
+| Ports | all five on `127.0.0.1` only | `127.0.0.1:{3000,8080,9090,9093,9115}` | PASS | `ss -ltnp` |
+| Memory after monitoring | headroom remains for GNS3 | `Mem: 11Gi total, 2.5Gi available` — improved since Task 3 (cache reclaim), still watching | PASS (info) | `free -h` |

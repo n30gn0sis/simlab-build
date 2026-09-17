@@ -66,3 +66,10 @@ running** at close-out — no Teardown section in this file.
 | vhost enabled | `nginx -t` ok | `configuration file /etc/nginx/nginx.conf test is successful`, reloaded | PASS | `nginx -t; systemctl reload nginx` |
 | Unauthenticated | 401 | `unauth 401` | PASS | `curl --cacert ca.crt --resolve portal.lab:443:127.0.0.1` |
 | Authenticated | landing page | first probe raced the reload and returned Malcolm's title (same class of race the 2026-09-12 cert probe hit); a clean retest returned `<title>R770 Lab Portal</title>`, `subject: CN=lab`, `HTTP/2 200` | PASS | same, `-u analyst:…`, verbose retest |
+
+## Task 6 — docs.lab (2026-09-16)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| MkDocs build with the bundled image | builds | `Documentation built in 0.25 seconds`; `site/` = `404.html access assets cli-tools gns3 index.html malcolm search sitemap.xml` (one deprecation notice about a future mkdocs-material major version — informational, no error) | PASS | `docker run --rm -v $PWD:/docs squidfunk/mkdocs-material:latest build` |
+| Served | title + a real page | `<title>Analyst Guide — R770 Network Lab`; `malcolm page 200` | PASS | `curl --cacert ca.crt -u analyst:…` |

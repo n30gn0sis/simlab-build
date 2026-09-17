@@ -58,3 +58,11 @@ running** at close-out — no Teardown section in this file.
 | Arkime indexed it | session count > 0 | `45` sessions within seconds, grew to `250` as enrichment continued | PASS | `arkime/api/sessions?date=24` |
 | Zeek processed it | zeek log files produced | `zeek-logs/processed/sample-20260917.pcap-sample-*` holds `conn.log dns.log http.log ssl.log files.log` etc. (proven via disk, not logs — `zeek-1`/`pcap-monitor-1` containers log almost nothing to stdout by design) | PASS | `find ~/malcolm/malcolm/zeek-logs` |
 | **Finding, not a failure:** no separate dated `malcolm_beats_zeek*` index appears (`malcolm_beats_initial` stays at 0 docs) — the 2026-09-12 evidence file's success shape doesn't hold on Malcolm 26.08.0's current architecture. Zeek-derived data is merged directly into `arkime_sessions3-260917` instead: protocol detection (`["udp","dns"]`, `["udp","dhcpv6"]`) and resolved DNS hostnames (`archive.ubuntu.com` — one of the exact hosts the capture queried) are both present on session records. | analyzable, zeek data present somewhere | 67 DNS sessions found via `expression=protocols==dns`, including `dns.host=archive.ubuntu.com` | PASS (different mechanism than 2026-09-12) | `arkime/api/sessions?...expression=protocols%3D%3Ddns` |
+
+## Task 5 — portal.lab (2026-09-16)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| vhost enabled | `nginx -t` ok | `configuration file /etc/nginx/nginx.conf test is successful`, reloaded | PASS | `nginx -t; systemctl reload nginx` |
+| Unauthenticated | 401 | `unauth 401` | PASS | `curl --cacert ca.crt --resolve portal.lab:443:127.0.0.1` |
+| Authenticated | landing page | first probe raced the reload and returned Malcolm's title (same class of race the 2026-09-12 cert probe hit); a clean retest returned `<title>R770 Lab Portal</title>`, `subject: CN=lab`, `HTTP/2 200` | PASS | same, `-u analyst:…`, verbose retest |

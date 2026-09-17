@@ -41,6 +41,21 @@ Combine with `&&`, `||`, parentheses. Set the **time range** first — it bounds
 
 Typical workflow: broad query → narrow with SPIView (click a field value to add it to the query) → open the interesting session → read the packet view → export what matters.
 
+### Saved views
+
+The lab ships a set of **IPsec** views in Arkime's view picker. A view narrows what you already have rather than replacing it, so pick one and keep working:
+
+| View | What it selects |
+|---|---|
+| **IPsec - all traffic** | ESP, AH and both IKE ports together — the starting point |
+| **IPsec - ESP payload** | the encrypted payload itself |
+| **IPsec - AH authenticated** | integrity-only IPsec — rare enough that any of it is worth a look |
+| **IPsec - IKE negotiation** | tunnel set-up and rekey |
+| **IPsec - NAT-T encapsulated** | IKE and ESP wrapped in UDP to cross NAT |
+| **IPsec - negotiation without payload** | peers that keep negotiating but never carry traffic |
+
+The same protocol set has a Dashboards page (see [Dashboards](#dashboards)), so you can read the shape of a window there and come back here for the packets.
+
 ### Exporting to Wireshark
 
 Wireshark itself runs on your workstation, not on the server. To get packets there:
@@ -83,6 +98,19 @@ OpenSearch Dashboards is the visual layer over everything Malcolm indexes (Zeek 
 Use it when the question is shaped like *"what does this time window look like?"* rather than *"show me this session"*: top talkers, protocol mix over time, spikes, rare user-agents, newly seen hostnames. Filter by clicking values or with the query bar (Lucene/DQL syntax, e.g. `source.ip:10.10.20.5 AND destination.port:445`), then pivot to Arkime when you need packets. Note the field-name difference: Dashboards uses ECS-style names (`source.ip`), Arkime uses its own (`ip.src`).
 
 Geo map panels will be empty — GeoIP is descoped.
+
+### The lab's IPsec page
+
+Alongside Malcolm's own pages, the lab ships **IPsec — Overview**, built for the traffic this server actually sees: tunnels terminating on the server itself, tunnels inside a GNS3 topology, and anything crossing the capture feeds. It puts five saved searches on one page — all IPsec traffic, then IKE, ESP, NAT-T and AH separately — so the split between *negotiation* and *payload* is visible without building a query.
+
+Reading it:
+
+- **ESP is opaque by design.** The payload is encrypted, so the questions it can answer are about peers, volume and timing, never content: who is tunnelling to whom, how much, and when it started or stopped.
+- **Negotiation with no payload behind it** is the useful tell. Repeated IKE with no ESP following means the tunnel is not coming up — a mismatched proposal, a failing auth, or a peer that never answers. That case has its own saved search.
+- **NAT-T instead of bare ESP** says a peer sits behind translation. Seeing both for the same pair across one window usually means the path changed mid-session.
+- **A quiet tunnel is still a tunnel.** ESP with near-zero bytes over a long window is a live association carrying nothing — worth telling apart from one that dropped.
+
+Each saved search also stands on its own in Discover, and the same protocols exist as Arkime views (see [Saved views](#saved-views)) for when you need packets rather than shape.
 
 ## Importing PCAP
 

@@ -86,3 +86,15 @@ running** at close-out — no Teardown section in this file.
 | **Finding:** `gns3.lab` probe already reports `up` even though GNS3 doesn't exist yet (Task 8 not done) — nginx has no `gns3.lab` vhost, so the unmatched SNI falls back to whichever vhost nginx treats as default, which answers `401` (a status Blackbox's `lab_https` module accepts as "answers over TLS"). Not a monitoring-stack defect; it means this probe can't distinguish a real `gns3.lab` from an unrelated fallback vhost until the real vhost is enabled in Task 8 — worth re-checking there. | `down` until Task 8 (per 2026-09-12 baseline expectation) | `up` (false positive via fallback vhost) | WARN (info) | `prometheus/api/v1/targets` |
 | Ports | all five on `127.0.0.1` only | `127.0.0.1:{3000,8080,9090,9093,9115}` | PASS | `ss -ltnp` |
 | Memory after monitoring | headroom remains for GNS3 | `Mem: 11Gi total, 2.5Gi available` — improved since Task 3 (cache reclaim), still watching | PASS (info) | `free -h` |
+
+## Task 8 — gns3.lab (2026-09-16)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| venv + server from wheelhouse | version pinned in the fetch script; 12 definitions | `3.0.6`; `12` | PASS | `python3 -m venv; pip install --no-index --find-links wheelhouse gns3-server` |
+| **Real defect found and fixed**: GNS3 3.0.6 writes its JWT secret key and controller SQLite DB directly under `/etc/gns3/` (not `~/.config/GNS3/…` as the older version the 2026-09-12 baseline used). That directory was only ever `chown`'d for the conf file itself, never the directory — server crashed on startup: `Permission denied: '/etc/gns3/gns3_jwt_secret_key'`, then `unable to open database file … gns3_controller.db`, then an unhandled `AttributeError: 'State' object has no attribute '_db_engine'`. Fixed: `chown -R ubuntu:ubuntu /etc/gns3` before starting. | starts cleanly | after the ownership fix, clean startup: `Starting server on 127.0.0.1:3080`, images auto-discovered, no errors | FAIL → fixed | `tmux new -d -s gns3 …`; `tail server.log` |
+| Listening | `127.0.0.1:3080` | `127.0.0.1:3080` | PASS | `ss -ltnp` |
+| API version | pinned version | `{"controller_host":"127.0.0.1","version":"3.0.6","local":false}` | PASS | `curl .../v3/version` |
+| Web UI title (follows a 308 redirect from `/`) | a title from the bundled UI | `<title>GNS3 Web UI` | PASS | `curl -L …` |
+| Login | token issued | `login: token issued` | PASS | `POST /v3/access/users/login` |
+| **Finding, not blocking:** server log shows the local compute created and WebSocket-connected (`Create compute local`, `Connected to compute 'local'`), but `GET /v3/computes` returns `[]` for the logged-in admin token — likely an API-permission-scope change in 3.0.6 vs the version the 2026-09-12 baseline used. Node execution is out of scope for this plan regardless (dynamips/ubridge/vpcs not in the bundle), so not chased further; worth a look if a future plan needs the compute API. | `computes: 1` (2026-09-12 baseline) | `computes: 0` via REST; compute visibly live in the server log | WARN (info) | `GET /v3/computes` vs `server.log` |

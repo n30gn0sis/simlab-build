@@ -47,3 +47,14 @@ running** at close-out — no Teardown section in this file.
 | Port binding | `127.0.0.1:8443` only, nothing on `0.0.0.0:443` | `127.0.0.1:8443` only | PASS | `ss -ltnp` |
 | Probe through the portal (CA, credentials) | matches 2026-09-12 result set | `/ 200`, `/arkime/ 302`, `/dashboards/ 302`, `/netbox/ 200`, `/readme/ 200` | PASS | `curl --resolve malcolm.lab:443:127.0.0.1 --cacert ca.crt -u analyst:$PW` |
 | Memory after Malcolm alone | headroom for the remaining sites | `Mem: 11Gi total, 973Mi available` — **tighter than 2026-09-12** (VM was 12 GiB then, is 11 GiB now); flagged, watching closely as monitoring/GNS3 are added | WARN (info) | `free -h` |
+
+## Task 4 — Sample capture in Malcolm (2026-09-16)
+
+| Check | Expected | Observed | Verdict | Command |
+|---|---|---|---|---|
+| Interface discovered, never guessed | one interface name | `eth0` | PASS | `ip -o route get 1.1.1.1` |
+| Capture 60s of mixed traffic | a few hundred KB, hundreds of packets | `75728` bytes, `488` packets | PASS | `tcpdump -i eth0 -s 0 -w … "not port 22"` |
+| Upload → processed | moves within ~2 min | moved immediately (first poll) | PASS | drop in `pcap/upload/`; poll `pcap/processed/` |
+| Arkime indexed it | session count > 0 | `45` sessions within seconds, grew to `250` as enrichment continued | PASS | `arkime/api/sessions?date=24` |
+| Zeek processed it | zeek log files produced | `zeek-logs/processed/sample-20260917.pcap-sample-*` holds `conn.log dns.log http.log ssl.log files.log` etc. (proven via disk, not logs — `zeek-1`/`pcap-monitor-1` containers log almost nothing to stdout by design) | PASS | `find ~/malcolm/malcolm/zeek-logs` |
+| **Finding, not a failure:** no separate dated `malcolm_beats_zeek*` index appears (`malcolm_beats_initial` stays at 0 docs) — the 2026-09-12 evidence file's success shape doesn't hold on Malcolm 26.08.0's current architecture. Zeek-derived data is merged directly into `arkime_sessions3-260917` instead: protocol detection (`["udp","dns"]`, `["udp","dhcpv6"]`) and resolved DNS hostnames (`archive.ubuntu.com` — one of the exact hosts the capture queried) are both present on session records. | analyzable, zeek data present somewhere | 67 DNS sessions found via `expression=protocols==dns`, including `dns.host=archive.ubuntu.com` | PASS (different mechanism than 2026-09-12) | `arkime/api/sessions?...expression=protocols%3D%3Ddns` |

@@ -45,6 +45,10 @@ set -euo pipefail
 # ── pins: review each refresh cycle ──────────────────────────────────────────
 MALCOLM_VER="${MALCOLM_VER:-26.08.0}"          # check https://github.com/idaholab/Malcolm/releases
 UBUNTU_ISO_VER="${UBUNTU_ISO_VER:-24.04.4}"    # check https://releases.ubuntu.com/noble/
+UBUNTU_KEYRING="${UBUNTU_KEYRING:-/usr/share/keyrings/ubuntu-archive-keyring.gpg}"
+    # shipped by the ubuntu-keyring package, present by default on Ubuntu
+    # staging. RHEL-podman staging has no such path — override UBUNTU_KEYRING
+    # with a keyring obtained elsewhere (see verify_iso_signature()'s error text).
 GNS3_VER="${GNS3_VER:-3.0.6}"                  # check https://pypi.org/project/gns3-server/
 ET_SURICATA_PATH="${ET_SURICATA_PATH:-suricata-7.0}"  # noble ships Suricata 7.0.x; ET returns 410 on retired paths
 CHR_VER="${CHR_VER:-7.21.5}"                   # check https://mikrotik.com/download/chr
@@ -270,28 +274,66 @@ if [ -n "$PREV_BUNDLE" ]; then
 fi
 
 seed() {  # seed <abs path under $B> — link/copy the file from PREV_BUNDLE if it has it
-    local out="$1" rel src
+    # AND its hash matches PREV_BUNDLE/MANIFEST.sha256. No manifest, no
+    # listing, or a mismatch => skip reuse and let fetch() re-download for
+    # real. Every path returns 0 — under this script's `set -euo pipefail`,
+    # a non-zero return here would abort the whole run over one bad cached
+    # file, which is exactly what this fix must never do.
+    local out="$1" rel src manifest matches
     if [ -z "$PREV_BUNDLE" ] || have "$out"; then return 0; fi
     rel="${out#"$B"/}"
     case "$rel" in apt/*|enrichment/*) return 0 ;; esac   # refresh-per-cycle content
     src="$PREV_BUNDLE/$rel"
-    if [ -s "$src" ]; then
-        mkdir -p "$(dirname "$out")"
-        if ln "$src" "$out" 2>/dev/null || cp -p "$src" "$out"; then
-            note "reused from $(basename "$PREV_BUNDLE"): $rel ($(du -h "$out" | cut -f1))"
-        fi
+    [ -s "$src" ] || return 0
+    manifest="$PREV_BUNDLE/MANIFEST.sha256"
+    if [ ! -s "$manifest" ]; then
+        note "WARN: no MANIFEST.sha256 in $(basename "$PREV_BUNDLE") — not reusing unverified $rel, will re-fetch"
+        return 0
+    fi
+    # MANIFEST.sha256 entries are `./`-relative to the bundle root (r770-bundle.sh
+    # cds into the bundle dir and runs `find .`) — match "./$rel", not "$rel".
+    # Anchored to the END of the line (via an arithmetic index check, not a
+    # regex, so no escaping of "." etc. in $rel is needed): a plain substring
+    # search would also match a manifested file that merely has $rel as a
+    # path-PREFIX (e.g. an unmanifested "isos/SHA256SUMS" would match its own
+    # manifested "isos/SHA256SUMS.gpg" sidecar's line), verify that unrelated
+    # file's hash instead, and then seed $out under a hash that was never
+    # actually checked against it.
+    matches="$(awk -v want="  ./$rel" 'index($0, want) == length($0) - length(want) + 1' "$manifest")"
+    if [ -z "$matches" ]; then
+        note "WARN: $rel not listed in $(basename "$PREV_BUNDLE")/MANIFEST.sha256 — not reusing unverified copy, will re-fetch"
+        return 0
+    fi
+    if ! printf '%s\n' "$matches" | ( cd "$PREV_BUNDLE" && sha256sum -c - ) >/dev/null 2>&1; then
+        note "WARN: $rel from $(basename "$PREV_BUNDLE") failed MANIFEST.sha256 verification — not reusing, will re-fetch"
+        return 0
+    fi
+    mkdir -p "$(dirname "$out")"
+    if ln "$src" "$out" 2>/dev/null || cp -p "$src" "$out"; then
+        note "reused from $(basename "$PREV_BUNDLE") (manifest-verified): $rel ($(du -h "$out" | cut -f1))"
     fi
     return 0
 }
 
-seed_glob() {  # seed_glob <glob relative to bundle root> — seed every match
-    local f
+seed_glob() {  # seed_glob <glob relative to bundle root> — seed every match.
+    # Returns 1 if any matched file failed to seed, so a caller that treats
+    # "the previous bundle had this whole set" as a shortcut for real work
+    # can tell a full glob-seed from a partial one before trusting it.
+    # ALWAYS check this with `if`/`&&`, or guard a fire-and-forget call with
+    # `|| true`: under this script's `set -euo pipefail`, an unchecked
+    # non-zero return here would abort the entire fetch over one rejected
+    # cached file.
+    local f dest rc=0
     if [ -z "$PREV_BUNDLE" ]; then return 0; fi
     # shellcheck disable=SC2231
     for f in "$PREV_BUNDLE"/$1; do
-        if [ -e "$f" ]; then seed "$B/${f#"$PREV_BUNDLE"/}"; fi
+        if [ -e "$f" ]; then
+            dest="$B/${f#"$PREV_BUNDLE"/}"
+            seed "$dest"
+            [ -e "$dest" ] || rc=1
+        fi
     done
-    return 0
+    return "$rc"
 }
 
 # resolve_latest_tag <api-url> — print a GitHub releases/latest "tag_name",
@@ -425,6 +467,34 @@ stamp_done 01-apt.done
 fi
 }
 
+# ── ISO signature verification — LOCAL keyring only, no keyserver fetch ──────
+# Verifies SHA256SUMS.gpg against SHA256SUMS using the keyring the
+# ubuntu-keyring package ships (or an operator-supplied override). This is
+# supply-chain-critical, not optional: unlike the docs-mirror WARN pattern,
+# any failure here is FATAL.
+verify_iso_signature() {  # verify_iso_signature <dir with SHA256SUMS + SHA256SUMS.gpg>
+    local dir="$1"
+    command -v gpg >/dev/null 2>&1 || {
+        echo "ERROR: gpg not found — required to verify the Ubuntu ISO's SHA256SUMS.gpg signature" >&2
+        exit 1
+    }
+    if [ ! -s "$UBUNTU_KEYRING" ]; then
+        echo "ERROR: UBUNTU_KEYRING=$UBUNTU_KEYRING not found or empty." >&2
+        echo "  Ubuntu staging host: sudo apt install ubuntu-keyring" >&2
+        echo "  RHEL-podman staging: this path does not exist on RHEL — obtain the" >&2
+        echo "  keyring from an Ubuntu system/image and point UBUNTU_KEYRING at it, e.g.:" >&2
+        echo "    docker run --rm ubuntu:24.04 cat /usr/share/keyrings/ubuntu-archive-keyring.gpg \\" >&2
+        echo "      > /path/to/ubuntu-archive-keyring.gpg" >&2
+        echo "    UBUNTU_KEYRING=/path/to/ubuntu-archive-keyring.gpg $0 ..." >&2
+        exit 1
+    fi
+    if ! gpg --no-default-keyring --keyring "$UBUNTU_KEYRING" \
+            --verify "$dir/SHA256SUMS.gpg" "$dir/SHA256SUMS"; then
+        echo "ERROR: GPG signature verification of SHA256SUMS FAILED against $UBUNTU_KEYRING — refusing to trust $dir (do not use this ISO)" >&2
+        exit 1
+    fi
+}
+
 # ═════════════════════════════════════════════════════════════════════════════
 # 2. Ubuntu ISO + checksums
 # ═════════════════════════════════════════════════════════════════════════════
@@ -434,8 +504,9 @@ ISO="ubuntu-${UBUNTU_ISO_VER}-live-server-amd64.iso"
 fetch "$B/isos/$ISO"            "https://releases.ubuntu.com/noble/$ISO"
 fetch "$B/isos/SHA256SUMS"      "https://releases.ubuntu.com/noble/SHA256SUMS"
 fetch "$B/isos/SHA256SUMS.gpg"  "https://releases.ubuntu.com/noble/SHA256SUMS.gpg"
+verify_iso_signature "$B/isos"
 ( cd "$B/isos" && grep "$ISO" SHA256SUMS | sha256sum -c - )
-note "Ubuntu ISO $UBUNTU_ISO_VER verified against SHA256SUMS (verify the GPG sig per site policy)"
+note "Ubuntu ISO $UBUNTU_ISO_VER verified: SHA256SUMS GPG signature checked against $UBUNTU_KEYRING, then the ISO checked against SHA256SUMS"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -489,8 +560,11 @@ echo "==== [5/10] GNS3 server + VM base images ===="
 # seed the wheelhouse from a previous bundle; if the pinned gns3-server dist
 # came over, the set is complete (pip downloaded it with its deps) — stamp it
 if ! stamped 05-wheelhouse.done; then
-    seed_glob "gns3/wheelhouse/*"
-    if ls "$B/gns3/wheelhouse"/gns3?server-"${GNS3_VER}"* >/dev/null 2>&1; then
+    # seed_glob must have seeded EVERY previous-bundle wheel, not just this
+    # one marker -- a rejected dependency wheel elsewhere in the set would
+    # otherwise go unnoticed here and skip the real pip download below,
+    # shipping an incomplete wheelhouse that fails install past the air gap.
+    if seed_glob "gns3/wheelhouse/*" && ls "$B/gns3/wheelhouse"/gns3?server-"${GNS3_VER}"* >/dev/null 2>&1; then
         stamp_done 05-wheelhouse.done
         note "GNS3 wheelhouse: seeded complete from previous bundle (gns3-server==${GNS3_VER} present)"
     fi
@@ -537,8 +611,8 @@ note "GNS3 definitions: $(ls "$B/gns3/definitions"/*.gns3a 2>/dev/null | wc -l) 
 # 6b. VyOS rolling — reuse an already-downloaded nightly (any tag) before
 # resolving the latest via the GitHub API, so a resume doesn't chase a newer
 # nightly than the one it already holds. Seed from the previous bundle first.
-seed_glob "gns3/appliances/vyos-*-generic-amd64.iso"
-seed_glob "gns3/appliances/vyos-*-generic-amd64.iso.minisig"
+seed_glob "gns3/appliances/vyos-*-generic-amd64.iso" || true            # a rejected cached
+seed_glob "gns3/appliances/vyos-*-generic-amd64.iso.minisig" || true    # file just means "not present" below
 VYOS_EXISTING=$(ls "$B/gns3/appliances"/vyos-*-generic-amd64.iso 2>/dev/null | head -1 || true)
 if [ -n "$VYOS_EXISTING" ] && [ "$FORCE" = "0" ]; then
     VYOS_TAG=$(basename "$VYOS_EXISTING" | sed -E 's/^vyos-(.*)-generic-amd64\.iso$/\1/')
@@ -583,8 +657,8 @@ fi
 # 6e. Alpine virt ISO — reuse an already-downloaded copy (any version) before
 # parsing latest-releases.yaml, so a resume doesn't chase a newer point release.
 ALPINE_BASE="https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64"
-seed_glob "gns3/appliances/alpine-virt-*-x86_64.iso"
-seed_glob "gns3/appliances/alpine-virt-*-x86_64.iso.sha256"
+seed_glob "gns3/appliances/alpine-virt-*-x86_64.iso" || true            # a rejected cached
+seed_glob "gns3/appliances/alpine-virt-*-x86_64.iso.sha256" || true     # file is re-verified below anyway
 ALPINE_EXISTING=$(ls "$B/gns3/appliances"/alpine-virt-*-x86_64.iso 2>/dev/null | head -1 || true)
 if [ -n "$ALPINE_EXISTING" ] && [ "$FORCE" = "0" ]; then
     ALPINE_ISO=$(basename "$ALPINE_EXISTING")

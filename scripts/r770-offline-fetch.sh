@@ -292,18 +292,18 @@ seed() {  # seed <abs path under $B> — link/copy the file from PREV_BUNDLE if 
     fi
     # MANIFEST.sha256 entries are `./`-relative to the bundle root (r770-bundle.sh
     # cds into the bundle dir and runs `find .`) — match "./$rel", not "$rel".
-    matches="$(cd "$PREV_BUNDLE" && grep -F -- "  ./$rel" MANIFEST.sha256 || true)"
+    # Anchored to the END of the line (via an arithmetic index check, not a
+    # regex, so no escaping of "." etc. in $rel is needed): a plain substring
+    # search would also match a manifested file that merely has $rel as a
+    # path-PREFIX (e.g. an unmanifested "isos/SHA256SUMS" would match its own
+    # manifested "isos/SHA256SUMS.gpg" sidecar's line), verify that unrelated
+    # file's hash instead, and then seed $out under a hash that was never
+    # actually checked against it.
+    matches="$(awk -v want="  ./$rel" 'index($0, want) == length($0) - length(want) + 1' "$manifest")"
     if [ -z "$matches" ]; then
         note "WARN: $rel not listed in $(basename "$PREV_BUNDLE")/MANIFEST.sha256 — not reusing unverified copy, will re-fetch"
         return 0
     fi
-    # $rel can match more than its own line if it's a path-prefix of another
-    # manifested file (e.g. an appliance ISO and its own .sha256 sidecar).
-    # sha256sum -c always hashes each matched line's own named file against
-    # that line's own hash, so an extra match can only add a requirement
-    # (safe direction: an extra re-fetch), never pass $out under a hash that
-    # belongs to a different file. Left unguarded, matching this script's
-    # existing loose grep-then-verify precedent (stage_iso's SHA256SUMS check).
     if ! printf '%s\n' "$matches" | ( cd "$PREV_BUNDLE" && sha256sum -c - ) >/dev/null 2>&1; then
         note "WARN: $rel from $(basename "$PREV_BUNDLE") failed MANIFEST.sha256 verification — not reusing, will re-fetch"
         return 0
@@ -315,14 +315,25 @@ seed() {  # seed <abs path under $B> — link/copy the file from PREV_BUNDLE if 
     return 0
 }
 
-seed_glob() {  # seed_glob <glob relative to bundle root> — seed every match
-    local f
+seed_glob() {  # seed_glob <glob relative to bundle root> — seed every match.
+    # Returns 1 if any matched file failed to seed, so a caller that treats
+    # "the previous bundle had this whole set" as a shortcut for real work
+    # can tell a full glob-seed from a partial one before trusting it.
+    # ALWAYS check this with `if`/`&&`, or guard a fire-and-forget call with
+    # `|| true`: under this script's `set -euo pipefail`, an unchecked
+    # non-zero return here would abort the entire fetch over one rejected
+    # cached file.
+    local f dest rc=0
     if [ -z "$PREV_BUNDLE" ]; then return 0; fi
     # shellcheck disable=SC2231
     for f in "$PREV_BUNDLE"/$1; do
-        if [ -e "$f" ]; then seed "$B/${f#"$PREV_BUNDLE"/}"; fi
+        if [ -e "$f" ]; then
+            dest="$B/${f#"$PREV_BUNDLE"/}"
+            seed "$dest"
+            [ -e "$dest" ] || rc=1
+        fi
     done
-    return 0
+    return "$rc"
 }
 
 # resolve_latest_tag <api-url> — print a GitHub releases/latest "tag_name",
@@ -549,8 +560,11 @@ echo "==== [5/10] GNS3 server + VM base images ===="
 # seed the wheelhouse from a previous bundle; if the pinned gns3-server dist
 # came over, the set is complete (pip downloaded it with its deps) — stamp it
 if ! stamped 05-wheelhouse.done; then
-    seed_glob "gns3/wheelhouse/*"
-    if ls "$B/gns3/wheelhouse"/gns3?server-"${GNS3_VER}"* >/dev/null 2>&1; then
+    # seed_glob must have seeded EVERY previous-bundle wheel, not just this
+    # one marker -- a rejected dependency wheel elsewhere in the set would
+    # otherwise go unnoticed here and skip the real pip download below,
+    # shipping an incomplete wheelhouse that fails install past the air gap.
+    if seed_glob "gns3/wheelhouse/*" && ls "$B/gns3/wheelhouse"/gns3?server-"${GNS3_VER}"* >/dev/null 2>&1; then
         stamp_done 05-wheelhouse.done
         note "GNS3 wheelhouse: seeded complete from previous bundle (gns3-server==${GNS3_VER} present)"
     fi
@@ -597,8 +611,8 @@ note "GNS3 definitions: $(ls "$B/gns3/definitions"/*.gns3a 2>/dev/null | wc -l) 
 # 6b. VyOS rolling — reuse an already-downloaded nightly (any tag) before
 # resolving the latest via the GitHub API, so a resume doesn't chase a newer
 # nightly than the one it already holds. Seed from the previous bundle first.
-seed_glob "gns3/appliances/vyos-*-generic-amd64.iso"
-seed_glob "gns3/appliances/vyos-*-generic-amd64.iso.minisig"
+seed_glob "gns3/appliances/vyos-*-generic-amd64.iso" || true            # a rejected cached
+seed_glob "gns3/appliances/vyos-*-generic-amd64.iso.minisig" || true    # file just means "not present" below
 VYOS_EXISTING=$(ls "$B/gns3/appliances"/vyos-*-generic-amd64.iso 2>/dev/null | head -1 || true)
 if [ -n "$VYOS_EXISTING" ] && [ "$FORCE" = "0" ]; then
     VYOS_TAG=$(basename "$VYOS_EXISTING" | sed -E 's/^vyos-(.*)-generic-amd64\.iso$/\1/')
@@ -643,8 +657,8 @@ fi
 # 6e. Alpine virt ISO — reuse an already-downloaded copy (any version) before
 # parsing latest-releases.yaml, so a resume doesn't chase a newer point release.
 ALPINE_BASE="https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64"
-seed_glob "gns3/appliances/alpine-virt-*-x86_64.iso"
-seed_glob "gns3/appliances/alpine-virt-*-x86_64.iso.sha256"
+seed_glob "gns3/appliances/alpine-virt-*-x86_64.iso" || true            # a rejected cached
+seed_glob "gns3/appliances/alpine-virt-*-x86_64.iso.sha256" || true     # file is re-verified below anyway
 ALPINE_EXISTING=$(ls "$B/gns3/appliances"/alpine-virt-*-x86_64.iso 2>/dev/null | head -1 || true)
 if [ -n "$ALPINE_EXISTING" ] && [ "$FORCE" = "0" ]; then
     ALPINE_ISO=$(basename "$ALPINE_EXISTING")

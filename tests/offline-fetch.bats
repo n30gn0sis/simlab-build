@@ -300,3 +300,72 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
     [ "$status" -eq 0 ]
     [ -s "$B/gns3/appliances/alpine-virt-3.20.0-x86_64.iso" ]
 }
+
+@test "seed() refuses a file that is only a path-prefix of a DIFFERENT manifested file" {
+    # Regression for a review finding: an unmanifested "isos/SHA256SUMS" must
+    # not be accepted merely because its own manifested "isos/SHA256SUMS.gpg"
+    # sidecar shares its name as a prefix. A naive substring match on the
+    # manifest would find the .gpg line, verify ITS hash (which trivially
+    # passes since that file is intact), and then wrongly seed SHA256SUMS
+    # under a hash that was never actually checked against it.
+    load_seed_fns
+    B="$BUNDLE_DIR"; FORCE=0; NOTES="$BATS_TEST_TMPDIR/notes.log"; : > "$NOTES"
+    PREV_BUNDLE="$BATS_TEST_TMPDIR/prev"
+    mkdir -p "$PREV_BUNDLE/isos" "$B"
+    echo "gpg signature bytes" > "$PREV_BUNDLE/isos/SHA256SUMS.gpg"
+    echo "tampered checksums file" > "$PREV_BUNDLE/isos/SHA256SUMS"
+    # Manifest only the .gpg sidecar -- SHA256SUMS itself was never manifested.
+    ( cd "$PREV_BUNDLE" && sha256sum isos/SHA256SUMS.gpg > MANIFEST.sha256 )
+    run seed "$B/isos/SHA256SUMS"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ ! -e "$B/isos/SHA256SUMS" ]
+    grep -q "not listed in" "$NOTES"
+}
+
+# ── seed_glob() — reports a partial seed instead of hiding it ────────────────
+
+@test "seed_glob() returns non-zero when one matched file fails verification, but still seeds the rest" {
+    load_seed_fns
+    load_fn "$SCRIPT" seed_glob
+    B="$BUNDLE_DIR"; FORCE=0; NOTES="$BATS_TEST_TMPDIR/notes.log"; : > "$NOTES"
+    PREV_BUNDLE="$BATS_TEST_TMPDIR/prev"
+    mkdir -p "$PREV_BUNDLE/gns3/wheelhouse" "$B"
+    echo "good wheel" > "$PREV_BUNDLE/gns3/wheelhouse/gns3-server-0.0.0-fixture.whl"
+    echo "bad wheel"  > "$PREV_BUNDLE/gns3/wheelhouse/dep-1.0.whl"
+    ( cd "$PREV_BUNDLE" && find . -type f | xargs sha256sum > MANIFEST.sha256 )
+    echo "corrupted after the manifest was written" >> "$PREV_BUNDLE/gns3/wheelhouse/dep-1.0.whl"
+    run seed_glob "gns3/wheelhouse/*"
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [ -s "$B/gns3/wheelhouse/gns3-server-0.0.0-fixture.whl" ]
+    [ ! -e "$B/gns3/wheelhouse/dep-1.0.whl" ]
+}
+
+@test "seed_glob() returns 0 when every matched file verifies" {
+    load_seed_fns
+    load_fn "$SCRIPT" seed_glob
+    B="$BUNDLE_DIR"; FORCE=0; NOTES="$BATS_TEST_TMPDIR/notes.log"; : > "$NOTES"
+    PREV_BUNDLE="$BATS_TEST_TMPDIR/prev"
+    mkdir -p "$PREV_BUNDLE/gns3/wheelhouse" "$B"
+    echo "good wheel" > "$PREV_BUNDLE/gns3/wheelhouse/gns3-server-0.0.0-fixture.whl"
+    echo "also good"  > "$PREV_BUNDLE/gns3/wheelhouse/dep-1.0.whl"
+    ( cd "$PREV_BUNDLE" && find . -type f | xargs sha256sum > MANIFEST.sha256 )
+    run seed_glob "gns3/wheelhouse/*"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ -s "$B/gns3/wheelhouse/gns3-server-0.0.0-fixture.whl" ]
+    [ -s "$B/gns3/wheelhouse/dep-1.0.whl" ]
+}
+
+@test "stage_gns3 only trusts a seeded wheelhouse as complete when seed_glob reports full success" {
+    run grep -c 'if seed_glob "gns3/wheelhouse/\*" && ls' "$SCRIPT"
+    [ "$status" -eq 0 ]
+    [ "$output" -ge 1 ]
+}
+
+@test "the bare VyOS and Alpine seed_glob calls are guarded against set -e on a partial seed" {
+    run grep -cE 'seed_glob "gns3/appliances/(vyos|alpine-virt)[^"]*" \|\| true' "$SCRIPT"
+    [ "$status" -eq 0 ]
+    [ "$output" -eq 4 ]
+}

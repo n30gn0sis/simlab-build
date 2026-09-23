@@ -168,6 +168,9 @@ restated outside the fetch script:
 - `OPNSENSE_MIRROR` (a mirror base URL, not a version) is part of the same reviewed block but
   isn't a pin at all, so it's excluded from this enumeration on those grounds rather than as a
   test-safety exception.
+- `UBUNTU_KEYRING` (a local keyring file path used to verify the Ubuntu ISO's GPG signature, not
+  a version) is likewise part of the same reviewed pin block but isn't a pin — excluded from
+  `tests/owners.bats`'s enumeration for the same reason as `OPNSENSE_MIRROR` above.
 
 ## How to reference instead of restate
 

@@ -403,11 +403,6 @@ Firmware is applied through iDRAC, not over SSH. Apply only a DUP that is
 **IPMI-over-LAN is disabled on this chassis** (Serial-over-LAN is enabled), so
 any scripted out-of-band work must use Redfish. `ipmitool -H` will not connect.
 
-`perccli2` — note the `2`, the H975i is an NVMe controller — is required
-regardless of version. Three Phase 2 questions are blocked on it, including
-PERC encryption key custody. Losing that key loses the virtual disk and every
-byte of evidence on it.
-
 ---
 
 ## Part 13 — Validate

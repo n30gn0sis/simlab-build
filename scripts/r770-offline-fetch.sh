@@ -33,7 +33,7 @@
 # Usage:  r770-offline-fetch.sh [--only s,s] [--skip s,s] [--list] [--dry-run]
 #
 # Manual steps it will REMIND you about (cannot be scripted):
-#   - Dell firmware/perccli downloads (dell.com, per service tag)
+#   - Dell firmware downloads (dell.com, per service tag)
 #   - Licensed GNS3 vendor appliance images (see gns3/appliances/README.txt)
 #
 # Companion docs: r770-dependency-manifest.md (authoritative dependency list),
@@ -777,16 +777,6 @@ echo "==== [9/10] Manual items ===="
 cat > "$B/dell/README.txt" <<'EOF'
 MANUAL DOWNLOADS from dell.com/support — service tag G8WFGH4
 (express service code 35366715688)
-
-REQUIRED regardless of version:
-  - perccli2  (note: perccli2, NOT perccli — the PERC H975i Front is an
-    NVMe RAID controller). Three Phase 2 questions are blocked on it:
-      * PERC encryption key custody: the controller reports encryption
-        Enabled with a Security Key Assigned, and the key mode (LKM vs
-        SEKM) and escrow location are unknown. Lose the key and the
-        virtual disk is unrecoverable.
-      * TRIM passthrough on the VD (decides whether fstrim.timer is real)
-      * NVMe link width: both drives negotiated x2 of a x4-capable link
 
 ONLY IF DELL LISTS SOMETHING NEWER — installed baselines, from Phase 1
 discovery on 2026-09-02/03:

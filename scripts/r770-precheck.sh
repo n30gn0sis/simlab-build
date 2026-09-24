@@ -178,7 +178,7 @@ if [ -n "$PERCCLI" ]; then
     runp "$PERCCLI" /call/eall/sall show
     ok "PERC CLI ($PERCCLI) present — VD/PD details captured"
 else
-    warn "No perccli/storcli found — PERC VD layout, cache policy, and usable capacity UNVERIFIED (top unknown in the plan). Install Dell's perccli in Phase 2."
+    warn "No perccli/storcli found — PERC details come from the iDRAC inventory export (Phase 1) and OS-side checks (Phase 2); the CLI is not part of the build."
 fi
 # usable-capacity sanity: largest block device
 LARGEST=$(lsblk -b -d -n -e7 -o SIZE 2>/dev/null | sort -n | tail -1)

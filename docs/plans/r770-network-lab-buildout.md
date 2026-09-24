@@ -76,7 +76,7 @@ Every item below was answered by `scripts/r770-precheck.sh` v2 (2026-09-02) plus
 
 **CPU / memory / NUMA** — 2 × Xeon 6515P, 16c/32t each = 32c/64t, L3 144 MiB. **Two NUMA nodes, no sub-NUMA clustering**, but the CPU numbering is **interleaved**: node 0 is every even CPU (64,068 MB), node 1 every odd CPU (64,496 MB), distance 21. Any `cpuset`/`vcpupin`/IRQ range like `0-15` straddles both sockets — always use the explicit lists. 8 × 16 GB Micron DDR5-6400 single-rank RDIMMs in A1–A4 / B1–B4 = 4 of 8 channels per socket, confirming the bandwidth caveat in §8; 8 of 32 slots used, so the upgrade path is much wider than assumed.
 
-**Storage** — **PERC H975i Front**, firmware 8.14.0.0.28-40, Write Back / No Read Ahead, energy pack OK, patrol read stopped. **One RAID-1 VD of 7.68 TB (6.99 TiB) usable** over 2 × KIOXIA E3.S NVMe 2.0 (100% endurance, Online). No direct-attached NVMe. **14 of 16 backplane bays are free.** Two findings the checklist did not anticipate: the controller reports **encryption Enabled with a Security Key Assigned** (custody unknown — §12), and the drives negotiated **x2 of a x4-capable link** (§12). TRIM passthrough is still unconfirmed and needs perccli in Phase 2.
+**Storage** — **PERC H975i Front**, firmware 8.14.0.0.28-40, Write Back / No Read Ahead, energy pack OK, patrol read stopped. **One RAID-1 VD of 7.68 TB (6.99 TiB) usable** over 2 × KIOXIA E3.S NVMe 2.0 (100% endurance, Online). No direct-attached NVMe. **14 of 16 backplane bays are free.** Two findings the checklist did not anticipate: the controller reports **encryption Enabled with a Security Key Assigned** (custody unknown — §12), and the drives negotiated **x2 of a x4-capable link** (§12). TRIM/discard is checked OS-side in Phase 2 (lsblk -D, sysfs).
 
 **NICs** — Ten `bnxt_en` ports, not eight. Both OCP quads are Broadcom BCM57412 `BCM957412-N410TGI0S` = **4 × 10GBASE-T copper each** (`MEDIA=TP`), Slot 10 on **node 0** and Slot 4 on **node 1**. Management is *not* the integrated NIC: it is a **BCM57414 2 × 25G SFP28** in PCIe Slot 9 (**node 0**, Dell D0R73 transceivers), bonded 802.3ad as `lacp-trunk` with VLAN 10 as `lacp-trunk.10` at 10.10.10.31/24. Per-port: RX ring 511 of max 2047, combined channels 16 of max 74, offloads on as shipped. Predictable names are recorded in §4.1.
 
@@ -136,7 +136,7 @@ Created from the ≈6.84 TiB of free extents. Keep ~10% of the VG unallocated as
 
 Rationale unchanged: XFS on the large streaming/parallel-write volumes (PCAP, OpenSearch, VM images) for allocation-group parallelism and large-file performance; ext4 where boring reliability is all that's needed. Separate LVs mean a runaway capture, index explosion, or fat VM disk fills **its own** filesystem, never `/`.
 
-Mount options: `noatime` on all data LVs; use periodic `fstrim.timer` (weekly) rather than `discard` — **the PERC VD's TRIM passthrough is still unconfirmed** (needs perccli, Phase 2), so do not rely on it until it is. No swap beyond a small 8 GB swapfile with low swappiness; OpenSearch performs badly when swapped (Malcolm sets memlock).
+Mount options: `noatime` on all data LVs; use periodic `fstrim.timer` (weekly) rather than `discard` — enabled only if Phase 2's OS-side check shows the VD advertises discard (`lsblk -D`, `/sys/block/<dev>/queue/discard_max_bytes`); otherwise left off. No swap beyond a small 8 GB swapfile with low swappiness; OpenSearch performs badly when swapped (Malcolm sets memlock).
 
 > **Gate before any of this runs:** the PERC reports `Encryption mode: Enabled` with a `Security Key Assigned`. Establish whether that is LKM or SEKM and where the key is escrowed **before** case data lands on these volumes — losing the key loses the VD. See §12.
 
@@ -327,7 +327,7 @@ One caveat from the memory config: 4 DIMMs per socket populates only half of eac
 
 ## 10. Monitoring, Logging, Backup
 
-- **Prometheus** (30-day retention on `/var/lib/docker` volume) scraping: node_exporter (host), cAdvisor (containers), blackbox_exporter (HTTP checks on portal/malcolm/gns3/monitoring vhosts + DNS + SSH banner), SMART/PERC textfile collectors (smartmontools + perccli cron → node_exporter textfile), libvirt exporter (VM counts/CPU), and capture-drop metrics from §7.4.
+- **Prometheus** (30-day retention on `/var/lib/docker` volume) scraping: node_exporter (host), cAdvisor (containers), blackbox_exporter (HTTP checks on portal/malcolm/gns3/monitoring vhosts + DNS + SSH banner), SMART/PERC textfile collectors (smartmontools + OS-side checks cron → node_exporter textfile), libvirt exporter (VM counts/CPU), and capture-drop metrics from §7.4.
 - **Grafana** dashboards: capture health (per-feed pps/drops), storage capacity/burn-rate (with days-to-full projection for `/data/pcap` and `/data/index`), host CPU per-core, RAM, disk latency, NIC errors, VM/container inventory, temperatures (via ipmi/redfish exporter from iDRAC if licensed).
 - **Alertmanager:** disk >70/80/90%, any capture drops sustained >0.1%, Zeek capture_loss >0.5%, OpenSearch red/yellow, RAID VD degraded, SMART failure, chrony unsynced, service down. Delivery initially to the portal + email if an internal relay exists (offline-friendly).
 - **Logging:** journald capped (1 GB), rsyslog to `/var/log` with logrotate; Malcolm keeps its own component logs inside its volumes.

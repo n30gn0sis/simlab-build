@@ -799,6 +799,8 @@ git commit -m "Gate PERC key custody on Phase 10, not Phase 3; record the Phase 
 
 ### Task 5: Execute Phase 2 — assessment (read-only; nothing on the R770 changes)
 
+> **Amended 2026-09-24 (operator): no iDRAC or PERC work.** Skip Step 5 (firmware delta) and Step 6 (key custody) — both dropped. Step 4 (NVMe x2) is answered BY DESIGN from Dell's PERC13/PERC12 guide. Step 3 records the virtual-media noise only; there is no detach action. The operator runs the R770 commands themselves and pastes the output (no SSH from this session). The report keeps rows 1, 4 and 5 marked DROPPED / DOCUMENTED with this reason. Phase 2 is VERIFIED when items 2 and 3 have verdicts. See the spec's 2026-09-24 amendment.
+
 **Files:**
 - Create: `state/inventory/r770-phase2-assessment.md`
 - Modify: `state/BUILD-STATE.md` (Phase 2 status, unknowns, log)

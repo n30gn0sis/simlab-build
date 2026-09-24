@@ -45,7 +45,7 @@ Staging host (internet)              ← Claude Code runs here; bundles built he
         ▼                                   ▼
 R770 (air-gapped, Ubuntu 24.04)      ← build target; no internet, ever
         ▲
-iDRAC (out-of-band)                  ← recovery path; verify before touching networking
+iDRAC (out-of-band)                  ← not used: no iDRAC/PERC work (decision 2026-09-24)
 ```
 
 Never commit secrets, keys, or sensitive PCAP data to this repo.

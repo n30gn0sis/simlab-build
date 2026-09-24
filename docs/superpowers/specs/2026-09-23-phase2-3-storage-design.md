@@ -4,6 +4,19 @@
 **Phases:** 2 (BIOS/firmware/iDRAC assessment; RAID VD verification) and 3 (storage LVM/filesystem layout) of `PRD.md` §9
 **Supersedes:** the "needs perccli in Phase 2" wording in `docs/plans/r770-network-lab-buildout.md` §2/§3.2/§12 and `state/BUILD-STATE.md`
 
+## Amendment 2026-09-24 — no iDRAC or PERC work (operator)
+
+Supersedes decisions 3–4 and Phase 2 items 1, 4 and 5 below. Nothing on the R770 touches iDRAC or the PERC: no firmware, controller settings, virtual-media changes or out-of-band actions, and nothing queries either.
+
+- **Item 1 (key custody): dropped.** Accepted risk; no phase is gated on it (Phase 10's gate removed).
+- **Item 2 (NVMe x2): answered — BY DESIGN** from Dell's PERC13/PERC12 User's Guide ("at maximum x2 lane width"). No R770 action.
+- **Item 3 (TRIM): unchanged** — OS-side read only (`lsblk -D`, sysfs), no controller access.
+- **Item 4 (firmware delta): dropped.** Research kept for reference only; no updates are planned.
+- **Item 5 (virtual-media noise): documented only.** No detach action.
+- **Phase 5:** the iDRAC recovery-path gate is dropped (CLAUDE.md rule 2 amended); `netplan try` + saved rollback are the only protection.
+
+Phase 2 VERIFIED therefore needs verdicts for items 2 and 3 only.
+
 ## Decisions (operator, 2026-09-23)
 
 1. **Phase 2 is assess-only.** It produces a report; nothing on the R770 changes. Any firmware update or PERC setting change is a separate, later gated decision.

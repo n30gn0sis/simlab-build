@@ -92,6 +92,7 @@ closed and what it newly opened (PERC key custody, NVMe link width).
 - **Huge pages, CPU pinning beyond the socket split** — only on measured need.
 - **Full APT mirror** — curated bundle chosen; unplanned `apt install` on the gapped box fails by design.
 - **Line-rate retention of 4 × 10GbE** — explicitly not a goal; retention is bounded and enforced.
+- **iDRAC and PERC work on the R770** (2026-09-24, operator) — no firmware updates, controller settings, virtual-media changes or out-of-band actions, and nothing queries either. Accepted risks: PERC key custody is not established (losing the key loses the VD), and iDRAC is not a proven recovery path for Phase 5 (`netplan try` + saved rollback are the protection).
 
 ## 7. Architecture Requirements (summary — authoritative detail in `docs/plans/r770-network-lab-buildout.md`)
 
@@ -138,11 +139,11 @@ Hard rules: never guess device/interface names; never touch RAID, partitions, bo
 
 **Open, in priority order:**
 
-1. **PERC encryption key custody — NEW.** Encryption is on with a Security Key assigned and nobody has established LKM vs SEKM, who holds the passphrase, or where it is escrowed. Losing it loses the VD and every byte of evidence on it. Blocking for case data; resolve in Phase 2.
-2. **iDRAC unproven as a recovery path.** Address known, different subnet from management, no login demonstrated. Phase 5 must not touch Netplan until it is — an SSH session proves nothing about the recovery path.
+1. **PERC encryption key custody — ACCEPTED RISK (2026-09-24, §6: no PERC work).** Encryption is on with a Security Key assigned and nobody has established LKM vs SEKM, who holds the passphrase, or where it is escrowed. Losing it loses the VD and every byte of evidence on it. No longer a gate.
+2. **iDRAC unproven as a recovery path — ACCEPTED RISK (2026-09-24, §6: no iDRAC work).** Address known, different subnet from management, no login demonstrated. Phase 5 relies on `netplan try` and a saved rollback instead; there is no independent recovery path.
 3. **Management is a bond + tagged VLAN**, not a single addressed port, which raises Phase 5 from medium to high consequence. A mistake in bond mode, slave membership, or the VLAN tag drops the only in-band path.
 4. **Retention is days, not weeks — and the prior model was 10× optimistic.** The buildout plan's retention table was computed for 15 TB while labelled 1.5 TB; corrected, 3.25 TiB of PCAP holds ~3.3 days at 100 Mbps and ~8 hours at 1 Gbps. All figures remain models until feed rates are measured in Phase 10. The 14 free drive bays are the escape hatch.
-5. **NVMe link width x2 of x4 — NEW.** Half the per-drive bandwidth. Backplane bifurcation by design, or a fault? Determine in Phase 2 *before* any performance tuning.
+5. **NVMe link width x2 of x4 — NEW.** Half the per-drive bandwidth. Backplane bifurcation by design, or a fault? **Resolved 2026-09-24: by design** — the PERC13 family runs NVMe drives at a maximum x2 lane width (Phase 2 assessment).
 6. **One RAID-1 VD shared** by capture I/O, indexing and VM disks — now known to be running at half link width. Disk-latency monitoring is the tripwire; dedicated PCAP NVMe in the free bays is the fix if proven.
 7. **RAM is the binding constraint** for lab size, not CPU. Outlook improved: 8 of 32 DIMM slots populated, so 256 GB is a simple upgrade that also fixes the half-channel bandwidth caveat.
 8. **Backup escapes the chassis only** when the Restic repo is copied off-box — owner still needed.

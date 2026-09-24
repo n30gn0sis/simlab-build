@@ -10,7 +10,11 @@
 #   $S/vg_size, $S/vg_free    GiB, as vgs --units g --nosuffix prints them
 #   $S/lv/<name>              "<size_GiB> <fs>"   (fs empty until mkfs)
 #   $S/mounted                one mount point per line
-#   $S/verify_rc              exit code for `findmnt --verify` (default 0)
+#   $S/verify_rc              exit code for `findmnt --verify` before any append (default 0)
+#   $S/verify_new_rc          exit code for `findmnt --verify` once the new UUID= line is present
+#   $S/lvcreate_rc, $S/lvextend_rc   exit code for those commands (default 0)
+#   $S/mount_rc               exit code for `mount` (default 0)
+#   $S/mount_noop             if present, `mount` exits 0 but records nothing (simulates nofail)
 #   $S/calls                  every mutating call, one per line
 
 setup() {
@@ -38,13 +42,26 @@ setup() {
     stub vgs       'case "$*" in *vg_size*) echo "  $(cat "$S/vg_size").00";; *vg_free*) echo "  $(cat "$S/vg_free").00";; *) [ -f "$S/vg_size" ];; esac'
     stub lvs       'for a; do t=$a; done; f="$S/lv/${t#*/}"; [ -f "$f" ] || exit 5; read -r sz _ < "$f"; echo "  ${sz}.00"'
     stub blkid     'k=$2; for a; do d=$a; done; n=${d##*/}; f="$S/lv/$n"; [ -f "$f" ] || exit 2; read -r _ fs < "$f"; [ -n "$fs" ] || exit 2; if [ "$k" = UUID ]; then echo "uuid-$n"; else echo "$fs"; fi'
-    stub lvcreate  'echo "lvcreate $*" >> "$S/calls"; while [ $# -gt 0 ]; do case $1 in -n) n=$2; shift;; -L) l=${2%G}; shift;; esac; shift; done; echo "$l" > "$S/lv/$n"'
+    stub lvcreate  'echo "lvcreate $*" >> "$S/calls"; rc="$(cat "$S/lvcreate_rc" 2>/dev/null || echo 0)"; [ "$rc" -eq 0 ] || exit "$rc"; while [ $# -gt 0 ]; do case $1 in -n) n=$2; shift;; -L) l=${2%G}; shift;; esac; shift; done; echo "$l" > "$S/lv/$n"'
     stub mkfs.xfs  'echo "mkfs.xfs $*" >> "$S/calls"; n=${1##*/}; read -r sz _ < "$S/lv/$n"; echo "$sz xfs" > "$S/lv/$n"'
     stub mkfs.ext4 'echo "mkfs.ext4 $*" >> "$S/calls"; n=${1##*/}; read -r sz _ < "$S/lv/$n"; echo "$sz ext4" > "$S/lv/$n"'
-    stub lvextend  'echo "lvextend $*" >> "$S/calls"; echo "50 ext4" > "$S/lv/lv-var"'
+    stub lvextend  'echo "lvextend $*" >> "$S/calls"; rc="$(cat "$S/lvextend_rc" 2>/dev/null || echo 0)"; [ "$rc" -eq 0 ] || exit "$rc"; echo "50 ext4" > "$S/lv/lv-var"'
     stub systemctl 'echo "systemctl $*" >> "$S/calls"'
-    stub mount     'echo "mount $*" >> "$S/calls"; rc="$(cat "$S/mount_rc" 2>/dev/null || echo 0)"; [ "$rc" -eq 0 ] && { for a; do t=$a; done; echo "$t" >> "$S/mounted"; }; exit "$rc"'
-    stub findmnt   'if [ "$1" = --verify ]; then rc="$(cat "$S/verify_rc" 2>/dev/null || echo 0)"; [ "$rc" -ne 0 ] && exit "$rc"; shift 2; tabfile="$1"; [ -n "$tabfile" ] && grep -qF "UUID=uuid-" "$tabfile" && rc="$(cat "$S/verify_new_rc" 2>/dev/null || echo 0)"; exit "$rc"; fi; for a; do t=$a; done; grep -qxF "$t" "$S/mounted" 2>/dev/null || exit 1; echo "$t"'
+    stub chattr    'echo "chattr $*" >> "$S/calls"'
+    stub mount     'echo "mount $*" >> "$S/calls"; rc="$(cat "$S/mount_rc" 2>/dev/null || echo 0)"; if [ "$rc" -eq 0 ] && [ ! -f "$S/mount_noop" ]; then for a; do t=$a; done; echo "$t" >> "$S/mounted"; fi; exit "$rc"'
+    stub findmnt   'if [ "$1" = --verify ]; then
+        rc="$(cat "$S/verify_rc" 2>/dev/null || echo 0)"
+        if [ "$rc" -ne 0 ]; then echo "[E] fake verify error"; exit "$rc"; fi
+        shift 2; tabfile="$1"
+        if [ -n "$tabfile" ] && grep -qF "UUID=uuid-" "$tabfile"; then
+            rc="$(cat "$S/verify_new_rc" 2>/dev/null || echo 0)"
+            if [ "$rc" -ne 0 ]; then echo "[E] fake verify error"; exit "$rc"; fi
+        fi
+        exit 0
+    fi
+    for a; do t=$a; done
+    grep -qxF "$t" "$S/mounted" 2>/dev/null || exit 1
+    echo "$t"'
 }
 
 stub() {  # stub <name> <body>
@@ -149,7 +166,9 @@ fstab_unchanged() { cmp "$STORAGE_FSTAB" "$BATS_TEST_TMPDIR/fstab.orig"; }
     [ "$(grep -c '^lvcreate ' "$S/calls")" -eq 1 ]
     grep -qxF 'lvcreate --yes --wipesignatures y -n lv_work -L 200G ubuntu-vg0' "$S/calls"
     grep -qxF 'mkfs.xfs /dev/ubuntu-vg0/lv_work' "$S/calls"
+    grep -qxF "chattr +i $STORAGE_ROOT/srv/work" "$S/calls"
     grep -qxF 'mount --fstab '"$STORAGE_FSTAB"' /srv/work' "$S/calls"
+    [ "$(grep -n '^chattr +i' "$S/calls" | cut -d: -f1)" -lt "$(grep -n '^mount ' "$S/calls" | cut -d: -f1)" ]
     [ "$(diff "$BATS_TEST_TMPDIR/fstab.orig" "$STORAGE_FSTAB" | grep -c '^>')" -eq 1 ]
     tail -1 "$STORAGE_FSTAB" | grep -qxF 'UUID=uuid-lv_work /srv/work xfs noatime,nofail 0 2'
     [ -d "$STORAGE_ROOT/srv/work" ]
@@ -179,6 +198,7 @@ fstab_unchanged() { cmp "$STORAGE_FSTAB" "$BATS_TEST_TMPDIR/fstab.orig"; }
     echo "$output"
     [ "$status" -eq 1 ]
     [[ "$output" == *"does not pass findmnt --verify"* ]]
+    [[ "$output" == *"        [E] fake verify error"* ]]
     ! grep -q '^lvcreate ' "$S/calls"
     fstab_unchanged
 }
@@ -191,6 +211,7 @@ fstab_unchanged() { cmp "$STORAGE_FSTAB" "$BATS_TEST_TMPDIR/fstab.orig"; }
     fstab_unchanged
     [[ "$output" == *"restored from"* ]]
     [[ "$output" == *"lvremove ubuntu-vg0/lv_work"* ]]
+    [[ "$output" == *"        [E] fake verify error"* ]]
     ! grep -q '^mount ' "$S/calls"
 }
 
@@ -202,6 +223,40 @@ fstab_unchanged() { cmp "$STORAGE_FSTAB" "$BATS_TEST_TMPDIR/fstab.orig"; }
     fstab_unchanged
     [[ "$output" == *"restored from"* ]]
     [[ "$output" == *"lvremove ubuntu-vg0/lv_work"* ]]
+    grep -qxF "chattr -i $STORAGE_ROOT/srv/work" "$S/calls"
+}
+
+@test "mount returning 0 with nothing mounted (nofail) rolls back" {
+    touch "$S/mount_noop"
+    run apply_script --apply --lv lv_work
+    echo "$output"
+    [ "$status" -eq 1 ]
+    fstab_unchanged
+    [[ "$output" == *"restored from"* ]]
+    [[ "$output" == *"lvremove ubuntu-vg0/lv_work"* ]]
+}
+
+@test "lvcreate failure is FAIL, not REFUSE, and changes nothing else" {
+    echo 1 > "$S/lvcreate_rc"
+    run apply_script --apply --lv lv_work
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL"* ]]
+    [[ "$output" != *"REFUSE"* ]]
+    [[ "$output" == *"lvcreate failed — check: lvs ubuntu-vg0/lv_work (lvcreate normally cleans up after itself)"* ]]
+    fstab_unchanged
+}
+
+@test "refuses an fstab that does not end with a newline" {
+    printf '%s' "$(cat "$STORAGE_FSTAB")" > "$STORAGE_FSTAB"
+    cp "$STORAGE_FSTAB" "$BATS_TEST_TMPDIR/fstab.orig"
+    run apply_script --apply --lv lv_work
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REFUSE"* ]]
+    [[ "$output" == *"does not end with a newline"* ]]
+    ! grep -q '^lvcreate ' "$S/calls"
+    fstab_unchanged
 }
 
 @test "refuses an existing LV of a different size" {
@@ -275,5 +330,36 @@ fstab_unchanged() { cmp "$STORAGE_FSTAB" "$BATS_TEST_TMPDIR/fstab.orig"; }
     run apply_script --grow-var
     [ "$status" -eq 1 ]
     [[ "$output" == *"reserve floor"* ]]
+    no_mutations
+}
+
+@test "--grow-var: lvextend failure is FAIL, not REFUSE" {
+    echo 1 > "$S/lvextend_rc"
+    run apply_script --grow-var
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL"* ]]
+    [[ "$output" != *"REFUSE"* ]]
+    [[ "$output" == *"lvextend/resizefs failed — the LV may already have grown; check: lvs ubuntu-vg0/lv-var; df -h /var"* ]]
+    fstab_unchanged
+}
+
+# ── argument conflicts ───────────────────────────────────────────────────────
+
+@test "refuses more than one mode flag" {
+    run apply_script --apply --grow-var
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REFUSE"* ]]
+    [[ "$output" == *"mutually exclusive"* ]]
+    no_mutations
+}
+
+@test "refuses --lv unless the mode is --apply" {
+    run apply_script --grow-var --lv lv_work
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REFUSE"* ]]
+    [[ "$output" == *"--lv is only valid with --apply"* ]]
     no_mutations
 }

@@ -15,10 +15,12 @@
 #   --grow-var          grow lv-var to 50 GiB online. NOT reversible online.
 #
 #   0  done, or nothing to do
-#   1  refused (nothing changed) or failed (fstab restored; see output)
+#   1  refused (REFUSE: nothing changed) or failed (FAIL: see the output for what changed and how to undo it)
 #
 # Test overrides: STORAGE_FSTAB, STORAGE_ROOT (prefix for mount-point dirs).
 set -uo pipefail
+# LVM prints sizes with the locale's decimal separator and awk parses them.
+export LC_ALL=C
 
 VG=ubuntu-vg0
 FSTAB="${STORAGE_FSTAB:-/etc/fstab}"
@@ -39,7 +41,8 @@ lv_work       200  xfs  /srv/work
 lv_backup     250  xfs  /srv/backup
 "
 
-die() { printf 'REFUSE  %s\n' "$*"; exit 1; }
+die()  { printf 'REFUSE  %s\n' "$*"; exit 1; }  # pre-mutation checks only
+fail() { printf 'FAIL    %s\n' "$*"; exit 1; }  # a mutating command itself failed
 
 layout_row() { awk -v n="$1" '$1 == n' <<< "$LAYOUT"; }
 
@@ -98,6 +101,7 @@ print_cmds() {  # print_cmds NAME SIZE FS MP
         "lvcreate --yes --wipesignatures y -n $1 -L ${2}G $VG" \
         "mkfs.$3 /dev/$VG/$1" \
         "mkdir -p $4" \
+        "chattr +i $4" \
         "cp -p $FSTAB $FSTAB.pre-$1-<timestamp>" \
         "echo 'UUID=<uuid of /dev/$VG/$1> $4 $3 noatime,nofail 0 2' >> $FSTAB" \
         "systemctl daemon-reload" \
@@ -144,8 +148,9 @@ plan() {
     return "$refused"
 }
 
-fail_after_lv() {  # fail_after_lv NAME MESSAGE
-    printf 'FAIL    %s\n        the empty LV was left in place; to remove it: lvremove %s/%s\n' "$2" "$VG" "$1"
+fail_after_lv() {  # fail_after_lv NAME MP MESSAGE
+    # Always show the chattr -i undo step: harmless if the flag is already clear.
+    printf 'FAIL    %s\n        to undo: chattr -i %s; lvremove %s/%s\n' "$3" "$2" "$VG" "$1"
     exit 1
 }
 
@@ -154,18 +159,22 @@ restore_fstab() {  # restore_fstab BACKUP -> 0 only when FSTAB is byte-identical
     cp -p "$1" "$tmp" && mv -f "$tmp" "$FSTAB" && cmp -s "$1" "$FSTAB"
 }
 
-rollback_fstab() {  # rollback_fstab BACKUP NAME REASON
+rollback_fstab() {  # rollback_fstab BACKUP NAME MP REASON
+    local reason="$4"
+    # The mount point was made immutable before mounting (F2); clear it before
+    # handing it back, whether or not the flag actually got set.
+    chattr -i "$ROOT$3" 2>/dev/null || reason="$reason (chattr -i $3 also failed — clear it by hand)"
     if restore_fstab "$1"; then
         systemctl daemon-reload
-        fail_after_lv "$2" "$3 — $FSTAB restored from $1"
+        fail_after_lv "$2" "$3" "$reason — $FSTAB restored from $1"
     else
-        printf 'FAIL    %s RESTORE FAILED — restore it by hand now: cp -p %s %s\n        the empty LV was left in place; to remove it: lvremove %s/%s\n' "$FSTAB" "$1" "$FSTAB" "$VG" "$2"
+        printf 'FAIL    %s RESTORE FAILED — restore it by hand now: cp -p %s %s\n        to undo: chattr -i %s; lvremove %s/%s\n' "$FSTAB" "$1" "$FSTAB" "$3" "$VG" "$2"
         exit 1
     fi
 }
 
 apply_lv() {
-    local row name size fs mp verdict uuid backup
+    local row name size fs mp verdict uuid backup out
     row=$(layout_row "$1")
     [ -n "$row" ] || die "no LV named '$1' in the layout (names: $(awk 'NF {printf "%s ", $1}' <<< "$LAYOUT"))"
     read -r name size fs mp <<< "$row"
@@ -175,25 +184,39 @@ apply_lv() {
         REFUSE*) die "$name — ${verdict#REFUSE: }" ;;
     esac
 
-    findmnt --verify --tab-file "$FSTAB" >/dev/null || die "$FSTAB does not pass findmnt --verify as it stands — fix it first; nothing changed"
+    # A trailing newline is required: we append with >>, and a fstab whose last
+    # line lacks one would otherwise be corrupted by concatenation.
+    [ ! -s "$FSTAB" ] || [ -z "$(tail -c1 "$FSTAB")" ] \
+        || die "$FSTAB does not end with a newline — fix it first; nothing changed"
+
+    if ! out=$(findmnt --verify --tab-file "$FSTAB" 2>&1); then
+        [ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/        /'
+        die "$FSTAB does not pass findmnt --verify as it stands — fix it first; nothing changed"
+    fi
 
     echo "APPLY   $name ${size}G $fs $mp"
     lvcreate --yes --wipesignatures y -n "$name" -L "${size}G" "$VG" \
-        || die "lvcreate failed — nothing else changed"
-    "mkfs.$fs" "/dev/$VG/$name" || fail_after_lv "$name" "mkfs.$fs failed"
-    mkdir -p "$ROOT$mp"         || fail_after_lv "$name" "mkdir $mp failed"
+        || fail "lvcreate failed — check: lvs $VG/$name (lvcreate normally cleans up after itself)"
+    "mkfs.$fs" "/dev/$VG/$name" || fail_after_lv "$name" "$mp" "mkfs.$fs failed"
+    mkdir -p "$ROOT$mp"         || fail_after_lv "$name" "$mp" "mkdir $mp failed"
+    # With nofail, an LV that fails to mount at boot leaves this directory on /
+    # or /var; immutable, it makes services fail loudly instead of filling it.
+    chattr +i "$ROOT$mp"        || fail_after_lv "$name" "$mp" "chattr +i $mp failed"
     uuid=$(blkid -s UUID -o value "/dev/$VG/$name")
-    [ -n "$uuid" ]              || fail_after_lv "$name" "no filesystem UUID on /dev/$VG/$name"
+    [ -n "$uuid" ]              || fail_after_lv "$name" "$mp" "no filesystem UUID on /dev/$VG/$name"
 
     backup="$FSTAB.pre-$name-$(date +%Y%m%dT%H%M%S)"
-    cp -p "$FSTAB" "$backup"    || fail_after_lv "$name" "could not back up $FSTAB"
+    cp -p "$FSTAB" "$backup"    || fail_after_lv "$name" "$mp" "could not back up $FSTAB"
     printf 'UUID=%s %s %s noatime,nofail 0 2\n' "$uuid" "$mp" "$fs" >> "$FSTAB" \
-        || rollback_fstab "$backup" "$name" "could not append to $FSTAB"
+        || rollback_fstab "$backup" "$name" "$mp" "could not append to $FSTAB"
     systemctl daemon-reload
-    if ! findmnt --verify --tab-file "$FSTAB" >/dev/null || ! mount --fstab "$FSTAB" "$mp"; then
-        rollback_fstab "$backup" "$name" "fstab verify or mount failed"
+    if ! out=$(findmnt --verify --tab-file "$FSTAB" 2>&1); then
+        [ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/        /'
+        rollback_fstab "$backup" "$name" "$mp" "fstab verify failed"
+    elif ! mount --fstab "$FSTAB" "$mp"; then
+        rollback_fstab "$backup" "$name" "$mp" "mount failed"
     fi
-    is_mounted "$mp" || rollback_fstab "$backup" "$name" "mount reported success but $mp is not mounted"
+    is_mounted "$mp" || rollback_fstab "$backup" "$name" "$mp" "mount reported success but $mp is not mounted"
     echo "DONE    $name mounted at $mp (fstab backup: $backup)"
     findmnt -n -o SOURCE,FSTYPE,SIZE,OPTIONS "$mp" || true   # evidence only
 }
@@ -208,21 +231,25 @@ grow_var() {
     reason=$(room_reason "$free" "$delta" "$vgsize")
     [ -z "$reason" ] || die "$VAR_LV — $reason"
     echo "GROW    $VAR_LV ${cur}G -> ${VAR_TARGET_G}G  (online; NOT reversible online)"
-    lvextend --resizefs -L "${VAR_TARGET_G}G" "$VG/$VAR_LV" || die "lvextend/resizefs failed — the LV may already have grown; check: lvs $VG/$VAR_LV; df -h /var"
+    lvextend --resizefs -L "${VAR_TARGET_G}G" "$VG/$VAR_LV" \
+        || fail "lvextend/resizefs failed — the LV may already have grown; check: lvs $VG/$VAR_LV; df -h /var"
     findmnt -n -o SOURCE,FSTYPE,SIZE /var || true   # evidence only
 }
 
-MODE=plan; LV=""
+MODE=plan; MODE_SET=0; LV=""; LV_SET=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --plan)     MODE=plan ;;
-        --apply)    MODE=apply ;;
-        --lv)       LV="${2:-}"; shift ;;
-        --grow-var) MODE=grow ;;
+        --plan)     MODE=plan; MODE_SET=$((MODE_SET + 1)) ;;
+        --apply)    MODE=apply; MODE_SET=$((MODE_SET + 1)) ;;
+        --grow-var) MODE=grow;  MODE_SET=$((MODE_SET + 1)) ;;
+        --lv)       LV="${2:-}"; LV_SET=1; shift ;;
         *)          die "unknown argument: $1" ;;
     esac
     shift
 done
+
+[ "$MODE_SET" -le 1 ] || die "--plan, --apply and --grow-var are mutually exclusive — give exactly one"
+[ "$LV_SET" -eq 0 ] || [ "$MODE" = apply ] || die "--lv is only valid with --apply"
 
 [ "$(id -u)" = 0 ] || die "must run as root (LVM and $FSTAB)"
 vgs "$VG" >/dev/null 2>&1 || die "VG $VG not found — discovery says it exists; stop and re-run discovery"

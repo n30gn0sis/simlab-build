@@ -7,7 +7,7 @@
 LEGACY_EXCLUDE="SC2015,SC2012,SC2010,SC1091"
 
 @test "new scripts are shellcheck-clean with no exclusions" {
-    run shellcheck scripts/r770-bundle.sh scripts/r770-storage-apply.sh tests/run.sh
+    run shellcheck scripts/r770-bundle.sh scripts/r770-storage-apply.sh scripts/r770-phase3-run.sh tests/run.sh
     echo "$output"
     [ "$status" -eq 0 ]
 }

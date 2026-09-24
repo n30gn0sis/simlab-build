@@ -29,6 +29,7 @@ Everything needed to design, build, validate, and supply the air-gapped Dell Pow
 | `scripts/r770-staging-preflight.sh` | Decides whether a host may build a bundle — any container runtime that answers `info`, has egress and writes docker-archive, probed for real; Ubuntu 24.04 + Docker CE is the recommended default. Run before every fetch |
 | `scripts/r770-precheck.sh` | Read-only Phase 1 discovery — run on the R770 |
 | `scripts/r770-storage-apply.sh` | Phase 3 — creates the lab LVs in `ubuntu-vg0`, one at a time (`--plan` default, `--apply --lv NAME`, `--grow-var`); run on the R770 as root |
+| `scripts/r770-phase3-run.sh` | Phase 3 as the operator runs it on the R770 — `check` (read-only: identity, discard, fstab, storage plan) and `apply [--fstrim]` (the whole sequence, stops at the first failure); travels on the transfer drive beside `r770-storage-apply.sh` |
 | `tests/` | `./tests/run.sh` — the repo's one check: shellcheck, lint, and bats suites, offline and read-only |
 | `work/plans/active/` | In-progress one-shot plans |
 | `work/plans/archive/` | Executed plans, kept as outcome records |

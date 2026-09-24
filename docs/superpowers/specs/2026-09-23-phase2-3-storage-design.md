@@ -70,10 +70,11 @@ VG: `ubuntu-vg0` (discovered). The script never names a block device; it acts on
   1. `lvcreate -n NAME -L SIZE ubuntu-vg0`
   2. `mkfs.<fs>` on `/dev/ubuntu-vg0/NAME`
   3. `mkdir -p` the mount point
-  4. back up fstab to `$FSTAB.pre-NAME-<timestamp>`
-  5. append `UUID=<uuid> <mount> <fs> noatime,nofail 0 2`
-  6. `findmnt --verify`, then `mount <mount>`, then confirm size with `findmnt`
-  If step 6 fails: restore the fstab backup, exit non-zero, leave the (empty) LV in place and print the `lvremove` command for the operator.
+  4. `chattr +i` the mount point
+  5. back up fstab to `$FSTAB.pre-NAME-<timestamp>`
+  6. append `UUID=<uuid> <mount> <fs> noatime,nofail 0 2`
+  7. `findmnt --verify`, then `mount <mount>`, then print the mounted source/fs/size as evidence
+  If step 7 fails: `chattr -i` the mount point, restore the fstab backup, exit non-zero, leave the (empty) LV in place and print the `lvremove` command for the operator.
 - **`--grow-var`**: `lvextend -r -L 50G ubuntu-vg0/lv-var` (online ext4 grow). The existing fstab line is not touched.
 
 ### Refusals (exit non-zero, nothing changed)
@@ -82,12 +83,13 @@ VG: `ubuntu-vg0` (discovered). The script never names a block device; it acts on
 - LV exists with a different size or filesystem. (Exists and matches → skip with `already applied`, exit 0.)
 - Mount point exists and is non-empty, or is already a mount.
 - fstab already has an entry for that mount point.
-- VG free < required, or applying would leave the VG with < 5 % free.
+- VG free < required, or applying would leave the VG with < 5 % free (this floor is a hard floor; buildout's ~10 % reserve target is separate and is what the layout is sized against).
 - `--grow-var` when `lv-var` is already ≥ 50G → skip with `already applied`.
 
 ### Mount policy
 
 - `noatime` on every new LV. `nofail` on every new data LV so a bad data mount cannot stop boot (and SSH). `lv-var` keeps its existing entry — no `nofail`.
+- Mount points are made immutable (`chattr +i`) before mounting, so a data LV that fails to mount at boot (nofail) leaves an immutable, empty directory on `/` or `/var` instead of a writable one that services can silently fill. Consuming units — Docker's data-root in Phase 6, Malcolm's data paths in Phase 10 — must also get `RequiresMountsFor=` so they fail to start rather than write into that directory; this is a gate for those phases.
 - `fstrim.timer` enabled only if Phase 2 item 3 is `ADVERTISED`; otherwise left disabled and noted in the evidence file.
 - Swapfile/swappiness stays in **Phase 4** (it is a sysctl; "measure before tuning").
 
@@ -106,7 +108,7 @@ VG: `ubuntu-vg0` (discovered). The script never names a block device; it acts on
 
 ### Rollback
 
-- **Per new LV:** `umount <mount>` → restore `$FSTAB.pre-NAME-*` → `lvremove ubuntu-vg0/NAME`. LVs are empty in Phase 3; no data at risk.
+- **Per new LV:** `umount <mount>` → `chattr -i <mount>` → restore `$FSTAB.pre-NAME-*` → `lvremove ubuntu-vg0/NAME`. LVs are empty in Phase 3; no data at risk.
 - **`lv-var` grow is not reversible online** (ext4 cannot shrink mounted; shrinking needs rescue media). It is the one irreversible step; cost is 44 GiB of VG reserve. Called out explicitly in the operator confirmation.
 
 ### Tests — `tests/storage-apply.bats`

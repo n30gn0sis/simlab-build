@@ -908,17 +908,17 @@ Expected: exit 0, `GROW lv-var`, 8 × `CREATE`, VG free after the plan ≈ 758G 
 
   Get explicit confirmation. Don't go on without it.
 
-- [ ] **Step 5: Grow /var**
+- [ ] **Step 5: Grow /var.** Run inside `tmux new -s phase3` on the R770 so an SSH drop cannot interrupt a run between the fstab append and its verify:
 
 ```bash
-ssh <alias> 'sudo bash /tmp/r770-storage-apply.sh --grow-var; df -h /var'
+ssh <alias> 'tmux new -d -s phase3 "sudo bash /tmp/r770-storage-apply.sh --grow-var; df -h /var"' && ssh <alias> 'tmux attach -t phase3'
 ```
 Expected: `GROW` then `/var` ≈ 50G. Save the output.
 
-- [ ] **Step 6: Apply each LV, one at a time, `lv_pcap` last.** For each of `lv_docker lv_index lv_staging lv_vms lv_gns3 lv_work lv_backup lv_pcap`:
+- [ ] **Step 6: Apply each LV, one at a time, `lv_pcap` last.** Also run inside `tmux new -s phase3` on the R770 (or re-attach to the Step 5 session) so an SSH drop cannot interrupt a run between the fstab append and its verify. For each of `lv_docker lv_index lv_staging lv_vms lv_gns3 lv_work lv_backup lv_pcap`:
 
 ```bash
-ssh <alias> 'sudo bash /tmp/r770-storage-apply.sh --apply --lv <name>'
+ssh <alias> 'tmux new -d -s phase3 "sudo bash /tmp/r770-storage-apply.sh --apply --lv <name>"' && ssh <alias> 'tmux attach -t phase3'
 ```
 Expected: `DONE <name> mounted at <mp>`. Save each transcript. On any `FAIL` or `REFUSE`, stop, save the output, and follow the systematic-debugging skill. Don't retry blindly.
 

@@ -10,7 +10,7 @@ installs shellcheck in web sessions; on the staging VM,
 
 ## What is covered
 
-Twelve suites. `./tests/run.sh` runs them all; the table below is the whole gate.
+Thirteen suites. `./tests/run.sh` runs them all; the table below is the whole gate.
 
 | Suite | Covers |
 |---|---|

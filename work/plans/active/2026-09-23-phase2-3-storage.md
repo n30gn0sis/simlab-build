@@ -189,7 +189,7 @@ setup() {
     done
     TEST_PATH="$BIN:$REAL"
 
-    # A VG shaped like discovery found it: 6.99 TiB, 6.84 TiB free, lv-var 6G.
+    # A VG shaped like discovery found it (GiB; owner: state/BUILD-STATE.md), lv-var 6G.
     echo 7153 > "$S/vg_size"; echo 7004 > "$S/vg_free"
     echo "6 ext4" > "$S/lv/lv-var"
     printf '%s\n' \

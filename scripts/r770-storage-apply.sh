@@ -41,7 +41,6 @@ lv_backup     250  xfs  /srv/backup
 
 die() { printf 'REFUSE  %s\n' "$*"; exit 1; }
 
-# shellcheck disable=SC2317  # Task 3 uses this
 layout_row() { awk -v n="$1" '$1 == n' <<< "$LAYOUT"; }
 
 vg_field() {  # vg_field size|free -> GiB
@@ -146,7 +145,6 @@ plan() {
 }
 
 MODE=plan; LV=""
-# shellcheck disable=SC2034  # LV used by Task 3
 while [ $# -gt 0 ]; do
     case "$1" in
         --plan)     MODE=plan ;;
@@ -163,5 +161,8 @@ vgs "$VG" >/dev/null 2>&1 || die "VG $VG not found — discovery says it exists;
 
 case "$MODE" in
     plan)  plan; exit $? ;;
+    apply) [ -n "$LV" ] || die "--apply needs --lv NAME"
+           [ -n "$(layout_row "$LV")" ] || die "no LV named '$LV' in the layout"
+           die "mode apply not implemented yet" ;;
     *)     die "mode $MODE not implemented yet" ;;
 esac

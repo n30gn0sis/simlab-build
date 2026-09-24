@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-23 · **Status:** design approved by operator, not yet implemented
 **Phases:** 2 (BIOS/firmware/iDRAC assessment; RAID VD verification) and 3 (storage LVM/filesystem layout) of `PRD.md` §9
-**Supersedes:** the "needs perccli in Phase 2" wording in `docs/plans/r770-network-lab-buildout.md` §3.1/§12 and `state/BUILD-STATE.md`
+**Supersedes:** the "needs perccli in Phase 2" wording in `docs/plans/r770-network-lab-buildout.md` §2/§3.2/§12 and `state/BUILD-STATE.md`
 
 ## Decisions (operator, 2026-09-23)
 
@@ -40,14 +40,14 @@
 | `scripts/r770-precheck.sh` | Keep the probe; reword the missing-tool `warn` so it no longer says "Install Dell's perccli in Phase 2" (Phase 2 no longer needs it) |
 | `state/inventory/bundles.md` | Remove the perccli2 checklist item |
 | `docs/plans/r770-staging-runbook.md`, `r770-install-runbook.md`, `r770-offline-supply.md`, `r770-dependency-manifest.md` §7, `docs/CODEMAPS/dependencies.md` | Remove perccli/perccli2 from the Dell download lists and install steps |
-| `docs/plans/r770-network-lab-buildout.md` §2, §3.1, §12 | "TRIM needs perccli" → "OS-side discard check in Phase 2" |
+| `docs/plans/r770-network-lab-buildout.md` §2, §3.2, §12 | "TRIM needs perccli" → "OS-side discard check in Phase 2" |
 | `state/BUILD-STATE.md` | Unknowns row for PERC/TRIM re-worded; add key-custody → Phase 10 gate |
 
 Dated evidence records (`r770-precheck-report-2026-09-02.md`, `r770-discovery-findings.md`) are left as written — they are history, not plan.
 
 ## Phase 3 — `scripts/r770-storage-apply.sh`
 
-### Layout (data table at the top of the script, mirrors buildout §3.1)
+### Layout (data table at the top of the script, mirrors buildout §3.2 — drift-tested)
 
 | LV | Size | FS | Mount |
 |---|---|---|---|

@@ -877,6 +877,8 @@ git commit -m "Phase 2 assessment: key custody, NVMe link width, TRIM, firmware 
 
 ### Task 6: Execute Phase 3 — storage (GATED; writes filesystems)
 
+> **Superseded 2026-09-24** by `work/plans/active/2026-09-24-bundle-to-r770.md` Tasks 5–6 (operator-run via `scripts/r770-phase3-run.sh`, with a working tmux + tee procedure). Do not execute this task.
+
 **Files:**
 - Create: `state/inventory/r770-phase3-storage-<date>.md`
 - Modify: `state/BUILD-STATE.md`

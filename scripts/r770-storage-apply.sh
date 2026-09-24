@@ -149,6 +149,21 @@ fail_after_lv() {  # fail_after_lv NAME MESSAGE
     exit 1
 }
 
+restore_fstab() {  # restore_fstab BACKUP -> 0 only when FSTAB is byte-identical to BACKUP again
+    local tmp="$FSTAB.restore.$$"
+    cp -p "$1" "$tmp" && mv -f "$tmp" "$FSTAB" && cmp -s "$1" "$FSTAB"
+}
+
+rollback_fstab() {  # rollback_fstab BACKUP NAME REASON
+    if restore_fstab "$1"; then
+        systemctl daemon-reload
+        fail_after_lv "$2" "$3 — $FSTAB restored from $1"
+    else
+        printf 'FAIL    %s RESTORE FAILED — restore it by hand now: cp -p %s %s\n        the empty LV was left in place; to remove it: lvremove %s/%s\n' "$FSTAB" "$1" "$FSTAB" "$VG" "$2"
+        exit 1
+    fi
+}
+
 apply_lv() {
     local row name size fs mp verdict uuid backup
     row=$(layout_row "$1")
@@ -160,6 +175,8 @@ apply_lv() {
         REFUSE*) die "$name — ${verdict#REFUSE: }" ;;
     esac
 
+    findmnt --verify --tab-file "$FSTAB" >/dev/null || die "$FSTAB does not pass findmnt --verify as it stands — fix it first; nothing changed"
+
     echo "APPLY   $name ${size}G $fs $mp"
     lvcreate --yes --wipesignatures y -n "$name" -L "${size}G" "$VG" \
         || die "lvcreate failed — nothing else changed"
@@ -170,14 +187,13 @@ apply_lv() {
 
     backup="$FSTAB.pre-$name-$(date +%Y%m%dT%H%M%S)"
     cp -p "$FSTAB" "$backup"    || fail_after_lv "$name" "could not back up $FSTAB"
-    printf 'UUID=%s %s %s noatime,nofail 0 2\n' "$uuid" "$mp" "$fs" >> "$FSTAB"
+    printf 'UUID=%s %s %s noatime,nofail 0 2\n' "$uuid" "$mp" "$fs" >> "$FSTAB" \
+        || rollback_fstab "$backup" "$name" "could not append to $FSTAB"
     systemctl daemon-reload
-    if ! findmnt --verify --tab-file "$FSTAB" || ! mount --fstab "$FSTAB" "$mp"; then
-        cp -p "$backup" "$FSTAB"
-        systemctl daemon-reload
-        fail_after_lv "$name" "fstab verify or mount failed — $FSTAB restored from $backup"
+    if ! findmnt --verify --tab-file "$FSTAB" >/dev/null || ! mount --fstab "$FSTAB" "$mp"; then
+        rollback_fstab "$backup" "$name" "fstab verify or mount failed"
     fi
-    is_mounted "$mp" || fail_after_lv "$name" "mount reported success but $mp is not mounted"
+    is_mounted "$mp" || rollback_fstab "$backup" "$name" "mount reported success but $mp is not mounted"
     echo "DONE    $name mounted at $mp (fstab backup: $backup)"
     findmnt -n -o SOURCE,FSTYPE,SIZE,OPTIONS "$mp" || true   # evidence only
 }
@@ -192,7 +208,7 @@ grow_var() {
     reason=$(room_reason "$free" "$delta" "$vgsize")
     [ -z "$reason" ] || die "$VAR_LV — $reason"
     echo "GROW    $VAR_LV ${cur}G -> ${VAR_TARGET_G}G  (online; NOT reversible online)"
-    lvextend --resizefs -L "${VAR_TARGET_G}G" "$VG/$VAR_LV" || die "lvextend failed"
+    lvextend --resizefs -L "${VAR_TARGET_G}G" "$VG/$VAR_LV" || die "lvextend/resizefs failed — the LV may already have grown; check: lvs $VG/$VAR_LV; df -h /var"
     findmnt -n -o SOURCE,FSTYPE,SIZE /var || true   # evidence only
 }
 

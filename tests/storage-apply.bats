@@ -21,7 +21,7 @@ setup() {
     export STORAGE_FSTAB="$BATS_TEST_TMPDIR/fstab"
     export FAKE_UID=0
     mkdir -p "$BIN" "$REAL" "$S/lv" "$STORAGE_ROOT"
-    for t in bash env awk sed grep tr cat cp mkdir ls date head tail rm cmp; do
+    for t in bash env awk sed grep tr cat cp mv mkdir ls date head tail rm cmp; do
         p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$REAL/$t"
     done
     TEST_PATH="$BIN:$REAL"
@@ -43,8 +43,8 @@ setup() {
     stub mkfs.ext4 'echo "mkfs.ext4 $*" >> "$S/calls"; n=${1##*/}; read -r sz _ < "$S/lv/$n"; echo "$sz ext4" > "$S/lv/$n"'
     stub lvextend  'echo "lvextend $*" >> "$S/calls"; echo "50 ext4" > "$S/lv/lv-var"'
     stub systemctl 'echo "systemctl $*" >> "$S/calls"'
-    stub mount     'echo "mount $*" >> "$S/calls"; for a; do t=$a; done; echo "$t" >> "$S/mounted"'
-    stub findmnt   'if [ "$1" = --verify ]; then echo "findmnt $*" >> "$S/calls"; exit "$(cat "$S/verify_rc" 2>/dev/null || echo 0)"; fi; for a; do t=$a; done; grep -qxF "$t" "$S/mounted" 2>/dev/null || exit 1; echo "$t"'
+    stub mount     'echo "mount $*" >> "$S/calls"; rc="$(cat "$S/mount_rc" 2>/dev/null || echo 0)"; [ "$rc" -eq 0 ] && { for a; do t=$a; done; echo "$t" >> "$S/mounted"; }; exit "$rc"'
+    stub findmnt   'if [ "$1" = --verify ]; then rc="$(cat "$S/verify_rc" 2>/dev/null || echo 0)"; [ "$rc" -ne 0 ] && exit "$rc"; shift 2; tabfile="$1"; [ -n "$tabfile" ] && grep -qF "UUID=uuid-" "$tabfile" && rc="$(cat "$S/verify_new_rc" 2>/dev/null || echo 0)"; exit "$rc"; fi; for a; do t=$a; done; grep -qxF "$t" "$S/mounted" 2>/dev/null || exit 1; echo "$t"'
 }
 
 stub() {  # stub <name> <body>
@@ -173,15 +173,35 @@ fstab_unchanged() { cmp "$STORAGE_FSTAB" "$BATS_TEST_TMPDIR/fstab.orig"; }
     no_mutations
 }
 
-@test "a failed fstab verify restores fstab and names the lvremove" {
+@test "a pre-existing fstab error refuses before anything is created" {
     echo 1 > "$S/verify_rc"
     run apply_script --apply --lv lv_work
     echo "$output"
     [ "$status" -eq 1 ]
+    [[ "$output" == *"does not pass findmnt --verify"* ]]
+    ! grep -q '^lvcreate ' "$S/calls"
     fstab_unchanged
-    [[ "$output" == *"FAIL"* ]]
+}
+
+@test "a verify failure on the new line restores fstab and names the lvremove" {
+    echo 1 > "$S/verify_new_rc"
+    run apply_script --apply --lv lv_work
+    echo "$output"
+    [ "$status" -eq 1 ]
+    fstab_unchanged
+    [[ "$output" == *"restored from"* ]]
     [[ "$output" == *"lvremove ubuntu-vg0/lv_work"* ]]
     ! grep -q '^mount ' "$S/calls"
+}
+
+@test "a mount failure restores fstab and names the lvremove" {
+    echo 32 > "$S/mount_rc"
+    run apply_script --apply --lv lv_work
+    echo "$output"
+    [ "$status" -eq 1 ]
+    fstab_unchanged
+    [[ "$output" == *"restored from"* ]]
+    [[ "$output" == *"lvremove ubuntu-vg0/lv_work"* ]]
 }
 
 @test "refuses an existing LV of a different size" {

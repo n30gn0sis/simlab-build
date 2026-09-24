@@ -29,7 +29,7 @@
 | 7 | KVM/libvirt + lab bridges + NAT zone | 5 | Low | NOT STARTED | — |
 | 8 | GNS3 server + service + proxy publication | 6,7 | No | NOT STARTED | — |
 | 9 | Capture-port prep + drop-stat plumbing | 5 | No (capture ports only) | NOT STARTED | — |
-| 10 | Malcolm deployment + live capture + retention | 6,9,3 | No | NOT STARTED | — |
+| 10 | Malcolm deployment + live capture + retention | 6,9,3 + PERC key custody RECORDED (Phase 2) | No | NOT STARTED | — |
 | 11 | Virtual mirror feed + imported-PCAP workflow | 10,7 | No | NOT STARTED | — |
 | 12 | WAN impairment script library | 7 | No | NOT STARTED | — |
 | 13 | Nginx portal + TLS + `.lab` names + docs site | 5,6 | No | NOT STARTED | — |
@@ -61,18 +61,19 @@
 | Unknown | Status |
 |---|---|
 | Usable RAID capacity (~4 vs ~8 TB) | **RESOLVED — 7.68 TB usable (RAID1, single VD)** |
-| Actual PERC model/firmware/TRIM | **RESOLVED for model + firmware** (H975i Front, 8.14.0.0.28-40); TRIM passthrough still needs perccli in Phase 2 |
+| Actual PERC model/firmware/TRIM | **RESOLVED for model + firmware** (H975i Front, 8.14.0.0.28-40); TRIM/discard answered OS-side in Phase 2 (`lsblk -D`, sysfs) — perccli removed from the build 2026-09-23 |
 | Capture NIC media (SFP+ vs BASE-T) | **RESOLVED — 10GBASE-T copper. Order copper TAPs / RJ45 SPAN, not optics** |
 | NUMA locality of OCP adapters + PERC | **RESOLVED — PERC + Slot 10 + mgmt on node 0; Slot 4 on node 1 (quads split across sockets)** |
 | iDRAC recovery path verified | **PARTIAL** — address known, on a different subnet (192.168.76.0/24); login not yet demonstrated. Phase 5 gate |
 | Dell service tag for firmware downloads | **RESOLVED — G8WFGH4** (closes runbook Step 0E) |
-| PERC encryption key custody (LKM vs SEKM, escrow) | **OPEN — NEW.** Blocking for evidence-grade data; Phase 2 |
+| PERC encryption key custody (LKM vs SEKM, escrow) | **OPEN** — operator attestation in Phase 2 (`inventory/r770-phase2-assessment.md`). **Gates Phase 10** (first case data), not Phase 3 |
 | NVMe x2-of-x4 negotiated link width | **OPEN — NEW.** Phase 2 investigation |
 | Licensed GNS3 appliance entitlements | OPEN (operator) |
 | Site transfer-media scan policy | OPEN (operator) |
 
 ## Log
 
+- 2026-09-23 · Planning · Phase 2/3 designed (`docs/superpowers/specs/2026-09-23-phase2-3-storage-design.md`). Phase 2 is assess-only with no iDRAC queries: key custody by operator attestation, NVMe x2 from Dell documentation, TRIM from OS-side checks, firmware delta from the 2026-09-03 export. perccli2 removed from the build and the supply lists. Key custody now gates Phase 10 instead of Phase 3. Phase 3 applies through the new `scripts/r770-storage-apply.sh` (plan by default, one LV per apply, layout drift-tested against buildout §3.2). · `work/plans/active/2026-09-23-phase2-3-storage.md`
 - 2026-09-23 · Bundle prep · Closing one of the two re-check items named in the 2026-09-09 restructure-closeout entry below: re-verifying the `BUNDLE_NOTES.md` edit inside `bundle-20260908` on VM 9770 is now moot — the 2026-09-17 teardown wiped VM 9770 to init state and no bundle exists there anymore (neither `bundle-20260908` nor any successor), so there is nothing left on the VM to re-check. The other item named in that same 2026-09-09 entry — reviewing the untracked, machine-local `.claude/settings.local.json` — remains open and is unaffected by this entry. Also closed the two DEFERRED `scripts/r770-offline-fetch.sh` correctness items from that day: the Ubuntu ISO's `SHA256SUMS.gpg` signature is now actually checked with `gpg --verify` against the local `ubuntu-keyring` package's keyring (fatal on failure, not a soft note), and `seed()` now only reuses a cached file from a previous bundle when its hash is confirmed against that bundle's own `MANIFEST.sha256` — no manifest or no match means a real re-fetch instead of trusting a merely non-empty file. · `scripts/r770-offline-fetch.sh`, `tests/offline-fetch.bats`
 - 2026-09-17 · Staging · 2026-09-16 rehearsal redeploy torn down on VM 9770 at the operator's request, **full wipe this time (not "keep the bundle" like 2026-09-12)**: Malcolm wiped, monitoring/GNS3/nginx removed, all rehearsal packages purged, `bundle-20260915` deleted, `docker system prune -a --volumes` (37 images / ~30 GB reclaimed). VM back to init state: 11G used / 376G free disk, 624Mi used / 10Gi available memory, only ssh/resolved listening, no iptables/hosts/cron/tmux leftovers. **No bundle exists on VM 9770 anymore** — a fresh cut is needed before any further staging work. · `inventory/rehearsal-sites-2026-09-16.md` §Teardown
 - 2026-09-16 · Staging · All five portal sites redeployed on VM 9770 from `bundle-20260915` (not `bundle-20260908`, wiped 2026-09-15) and **left running for open-ended manual testing — no teardown this time**, at the operator's request. New CA (the 2026-09-12 one is no longer valid anywhere). 27/27 Malcolm services healthy; sample capture indexed (67 DNS sessions incl. resolved hostnames) — Zeek data now merges into `arkime_sessions3-*` directly rather than a separate dated index, a Malcolm 26.08.0 architecture change from the 2026-09-12 baseline, not a defect. **Found and fixed**: GNS3 3.0.6 now writes its JWT secret and controller DB under `/etc/gns3/` itself (not `~/.config/GNS3/…` as before) — needed `chown -R` on the whole directory, not just the conf file, or it crashes on startup. Memory tighter than 2026-09-12 (11 GiB VM now vs 12 GiB then) but stable throughout. Phases 8/13/14 remain NOT STARTED — this is staging. · `inventory/rehearsal-sites-2026-09-16.md`

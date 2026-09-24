@@ -138,7 +138,7 @@ Rationale unchanged: XFS on the large streaming/parallel-write volumes (PCAP, Op
 
 Mount options: `noatime` on all data LVs; use periodic `fstrim.timer` (weekly) rather than `discard` — enabled only if Phase 2's OS-side check shows the VD advertises discard (`lsblk -D`, `/sys/block/<dev>/queue/discard_max_bytes`); otherwise left off. No swap beyond a small 8 GB swapfile with low swappiness; OpenSearch performs badly when swapped (Malcolm sets memlock).
 
-> **Gate before any of this runs:** the PERC reports `Encryption mode: Enabled` with a `Security Key Assigned`. Establish whether that is LKM or SEKM and where the key is escrowed **before** case data lands on these volumes — losing the key loses the VD. See §12.
+> **Gate before case data lands (Phase 10, not Phase 3):** the PERC reports `Encryption mode: Enabled` with a `Security Key Assigned`. The operator attests LKM vs SEKM and where the key is escrowed in Phase 2; Phase 10 does not start until that is recorded. Creating these empty LVs is not gated on it — losing the key loses the VD either way, and empty LVs cost minutes to recreate. See §12.
 
 ### 3.3 Retention and protection policy
 

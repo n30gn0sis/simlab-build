@@ -222,7 +222,7 @@ Any line printed by `comm` is an image that did not load. Stop.
 
 ---
 
-## Part 6 — VM base images  *(Phase 7 — needs Phase 5)*
+## Part 6 — VM base images  *(Phase 7)*
 
 ```bash
 sudo mkdir -p /srv/vms/base
@@ -368,7 +368,7 @@ risk of the air gap and belongs in the cycle log, not in a surprise.
 
 ---
 
-## Part 10 — Portal and monitoring  *(Phases 13, 14 — need Phase 5)*
+## Part 10 — Portal and monitoring  *(Phases 13, 14)*
 
 Nginx, Prometheus, Grafana, alertmanager, cAdvisor and the docs site all come
 from the monitoring images loaded in Part 5. Internal CA only — issue portal,
@@ -440,7 +440,7 @@ command output saved under `state/inventory/`.** An assertion is not evidence.
 | `docker load` succeeds, tags missing | The tarball is incomplete. Re-cut; do not patch by hand |
 | `pip` hangs | `--no-index` was omitted; it is reaching for PyPI |
 | Root filesystem fills | A volume was not mounted before import. Stop, unwind, mount, redo |
-| SSH lost during a network step | iDRAC is the recovery path — which is why Phase 5 is gated on proving it first |
+| SSH lost during a network step | No out-of-band recovery path — the iDRAC gate was dropped 2026-09-24 (PRD.md §6); Phase 5 relies on `netplan try` and a saved rollback |
 
 One change at a time: reproduce, observe, read logs, form one hypothesis, make
 one controlled change, test, then keep or revert it.

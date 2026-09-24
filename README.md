@@ -28,6 +28,7 @@ Everything needed to design, build, validate, and supply the air-gapped Dell Pow
 | `scripts/r770-build-bundle.sh` | **One command, one verified bundle** — preflight, fetch, manual-items pause, manifest regeneration, strict gate. `--pack` emits a single self-extracting file to carry to a staging host with no checkout |
 | `scripts/r770-staging-preflight.sh` | Decides whether a host may build a bundle — any container runtime that answers `info`, has egress and writes docker-archive, probed for real; Ubuntu 24.04 + Docker CE is the recommended default. Run before every fetch |
 | `scripts/r770-precheck.sh` | Read-only Phase 1 discovery — run on the R770 |
+| `scripts/r770-storage-apply.sh` | Phase 3 — creates the lab LVs in `ubuntu-vg0`, one at a time (`--plan` default, `--apply --lv NAME`, `--grow-var`); run on the R770 as root |
 | `tests/` | `./tests/run.sh` — the repo's one check: shellcheck, lint, and bats suites, offline and read-only |
 | `work/plans/active/` | In-progress one-shot plans |
 | `work/plans/archive/` | Executed plans, kept as outcome records |

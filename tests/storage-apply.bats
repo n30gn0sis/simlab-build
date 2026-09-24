@@ -125,3 +125,135 @@ fstab_unchanged() { cmp "$STORAGE_FSTAB" "$BATS_TEST_TMPDIR/fstab.orig"; }
     [ "$(wc -l <<< "$design")" -eq 8 ]
     [ "$design" = "$script" ]
 }
+
+# ── --apply --lv ─────────────────────────────────────────────────────────────
+
+@test "--apply needs --lv" {
+    run apply_script --apply
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--apply needs --lv NAME"* ]]
+    no_mutations
+}
+
+@test "--apply refuses a name that is not in the layout" {
+    run apply_script --apply --lv lv_bogus
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"no LV named 'lv_bogus'"* ]]
+    no_mutations
+}
+
+@test "--apply creates exactly one LV, one fstab line, and mounts it" {
+    run apply_script --apply --lv lv_work
+    echo "$output"; cat "$S/calls"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^lvcreate ' "$S/calls")" -eq 1 ]
+    grep -qxF 'lvcreate --yes --wipesignatures y -n lv_work -L 200G ubuntu-vg0' "$S/calls"
+    grep -qxF 'mkfs.xfs /dev/ubuntu-vg0/lv_work' "$S/calls"
+    grep -qxF 'mount --fstab '"$STORAGE_FSTAB"' /srv/work' "$S/calls"
+    [ "$(diff "$BATS_TEST_TMPDIR/fstab.orig" "$STORAGE_FSTAB" | grep -c '^>')" -eq 1 ]
+    tail -1 "$STORAGE_FSTAB" | grep -qxF 'UUID=uuid-lv_work /srv/work xfs noatime,nofail 0 2'
+    [ -d "$STORAGE_ROOT/srv/work" ]
+    ls "$STORAGE_FSTAB".pre-lv_work-* >/dev/null
+    [[ "$output" == *"DONE    lv_work"* ]]
+}
+
+@test "lv_docker gets ext4" {
+    run apply_script --apply --lv lv_docker
+    [ "$status" -eq 0 ]
+    grep -qxF 'mkfs.ext4 /dev/ubuntu-vg0/lv_docker' "$S/calls"
+    tail -1 "$STORAGE_FSTAB" | grep -qxF 'UUID=uuid-lv_docker /var/lib/docker ext4 noatime,nofail 0 2'
+}
+
+@test "a re-run after success is a no-op" {
+    apply_script --apply --lv lv_work
+    : > "$S/calls"
+    run apply_script --apply --lv lv_work
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"SKIP    lv_work — already applied"* ]]
+    no_mutations
+}
+
+@test "a failed fstab verify restores fstab and names the lvremove" {
+    echo 1 > "$S/verify_rc"
+    run apply_script --apply --lv lv_work
+    echo "$output"
+    [ "$status" -eq 1 ]
+    fstab_unchanged
+    [[ "$output" == *"FAIL"* ]]
+    [[ "$output" == *"lvremove ubuntu-vg0/lv_work"* ]]
+    ! grep -q '^mount ' "$S/calls"
+}
+
+@test "refuses an existing LV of a different size" {
+    echo "100 xfs" > "$S/lv/lv_work"
+    run apply_script --apply --lv lv_work
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"exists as 100.00G xfs"* ]]
+    no_mutations
+}
+
+@test "refuses a matching LV that is not mounted (partial apply)" {
+    echo "200 xfs" > "$S/lv/lv_work"
+    run apply_script --apply --lv lv_work
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"partially applied"* ]]
+    no_mutations
+}
+
+@test "refuses a non-empty mount point" {
+    mkdir -p "$STORAGE_ROOT/srv/work"; touch "$STORAGE_ROOT/srv/work/keep"
+    run apply_script --apply --lv lv_work
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/srv/work exists and is not empty"* ]]
+    no_mutations
+}
+
+@test "refuses a mount point that is already mounted" {
+    echo /srv/work > "$S/mounted"
+    run apply_script --apply --lv lv_work
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"already a mount point"* ]]
+    no_mutations
+}
+
+@test "refuses when fstab already has the mount point" {
+    echo 'UUID=other /srv/work xfs defaults 0 2' >> "$STORAGE_FSTAB"
+    run apply_script --apply --lv lv_work
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"already has an entry for /srv/work"* ]]
+    no_mutations
+}
+
+@test "refuses when VG free is below the LV size" {
+    echo 100 > "$S/vg_free"
+    run apply_script --apply --lv lv_work
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"VG free 100.00G < 200.00G needed"* ]]
+    no_mutations
+}
+
+# ── --grow-var ───────────────────────────────────────────────────────────────
+
+@test "--grow-var extends lv-var to 50G online, and only that" {
+    run apply_script --grow-var
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$S/calls")" = "lvextend --resizefs -L 50G ubuntu-vg0/lv-var" ]
+    fstab_unchanged
+}
+
+@test "--grow-var is a no-op once lv-var is 50G" {
+    echo "50 ext4" > "$S/lv/lv-var"
+    run apply_script --grow-var
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"SKIP    lv-var"* ]]
+    no_mutations
+}
+
+@test "--grow-var respects the reserve floor" {
+    echo 380 > "$S/vg_free"
+    run apply_script --grow-var
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"reserve floor"* ]]
+    no_mutations
+}

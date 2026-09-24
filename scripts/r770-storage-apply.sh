@@ -144,6 +144,58 @@ plan() {
     return "$refused"
 }
 
+fail_after_lv() {  # fail_after_lv NAME MESSAGE
+    printf 'FAIL    %s\n        the empty LV was left in place; to remove it: lvremove %s/%s\n' "$2" "$VG" "$1"
+    exit 1
+}
+
+apply_lv() {
+    local row name size fs mp verdict uuid backup
+    row=$(layout_row "$1")
+    [ -n "$row" ] || die "no LV named '$1' in the layout (names: $(awk 'NF {printf "%s ", $1}' <<< "$LAYOUT"))"
+    read -r name size fs mp <<< "$row"
+    verdict=$(classify "$name" "$size" "$fs" "$mp" "$(vg_field free)" "$(vg_field size)")
+    case "$verdict" in
+        SKIP)    echo "SKIP    $name — already applied"; return 0 ;;
+        REFUSE*) die "$name — ${verdict#REFUSE: }" ;;
+    esac
+
+    echo "APPLY   $name ${size}G $fs $mp"
+    lvcreate --yes --wipesignatures y -n "$name" -L "${size}G" "$VG" \
+        || die "lvcreate failed — nothing else changed"
+    "mkfs.$fs" "/dev/$VG/$name" || fail_after_lv "$name" "mkfs.$fs failed"
+    mkdir -p "$ROOT$mp"         || fail_after_lv "$name" "mkdir $mp failed"
+    uuid=$(blkid -s UUID -o value "/dev/$VG/$name")
+    [ -n "$uuid" ]              || fail_after_lv "$name" "no filesystem UUID on /dev/$VG/$name"
+
+    backup="$FSTAB.pre-$name-$(date +%Y%m%dT%H%M%S)"
+    cp -p "$FSTAB" "$backup"    || fail_after_lv "$name" "could not back up $FSTAB"
+    printf 'UUID=%s %s %s noatime,nofail 0 2\n' "$uuid" "$mp" "$fs" >> "$FSTAB"
+    systemctl daemon-reload
+    if ! findmnt --verify --tab-file "$FSTAB" || ! mount --fstab "$FSTAB" "$mp"; then
+        cp -p "$backup" "$FSTAB"
+        systemctl daemon-reload
+        fail_after_lv "$name" "fstab verify or mount failed — $FSTAB restored from $backup"
+    fi
+    is_mounted "$mp" || fail_after_lv "$name" "mount reported success but $mp is not mounted"
+    echo "DONE    $name mounted at $mp (fstab backup: $backup)"
+    findmnt -n -o SOURCE,FSTYPE,SIZE,OPTIONS "$mp" || true   # evidence only
+}
+
+grow_var() {
+    local cur free vgsize delta reason
+    cur=$(lv_size "$VAR_LV")
+    [ -n "$cur" ] || die "$VAR_LV not found in $VG"
+    if ge "$cur" "$VAR_TARGET_G"; then echo "SKIP    $VAR_LV — already ${cur}G"; return 0; fi
+    free=$(vg_field free); vgsize=$(vg_field size)
+    delta=$(sub "$VAR_TARGET_G" "$cur")
+    reason=$(room_reason "$free" "$delta" "$vgsize")
+    [ -z "$reason" ] || die "$VAR_LV — $reason"
+    echo "GROW    $VAR_LV ${cur}G -> ${VAR_TARGET_G}G  (online; NOT reversible online)"
+    lvextend --resizefs -L "${VAR_TARGET_G}G" "$VG/$VAR_LV" || die "lvextend failed"
+    findmnt -n -o SOURCE,FSTYPE,SIZE /var || true   # evidence only
+}
+
 MODE=plan; LV=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -161,8 +213,6 @@ vgs "$VG" >/dev/null 2>&1 || die "VG $VG not found — discovery says it exists;
 
 case "$MODE" in
     plan)  plan; exit $? ;;
-    apply) [ -n "$LV" ] || die "--apply needs --lv NAME"
-           [ -n "$(layout_row "$LV")" ] || die "no LV named '$LV' in the layout"
-           die "mode apply not implemented yet" ;;
-    *)     die "mode $MODE not implemented yet" ;;
+    apply) [ -n "$LV" ] || die "--apply needs --lv NAME"; apply_lv "$LV" ;;
+    grow)  grow_var ;;
 esac

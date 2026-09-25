@@ -1,0 +1,17 @@
+agent = 1
+balloon = 0
+boot = order=scsi0
+ciuser = ubuntu
+cores = 6
+cpu = host
+ide2 = local-lvm:vm-9770-cloudinit,media=cdrom
+ipconfig0 = ip=dhcp
+memory = 8192
+name = r770-staging
+net0 = virtio=BC:24:11:97:70:01,bridge=vmbr0
+numa = 0
+onboot = 0
+ostype = l26
+scsi0 = local-lvm:vm-9770-disk-0,backup=0,discard=on,iothread=1,mbps_wr=250,mbps_wr_max=400,size=400G,ssd=1
+scsihw = virtio-scsi-single
+serial0 = socket

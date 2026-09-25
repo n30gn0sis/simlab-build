@@ -1,0 +1,29 @@
+Get:1 file:/srv/repo/apt ./ InRelease
+Ign:1 file:/srv/repo/apt ./ InRelease
+Get:2 file:/srv/repo/apt ./ Release
+Ign:2 file:/srv/repo/apt ./ Release
+Get:3 file:/srv/repo/apt ./ Packages
+Ign:3 file:/srv/repo/apt ./ Packages
+Get:4 file:/srv/repo/apt ./ Translation-en
+Ign:4 file:/srv/repo/apt ./ Translation-en
+Get:3 file:/srv/repo/apt ./ Packages
+Ign:3 file:/srv/repo/apt ./ Packages
+Get:4 file:/srv/repo/apt ./ Translation-en
+Ign:4 file:/srv/repo/apt ./ Translation-en
+Get:3 file:/srv/repo/apt ./ Packages
+Ign:3 file:/srv/repo/apt ./ Packages
+Get:4 file:/srv/repo/apt ./ Translation-en
+Ign:4 file:/srv/repo/apt ./ Translation-en
+Get:3 file:/srv/repo/apt ./ Packages [293 kB]
+Get:4 file:/srv/repo/apt ./ Translation-en
+Err:4 file:/srv/repo/apt ./ Translation-en
+  File not found - /srv/repo/apt/./en.gz (2: No such file or directory)
+Get:4 file:/srv/repo/apt ./ Translation-en
+Err:4 file:/srv/repo/apt ./ Translation-en
+  File not found - /srv/repo/apt/./en.lz4 (2: No such file or directory)
+Get:4 file:/srv/repo/apt ./ Translation-en
+Err:4 file:/srv/repo/apt ./ Translation-en
+  File not found - /srv/repo/apt/./en.zst (2: No such file or directory)
+Get:4 file:/srv/repo/apt ./ Translation-en
+Ign:4 file:/srv/repo/apt ./ Translation-en
+Reading package lists...

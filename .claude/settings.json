@@ -36,9 +36,7 @@
       "Read(**/*.pem)",
       "Read(**/*secret*)"
     ],
-    "ask": [
-      "Bash(rsync:*)"
-    ]
+    "ask": []
   },
   "hooks": {
     "SessionStart": [

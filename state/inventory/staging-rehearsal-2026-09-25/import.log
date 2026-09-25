@@ -1,0 +1,73 @@
+== verify at source
+ok    dell/ has 1 staged file(s)
+ok    gns3/appliances/ has 9 staged file(s)
+
+RESULT: PASS WITH WARNINGS — 1 warning(s) to disposition.
+verify-src exit=2
+== copy to /data/staging
+copied
+== verify the copy
+ok    gns3/appliances/ has 9 staged file(s)
+
+RESULT: PASS WITH WARNINGS — 1 warning(s) to disposition.
+verify-copy exit=2
+== apt sources BEFORE
+docker.list
+ubuntu.sources
+-rw-r--r-- 1 root root 292576 Sep 25 01:57 /srv/repo/apt/Packages.gz
+-rw-r--r-- 1 root root 1594 Sep 25 02:23 /root/apt-sources-rehearsal.tar.gz
+deb [trusted=yes] file:/srv/repo/apt ./
+== apt sources AFTER
+r770-local.list
+== apt update
+Get:1 file:/srv/repo/apt ./ InRelease
+Ign:1 file:/srv/repo/apt ./ InRelease
+Get:2 file:/srv/repo/apt ./ Release
+Ign:2 file:/srv/repo/apt ./ Release
+Get:3 file:/srv/repo/apt ./ Packages
+Ign:3 file:/srv/repo/apt ./ Packages
+Get:4 file:/srv/repo/apt ./ Translation-en
+Ign:4 file:/srv/repo/apt ./ Translation-en
+Get:3 file:/srv/repo/apt ./ Packages
+Ign:3 file:/srv/repo/apt ./ Packages
+Get:4 file:/srv/repo/apt ./ Translation-en
+Ign:4 file:/srv/repo/apt ./ Translation-en
+Get:3 file:/srv/repo/apt ./ Packages
+Ign:3 file:/srv/repo/apt ./ Packages
+Get:4 file:/srv/repo/apt ./ Translation-en
+Ign:4 file:/srv/repo/apt ./ Translation-en
+Get:3 file:/srv/repo/apt ./ Packages [293 kB]
+Get:4 file:/srv/repo/apt ./ Translation-en
+Err:4 file:/srv/repo/apt ./ Translation-en
+  File not found - /srv/repo/apt/./en.gz (2: No such file or directory)
+Get:4 file:/srv/repo/apt ./ Translation-en
+Err:4 file:/srv/repo/apt ./ Translation-en
+  File not found - /srv/repo/apt/./en.lz4 (2: No such file or directory)
+Get:4 file:/srv/repo/apt ./ Translation-en
+Err:4 file:/srv/repo/apt ./ Translation-en
+  File not found - /srv/repo/apt/./en.zst (2: No such file or directory)
+Get:4 file:/srv/repo/apt ./ Translation-en
+Ign:4 file:/srv/repo/apt ./ Translation-en
+Reading package lists...
+== policy
+docker-ce:
+  Installed: 5:29.8.1-1~ubuntu.24.04~noble
+  Candidate: 5:29.8.1-1~ubuntu.24.04~noble
+  Version table:
+ *** 5:29.8.1-1~ubuntu.24.04~noble 500
+        500 file:/srv/repo/apt ./ Packages
+        100 /var/lib/dpkg/status
+== dry run
+Reading package lists...
+Building dependency tree...
+Reading state information...
+docker-ce is already the newest version (5:29.8.1-1~ubuntu.24.04~noble).
+0 upgraded, 0 newly installed, 0 to remove and 1 not upgraded.
+qemu-kvm                 bundle:no installed:no  dry-run exit=0 169 Inst, 0 errors
+libvirt-daemon-system    bundle:yes installed:no  dry-run exit=0 188 Inst, 0 errors
+tshark                   bundle:yes installed:no  dry-run exit=0 18 Inst, 0 errors
+bridge-utils             bundle:yes installed:no  dry-run exit=0 1 Inst, 0 errors
+chrony                   bundle:yes installed:no  dry-run exit=0 2 Inst, 0 errors
+dnsmasq                  bundle:yes installed:no  dry-run exit=0 3 Inst, 0 errors
+nginx                    bundle:yes installed:no  dry-run exit=0 2 Inst, 0 errors
+

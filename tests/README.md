@@ -10,7 +10,7 @@ installs shellcheck in web sessions; on the staging VM,
 
 ## What is covered
 
-Fourteen suites. `./tests/run.sh` runs them all; the table below is the whole gate.
+Fifteen suites. `./tests/run.sh` runs them all; the table below is the whole gate.
 
 | Suite | Covers |
 |---|---|
@@ -23,6 +23,7 @@ Fourteen suites. `./tests/run.sh` runs them all; the table below is the whole ga
 | `bundle-verify.bats` | `r770-bundle.sh verify` — one test per confirmed defect, plus WARN triage, `--strict`, and exit-code precedence |
 | `lint.bats` | shellcheck over every script, and `bash -n` over all of them |
 | `no-credentials.bats` | secret protection lives in the repo, not in a machine-local ignore file: `.gitignore` exists, `settings.local.json` and bundle output are ignored by it, no credential-shaped string is tracked |
+| `staging-vm.bats` | `r770-staging-vm.sh` against stubbed curl/ssh: every API call targets node proxmox / VMID 9770, rollback stops a running VM first, a task not ending OK fails, a missing or world-readable token file is refused, and the token secret is never printed |
 | `no-legacy-manifest.bats` | the defective `sha256sum -c` recipe cannot reappear, and the real gate is referenced **by name** from every operational route (and is permitted to run by `.claude/settings.json`) |
 | `storage-apply.bats` | `r770-storage-apply.sh` against stubbed LVM/mount tools: plan is read-only, every refusal changes nothing, apply touches exactly one LV and restores fstab on failure, and the script's layout matches buildout §3.2 |
 | `phase3-run.bats` | `r770-phase3-run.sh` against a stubbed storage script: `apply` runs grow-var then every LV with lv_pcap last and stops at the first failure, fstrim.timer only with `--fstrim`, and `check` only ever asks the storage script to `--plan` |

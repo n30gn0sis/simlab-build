@@ -31,3 +31,9 @@
     run git grep -nE 'sshpass -p [^$]|BEGIN [A-Z ]*PRIVATE KEY' -- ':!tests/'
     [ "$status" -ne 0 ]
 }
+
+@test "no API token secret is tracked (Proxmox or GitHub)" {
+    cd "$BATS_TEST_DIRNAME/.."
+    run git grep -nE 'PVEAPIToken=[^ "$]+=[0-9a-f]{8}-[0-9a-f]{4}-|![A-Za-z0-9_-]+=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9]{30,}' -- ':!tests/'
+    [ "$status" -ne 0 ]
+}

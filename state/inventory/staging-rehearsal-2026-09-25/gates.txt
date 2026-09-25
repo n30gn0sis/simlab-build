@@ -1,0 +1,21 @@
+== virt: kvm
+== disk
+NAME     SIZE TYPE MOUNTPOINTS
+sda      400G disk 
+├─sda1   399G part /
+├─sda14    4M part 
+/dev/sda1       387G   11G  376G   3% /
+== / avail GiB: 376
+== hello-world
+This message shows that your installation appears to be working correctly.
+== build images
+docker.io/library/ubuntu:24.04
+docker.io/library/python:3.12-slim
+== in-container apt egress: ok
+== pigz: /usr/bin/pigz pigz 2.8
+6
+== swap
+/swap.img file   8G   0B   -2
+== fstrim.timer enabled · docker active · qga active
+== docker server 29.8.1 · compose 5.5.1
+== ubuntu in docker group: docker

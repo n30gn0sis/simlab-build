@@ -36,7 +36,7 @@ Owns every version pin and image reference (OWNERS.md).
 Support: `bundle_files part_files manifest_paths first_match fail warn pass die cleanup usage`.
 
 ## r770-build-bundle.sh (196 lines)
-`step` 1/5 preflight → 2/5 fetch → 3/5 manual-items pause (skipped by `--non-interactive`) →
+`step` 1/5 preflight → 2/5 fetch → 3/5 manual-items pause (non-interactive or no TTY: stops unless `--yes`) →
 4/5 manifest regen → 5/5 strict gate. Flags: `--bundle-dir --non-interactive --pack --only --skip` (the last two pass through to the fetch; the gate still runs). `cmd_pack` builds the carry-file.
 
 ## r770-staging-preflight.sh (219 lines)

@@ -140,6 +140,48 @@ order() { cut -d' ' -f1 "$ORDER" | tr '\n' ' '; }
     [ "$status" -eq 0 ]
 }
 
+# --- B1: a prompt that can't read stdin must die cleanly, not crash ---
+#
+# The rehearsal hit this with stdin genuinely unreadable ("read error: 0:
+# Input/output error" under sudo in a detached tmux), which is what a closed
+# fd 0 reproduces here -- plain `< /dev/null` gives `read` a clean EOF, and
+# this bash already leaves the prompt variable set to "" on EOF, so that
+# alone does not reproduce the crash.
+
+@test "stdin closed at EOF (/dev/null) also stops before the manifest, cleanly" {
+    unset BUILD_ASSUME_YES
+    run bash -c '"$1" < /dev/null' -- "$SCRIPT"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"stopped before the manifest — stage the manual items, then rerun with --yes (or from a terminal to be asked)"* ]]
+    [[ "$output" == *"--yes"* ]]
+    [[ "$output" != *"unbound variable"* ]]
+}
+
+@test "an unreadable manual-items prompt dies cleanly instead of crashing on an unbound variable" {
+    unset BUILD_ASSUME_YES
+    run bash -c 'exec 0<&-; "$1"' -- "$SCRIPT"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"stopped before the manifest — stage the manual items, then rerun with --yes (or from a terminal to be asked)"* ]]
+    [[ "$output" == *"--yes"* ]]
+    [[ "$output" != *"unbound variable"* ]]
+}
+
+@test "the same unreadable-stdin condition at the preflight-warnings prompt also dies cleanly" {
+    # A closed fd 0 also fails the [ -t 0 ] check, so this takes the existing
+    # non-interactive branch (its own die message) rather than ever reaching
+    # the read -- which is the point: an unreadable stdin must never reach a
+    # prompt that could crash on it.
+    child preflight 2
+    unset BUILD_ASSUME_YES
+    run bash -c 'exec 0<&-; "$1"' -- "$SCRIPT"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"warnings need a decision and this run is non-interactive"* ]]
+    [[ "$output" != *"unbound variable"* ]]
+}
+
 @test "--only and --skip are handed to the fetch verbatim, and nothing else changes" {
     run "$SCRIPT" --only apt,iso --skip docs
     echo "$output"

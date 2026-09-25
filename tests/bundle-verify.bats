@@ -117,8 +117,19 @@ setup() {
     run "$SCRIPT" verify "$BUNDLE"
     echo "$output"
     [ "$status" -eq 2 ]
-    [[ "$output" == *"dell/ holds only README.txt"* ]]
     [[ "$output" == *"gns3/appliances/ holds only README.txt"* ]]
+}
+
+# Dell firmware is handled on the R770 directly, not through the bundle
+# (operator, 2026-09-25). A README-only dell/ must not warn, or --strict would
+# refuse every cut forever.
+@test "a README-only dell/ is not a warning" {
+    rm "$BUNDLE/dell/BIOS_R770_1.7.5.EXE"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE" --strict
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"dell/"* ]]
 }
 
 @test "a missing BUNDLE_NOTES.md warns" {

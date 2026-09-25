@@ -164,23 +164,22 @@ check_notes() {  # <dir>
     fi
 }
 
-# The two categories no script can fetch: Dell firmware (needs the service tag)
-# and licensed GNS3 appliances (need vendor accounts). A bundle with only the
-# README in each is a valid state — it just is not finished.
+# The one category no script can fetch: licensed GNS3 appliances (need vendor
+# accounts). A bundle with only the README there is a valid state — it just is
+# not finished. Dell firmware is NOT a bundle item (operator, 2026-09-25): it is
+# handled on the R770 directly, so dell/ keeps only its README and is not checked.
 check_manual() {  # <dir>
-    local dir=$1 d n
-    for d in dell gns3/appliances; do
-        if [ ! -d "$dir/$d" ]; then
-            warn "$d/ is missing — the manual-download category is not staged"
-            continue
-        fi
-        n=$(find "$dir/$d" -type f ! -name 'README.txt' | wc -l)
-        if [ "$n" -eq 0 ]; then
-            warn "$d/ holds only README.txt — manual downloads not staged (see that README)"
-        else
-            pass "$d/ has $n staged file(s)"
-        fi
-    done
+    local d="$1/gns3/appliances" n
+    if [ ! -d "$d" ]; then
+        warn "gns3/appliances/ is missing — the manual-download category is not staged"
+        return 0
+    fi
+    n=$(find "$d" -type f ! -name 'README.txt' | wc -l)
+    if [ "$n" -eq 0 ]; then
+        warn "gns3/appliances/ holds only README.txt — manual downloads not staged (see that README)"
+    else
+        pass "gns3/appliances/ has $n staged file(s)"
+    fi
 }
 
 # A list file without its payload -- or a payload with no list file -- means the

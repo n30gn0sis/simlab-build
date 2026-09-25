@@ -16,14 +16,13 @@
 #
 #   1. preflight   is this host fit to build at all?
 #   2. fetch       the long download
-#   3. PAUSE       stage the manual categories -- dell/ and licensed appliances
+#   3. PAUSE       stage the manual category -- licensed GNS3 appliances
 #   4. manifest    regenerate, now that the manual files exist
 #   5. verify      --strict, before the media is allowed to move
 #
 # STEP 3 BEFORE STEP 4 IS THE WHOLE POINT. The fetch writes a manifest covering
-# what it downloaded. Dell firmware and licensed GNS3 appliances are added by
-# hand afterwards, and a manifest written before those files existed cannot see
-# them -- so the gate passes a bundle whose manual content is entirely
+# what it downloaded. Licensed GNS3 appliances are added by hand afterwards,
+# and a manifest written before those files existed cannot see them -- so the gate passes a bundle whose manual content is entirely
 # unverified. Running these steps by hand is how that gets forgotten; this
 # script exists so it cannot be.
 #
@@ -152,17 +151,13 @@ fi
 step "3/5  Manual items — nothing below can be scripted"
 cat <<'MANUAL'
 
-  dell/                    firmware DUPs for the service tag.
-                           Only a DUP NEWER than what is installed; Phase 1
-                           holds the baselines. Keep Dell's published checksum
-                           beside each file.
-
   gns3/appliances/         licensed appliance images you hold entitlements for.
                            The .gns3a definitions are already staged and are
                            free even where the images are not.
 
-Both are added by hand, AFTER the fetch wrote its manifest. That manifest
-cannot see them. Step 4 regenerates it so it can.
+They are added by hand, AFTER the fetch wrote its manifest. That manifest
+cannot see them. Step 4 regenerates it so it can. (Dell firmware is not a
+bundle item: it is handled on the R770 directly.)
 
 MANUAL
 if [ "$ASSUME_YES" = "1" ]; then

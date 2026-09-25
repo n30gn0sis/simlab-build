@@ -11,7 +11,7 @@ updates, ET rules and OUI data are only as fresh as the last bundle.
 
 | Date | Bundle | Size | Key versions | `verify` result | WARN dispositions | Courier | Imported on R770 |
 |---|---|---|---|---|---|---|---|
-| 2026-09-25 (UTC) | `bundle-20260925` (2nd, from `main` @ 97f83df) | **15 GB**, **1596 files** | pins per `state/inventory/pin-review-2026-09-24.md` | `--strict` **FAIL — only `dell/` README-only**; non-strict **exit 2**; **zero WARN lines in notes** | none needed — no WARN lines | **not transferred** — tested in place under a simulated air gap (see `staging-inplace-test-2026-09-25.md`); awaits real Dell files | no |
+| 2026-09-25 (UTC) | `bundle-20260925` (2nd, from `main` @ 97f83df) | **15 GB**, **1596 files** | pins per `state/inventory/pin-review-2026-09-24.md` | `--strict` **PASS (exit 0)** once the `dell/` check was dropped (2026-09-25; `staging-inplace-test-2026-09-25/gate-strict-no-dell-check.log`) — first cut to pass strict; predates the APT `Release` fix (#8), so an import shows the harmless Err probe lines | none needed — no WARN lines | **not transferred** — tested in place under a simulated air gap (see `staging-inplace-test-2026-09-25.md`); awaits real Dell files | no |
 | 2026-09-25 (UTC) | `bundle-20260925` | **14 GB**, **1597 files** | pins per `state/inventory/pin-review-2026-09-24.md` (alertmanager, cadvisor, CHR bumped) | `--strict` **FAIL** — "1 warning(s) left undispositioned" (2 WARN lines); non-strict **exit 2** | 2 docs-mirror WARNs, accepted for the test cut — 3rd cut in a row, now a finding | **TEST CUT — not for transfer** (SYNTHETIC manual items; lives only on VM 9770) | no — import *rehearsed* on VM 9770, see `staging-rehearsal-2026-09-25.md` |
 | 2026-09-08 (amended 2026-09-12) | `bundle-20260908` | **15 GB**, **1634 files** (was 1617) | Malcolm 26.08.0 · Ubuntu 24.04.4 · gns3-server 3.0.6 · FRR 10.7.1 · alertmanager v0.34.0 · cadvisor v0.60.5 (ghcr.io) | **PASS WITH WARNINGS (exit 2)** | 2 docs-mirror WARNs, accepted — see below | not yet transferred | no |
 | 2026-09-15 | `bundle-20260915` | **14 GB**, **1594 files** | same pins as bundle-20260908 | **PASS WITH WARNINGS (exit 2)** | 3 WARN lines (CHR download + 2 docs mirrors), accepted — see below | test artifact, not transferred | no |
@@ -96,7 +96,7 @@ verifier. Future bundles get it automatically; the fetch script now does the cop
 - [x] Pins reviewed 2026-09-04 — 4 bumped with operator approval, grafana held (`pin-review-2026-09-04.md`)
 - [x] Staging host is a **VM, not LXC** — VM 9770, `systemd-detect-virt`=`kvm`, 376 G free, `docker info` OK (2026-09-04)
 - [ ] Bundle built: `sudo -E ./scripts/r770-offline-fetch.sh`
-- [ ] Manual categories staged: Dell (`dell/`) and licensed GNS3 appliances (`gns3/appliances/`)
+- [ ] Manual category staged: licensed GNS3 appliances (`gns3/appliances/`). Dell firmware is not a bundle item since 2026-09-25
 - [ ] Manifest regenerated **after** the manual additions: `./scripts/r770-bundle.sh manifest bundle-YYYYMMDD`
 - [ ] Gate passed on staging: `./scripts/r770-bundle.sh verify bundle-YYYYMMDD --strict`
 - [ ] Ubuntu ISO GPG signature verified on staging (runbook Step 5)
@@ -116,7 +116,9 @@ Reviewed 2026-09-04; four bumped with operator approval. Full evidence:
 `pin-review-2026-09-04.md`. Malcolm **26.08.0**, alertmanager **v0.34.0**,
 cadvisor **v0.60.5**, FRR **10.7.1**; grafana-oss held at 12.1.0.
 
-## Manual category A — Dell, for service tag `G8WFGH4`
+## Manual category A — Dell, for service tag `G8WFGH4` — NOT A BUNDLE ITEM since 2026-09-25
+
+> Dell firmware is **not a bundle item** (operator, 2026-09-25): it is handled on the R770 directly. Kept for reference only; nothing here gates a cut.
 
 From dell.com/support by service tag. Keep Dell's published checksum beside each
 file, and put everything in `bundle-YYYYMMDD/dell/`.

@@ -31,7 +31,7 @@ the media.
 
 It exists to make one ordering impossible to get wrong: the manifest is
 regenerated **after** the manual pause. The fetch writes a manifest covering
-what it downloaded; Dell firmware and licensed appliances are added by hand
+what it downloaded; licensed appliances are added by hand
 afterwards, and a manifest written before those files existed cannot see them.
 Done by hand, that step is the one that gets skipped.
 
@@ -243,7 +243,7 @@ Not applicable on the chosen Docker path — tarballs are natively docker-format
 
 ## Step 4 — Manual additions (cannot be scripted)
 
-- [ ] **Dell** (`bundle/dell/`): from dell.com/support with service tag **`G8WFGH4`** — BIOS + iDRAC + Broadcom NIC firmware DUPs, optionally a DSU offline repo. Keep Dell's published checksums alongside each file. Only download DUPs *newer* than the baselines in Step 0E; a firmware package is not worth the risk if it matches what is installed.
+- [x] ~~**Dell** (`bundle/dell/`)~~ — not a bundle item since 2026-09-25: Dell firmware is handled on the R770 directly.
 - [ ] **Note for OOB work:** this chassis has **IPMI-over-LAN disabled** (SOL enabled). Anything scripted against iDRAC must use **Redfish**, not `ipmitool -H`.
 - [ ] **Licensed GNS3 appliances** (`bundle/gns3/appliances/`): the images from Step 0B per the README the script writes there. Free appliances, `.gns3a` definitions (including for the licensed appliances), and docker-node images are already fetched by the script into `gns3/`.
 - [ ] **GNS3 v3 note:** gns3-server 3.x bundles its web UI and enforces authentication (admin user created on first run); appliance images are still plain files under the server's `images_path`, so pre-staging on disk remains the right offline approach.

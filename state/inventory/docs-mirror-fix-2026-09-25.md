@@ -6,7 +6,7 @@
 
 | Mirror | wget exit | What actually happened |
 |---|---|---|
-| malcolm | **8** | Mirror **complete** (250 files, 26 MB, 24 s). Exit 8 = some URL returned an HTTP error. Every 404 is a defect **on malcolm.fyi itself** (malformed links like `docs/(https://github.com/idaholab/Malcolm)`, missing `images/hedgehog/…` and `images/screenshots/…` PNGs, `docs/version`). No rerun can fix them. |
+| malcolm | **8** | Mirror **complete** (250 files, 26 MB, 24 s). Exit 8 = some URL returned an HTTP error. Every 404 is a defect **on malcolm.fyi itself** (malformed links like `docs/(https://github.com/idaholab/Malcolm)`, missing hedgehog and screenshot PNGs, and the site's `version` page). No rerun can fix them. |
 | zeek | **8** | **Nothing** fetched. `docs.zeek.org` answers the first request with `HTTP/2 429`, `server: cloudflare`, `cf-mitigated: challenge` — the same for the Wget, curl and browser-like User-Agents. A Cloudflare JS challenge no non-browser client can pass. |
 
 The script ran `wget -q … && note mirrored || note "WARN …incomplete/failed"`, so any non-zero exit was reported identically and `-q` hid the reason.
@@ -18,7 +18,7 @@ The script ran `wget -q … && note mirrored || note "WARN …incomplete/failed"
   - `8` **with pages on disk** → mirrored, with a note of the upstream 4xx count; not warned, and stamped complete.
   - `8` with nothing on disk, `4` (network) and `124` (900 s timeout) → a specific WARN each.
   - The exit code is captured as `&& rc=0 || rc=$?` so the script's `set -euo pipefail` doesn't abort the run.
-- Zeek: fetch Read the Docs' offline **htmlzip** from `app.readthedocs.org/projects/zeek-docs/downloads/htmlzip/current/` (no challenge; HTTP 200 to plain clients) via the resumable `fetch()`. Egress allowlist updated: `docs.zeek.org` → `app.readthedocs.org`.
+- Zeek: fetch Read the Docs' offline **htmlzip** (host `app.readthedocs.org`, project `zeek-docs`, version `current`; the exact URL is in the script) — no challenge, HTTP 200 to plain clients — via the resumable `fetch()`. Egress allowlist updated: `docs.zeek.org` → `app.readthedocs.org`.
 - 7 new bats tests (each exit-code branch, the stamped skip, and the source check). Suite 206/206.
 
 ## Live verification on staging VM 9770 (driven from the session)

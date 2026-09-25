@@ -23,7 +23,7 @@ set -uo pipefail
 PVE_URL="${STAGING_PVE_URL:-https://192.168.4.21:8006/api2/json}"
 TOKEN_FILE="${STAGING_PVE_TOKEN_FILE:-/root/.config/simlab/pve-token}"
 CA="${STAGING_PVE_CA:-/root/.config/simlab/pve-ca.pem}"
-VM_HOST="${STAGING_VM_HOST:-ubuntu@192.168.4.72}"
+VM_HOST="${STAGING_VM_HOST:-ubuntu@192.168.4.78}"   # DHCP reservation for BC:24:11:97:70:01 (operator, 2026-09-25)
 POLL="${STAGING_POLL_SECS:-2}"
 TRIES="${STAGING_TASK_TRIES:-300}"
 NODE=proxmox

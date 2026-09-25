@@ -148,8 +148,13 @@ sudo mkdir -p /etc/apt/sources.list.d
 sudo sh -c ': > /etc/apt/sources.list'
 echo 'deb [trusted=yes] file:/srv/repo/apt ./' | \
     sudo tee /etc/apt/sources.list.d/r770-local.list
+echo 'Acquire::Languages "none";' | \
+    sudo tee /etc/apt/apt.conf.d/99r770-no-translations
 sudo apt update
 ```
+
+The flat repo has no `Translation-*` files, so without this `apt update` prints
+harmless `Translation-en` fetch errors on every run; this silences them.
 
 `apt update` must succeed and must contact **only** `file:/srv/repo/apt`. Any
 line mentioning an upstream host means a source survived — stop and fix it.
@@ -165,7 +170,8 @@ sudo chmod -x /etc/update-motd.d/* 2>/dev/null || true
 Updates now arrive by bundle. That is deliberate, and it is the accepted cost
 of the air gap.
 
-**Rollback for Part 3:** restore the tarball from 3.2, `apt update`.
+**Rollback for Part 3:** restore the tarball from 3.2, delete
+`/etc/apt/apt.conf.d/99r770-no-translations`, `apt update`.
 
 ---
 

@@ -458,11 +458,19 @@ else
         docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -qq
     cp /etc/apt/keyrings/docker.asc /out/docker-repo-key.asc
     # build local repo metadata
-    apt-get -y install -qq dpkg-dev >/dev/null
-    cd /out && rm -f lock && rm -rf partial
-    dpkg-scanpackages --multiversion . /dev/null | gzip -9 > Packages.gz
+    apt-get -y install -qq dpkg-dev apt-utils >/dev/null
+    cd /out && rm -f lock Release Packages && rm -rf partial
+    dpkg-scanpackages --multiversion . /dev/null > Packages
+    gzip -9 -kf Packages
+    # A Release file tells apt which indices exist, so it stops probing for
+    # Packages.xz/.bz2/.lzma and printing an Err line for each on the R770.
+    # It must list the UNCOMPRESSED Packages as well: with Packages.gz alone,
+    # apt says 'Skipping acquire of configured file Packages' and the repo is
+    # silently empty while 'apt update' still exits 0 (reproduced 2026-09-25).
+    # Written outside /out and moved in, so it does not hash a half-written copy of itself.
+    apt-ftparchive release . > /tmp/Release && mv /tmp/Release Release
 "
-note "APT bundle: $(ls "$B/apt"/*.deb 2>/dev/null | wc -l) debs incl. docker-ce + dist-upgrade security debs; Packages.gz generated (serve as a trivial repo)"
+note "APT bundle: $(ls "$B/apt"/*.deb 2>/dev/null | wc -l) debs incl. docker-ce + dist-upgrade security debs; Packages, Packages.gz and Release generated (serve as a trivial repo)"
 stamp_done 01-apt.done
 fi
 }

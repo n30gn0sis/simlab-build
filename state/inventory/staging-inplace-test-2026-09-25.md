@@ -32,7 +32,9 @@ Driven entirely from the Claude session: `r770-staging-vm.sh` (scoped token) + S
 ## Findings
 
 1. **Install runbook Part 5's tag check reported docker.io images as missing (fixed on this branch).** `docker image ls` drops the default registry: `docker.io/prom/prometheus:TAG` lists as `prom/prometheus:TAG`, and `docker.io/library/nginx:TAG` as `nginx:TAG`. The raw `comm` would report 7 of the 8 monitoring images "missing" and tell the R770 operator to **stop** a good import. The fix normalises both sides; verified here, 8/8 and 4/4.
-2. **"Err:" lines during a clean `apt update`.** The flat repo has no `Release` file, so apt probes `Packages.{xz,bz2,lzma}` (one `Err` each) before it succeeds with `Packages.gz`, exit 0. Harmless, but it will alarm an operator. A `Release` file generated at cut time (`apt-ftparchive release`) would stop the probing. **Not fixed yet — follow-up.**
+2. **"Err:" lines during a clean `apt update`.** The flat repo has no `Release` file, so apt probes `Packages.{xz,bz2,lzma}` (one `Err` each) before it succeeds with `Packages.gz`, exit 0. **Fixed 2026-09-25 (branch `claude/apt-release-file`).** The fetch now writes `Packages`, `Packages.gz` and a `Release` generated outside the repo dir.
+   - The obvious fix, a `Release` next to `Packages.gz` alone, was reproduced first and is **worse**. apt then prints `Skipping acquire of configured file 'Packages'` and the repo is **silently empty** while `apt update` still exits 0. The Release must list the uncompressed `Packages`.
+   - Verified live against this bundle's real repo: `apt-get update` exit 0, **0 Err, 0 Skipping**, and every R770 dry-run succeeds (`staging-inplace-test-2026-09-25/apt-release-live.log`).
 3. **The test's own first APT check was too strict** (it matched any `Err` line and ignored the exit code). Corrected in `inplace-test.sh` before the passing run. Recorded for honesty; it isn't a bundle defect.
 4. **The VM's DHCP address moves on rollback** (.72 → .78). It needs a DHCP reservation for `BC:24:11:97:70:01` (operator).
 

@@ -493,3 +493,39 @@ stub_docs_wget() {
     run grep -c 'docs_mirror zeek' "$SCRIPT"
     [ "$output" -eq 0 ]
 }
+
+# ── APT repo metadata (2026-09-25) ────────────────────────────────────────────
+# Without a Release file apt probes Packages.{xz,bz2,lzma} and prints an Err line
+# for each on the R770. With a Release that lists only Packages.gz, apt skips the
+# index entirely and the repo is silently EMPTY while 'apt update' exits 0.
+# The Release must list the uncompressed Packages too.
+
+@test "the APT stage writes Packages, Packages.gz and a Release that is not self-hashed" {
+    grep -q 'dpkg-scanpackages --multiversion \. /dev/null > Packages$' "$SCRIPT"
+    grep -q 'gzip -9 -kf Packages$' "$SCRIPT"
+    grep -q 'apt-ftparchive release \. > /tmp/Release && mv /tmp/Release Release$' "$SCRIPT"
+    grep -q 'apt-get -y install -qq dpkg-dev apt-utils' "$SCRIPT"
+}
+
+@test "a flat repo built that way is actually usable by apt (no Err, no skipped index, package visible)" {
+    command -v apt-ftparchive >/dev/null && command -v dpkg-deb >/dev/null || skip "apt-utils/dpkg-deb not installed"
+    X="$BATS_TEST_TMPDIR/aptrepo"; mkdir -p "$X/repo" "$X/pkg/DEBIAN" "$X/lists/partial" "$X/cache/archives/partial"
+    printf 'Package: simlab-probe\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@t>\nDescription: probe\n' > "$X/pkg/DEBIAN/control"
+    dpkg-deb -b "$X/pkg" "$X/repo/simlab-probe_1.0_all.deb" >/dev/null
+    # same shape as the script: uncompressed Packages, gzip -k, Release written outside then moved in
+    ( cd "$X/repo" && apt-ftparchive packages . > Packages 2>/dev/null && gzip -9 -kf Packages \
+        && apt-ftparchive release . > "$X/Release.tmp" && mv "$X/Release.tmp" Release )
+    grep -q ' Packages$' "$X/repo/Release"
+    grep -q ' Packages.gz$' "$X/repo/Release"
+    ! grep -q ' Release$' "$X/repo/Release"
+    echo "deb [trusted=yes] file:$X/repo ./" > "$X/sources.list"
+    O=(-o "Dir::Etc::sourcelist=$X/sources.list" -o Dir::Etc::sourceparts=- -o "Dir::State::Lists=$X/lists"
+       -o "Dir::Cache=$X/cache" -o Acquire::Languages=none -o Debug::NoLocking=1 -o Dir::State::status=/dev/null)
+    run apt-get "${O[@]}" update
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Err:"* ]]
+    [[ "$output" != *"Skipping acquire"* ]]
+    run apt-cache "${O[@]}" policy simlab-probe
+    [[ "$output" == *"Candidate: 1.0"* ]]
+}

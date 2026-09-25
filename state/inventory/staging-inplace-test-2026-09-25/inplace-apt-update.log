@@ -1,0 +1,15 @@
+Get:1 file:/srv/repo/apt ./ InRelease
+Ign:1 file:/srv/repo/apt ./ InRelease
+Get:2 file:/srv/repo/apt ./ Release
+Ign:2 file:/srv/repo/apt ./ Release
+Get:3 file:/srv/repo/apt ./ Packages
+Err:3 file:/srv/repo/apt ./ Packages
+  File not found - /srv/repo/apt/./Packages.xz (2: No such file or directory)
+Get:3 file:/srv/repo/apt ./ Packages
+Err:3 file:/srv/repo/apt ./ Packages
+  File not found - /srv/repo/apt/./Packages.bz2 (2: No such file or directory)
+Get:3 file:/srv/repo/apt ./ Packages
+Err:3 file:/srv/repo/apt ./ Packages
+  File not found - /srv/repo/apt/./Packages.lzma (2: No such file or directory)
+Get:3 file:/srv/repo/apt ./ Packages [293 kB]
+Reading package lists...

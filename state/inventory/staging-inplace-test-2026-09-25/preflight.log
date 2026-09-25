@@ -1,0 +1,13 @@
+== staging preflight ==
+PASS  staging OS: Ubuntu 24.04 — the default path
+PASS  virtualization: kvm — not lxc
+PASS  container runtime: docker 29.8.1
+PASS  docker daemon responds
+PASS  376 GB free on /home/ubuntu/simlab-build (need 150)
+PASS  required host tools present
+PASS  r770-bundle.sh present and executable — it is copied into the bundle root
+PASS  registry pull and in-container apt egress verified
+PASS  docker save writes docker-archive (manifest.json present) — the R770's docker load can read it
+
+READY — all checks passed
+preflight exit=0

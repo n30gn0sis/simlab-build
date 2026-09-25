@@ -93,7 +93,7 @@ Fetched from the GNS3 registry (raw.githubusercontent.com/GNS3/gns3-registry) in
 |---|---|---|---|
 | VyOS rolling ISO (+ .minisig) | latest nightly at build time (e.g. 2026.08.28-0255-rolling) | github.com/vyos/vyos-nightly-build releases (via GitHub API) | ~600 MB |
 | MikroTik CHR raw image | see pin block, `scripts/r770-offline-fetch.sh` | download.mikrotik.com/routeros/${CHR_VER}/chr-${CHR_VER}.img.zip | ~50 MB |
-| OPNsense dvd ISO (+ sha256 + sig) | see pin block, `scripts/r770-offline-fetch.sh` | pkg.opnsense.org (OPNsense's own; was mirrors.dotsrc.org until 2026-09-25)/opnsense/releases/mirror | ~2.2 GB |
+| OPNsense dvd ISO (+ sha256 + sig) | see pin block, `scripts/r770-offline-fetch.sh` | pkg.opnsense.org/releases/mirror (OPNsense's own; was mirrors.dotsrc.org until 2026-09-25) | ~2.2 GB |
 | Alpine virt ISO | latest-stable at build time (parsed from `latest-releases.yaml`) | dl-cdn.alpinelinux.org | ~60 MB |
 | GNS3 docker-node images (alpine, debian:stable-slim, nicolaka/netshoot, quay.io/frrouting/frr — pin: see `scripts/r770-offline-fetch.sh`) | as listed | Docker Hub / quay.io | ~1.5 GB saved |
 

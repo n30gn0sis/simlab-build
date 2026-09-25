@@ -1,0 +1,30 @@
+debs: 855
+debconf: delaying package configuration, since apt-utils is not installed
+dpkg-scanpackages: warning: Packages in archive but missing from override file:
+== Release lists:
+SHA256:
+ 75a826ab694feb53be5763965778e5e59851cd78ce12aeecdc9c780a362592f3          1000747 Packages
+ 3f829dc482322e8b465030d0d29f5338cea7d7ba33c8b4aa9bad71b25d9a0e2d           292592 Packages.gz
+SHA512:
+Get:1 file:/srv/repo/apt ./ InRelease
+Ign:1 file:/srv/repo/apt ./ InRelease
+Get:2 file:/srv/repo/apt ./ Release [832 B]
+Get:2 file:/srv/repo/apt ./ Release [832 B]
+Get:3 file:/srv/repo/apt ./ Release.gpg
+Ign:3 file:/srv/repo/apt ./ Release.gpg
+Get:4 file:/srv/repo/apt ./ Packages [293 kB]
+Reading package lists...
+apt-get update exit=0
+Err lines: 0  Skipping lines: 0
+   libvirt-daemon-system    exit=0 188 Inst
+   qemu-kvm                 exit=0 169 Inst
+   tshark                   exit=0 18 Inst
+   bridge-utils             exit=0 1 Inst
+   chrony                   exit=0 2 Inst
+   dnsmasq                  exit=0 3 Inst
+   nginx                    exit=0 2 Inst
+   docker-ce                exit=0 0 Inst
+  Candidate: 5:29.8.1-1~ubuntu.24.04~noble
+  Version table:
+ *** 5:29.8.1-1~ubuntu.24.04~noble 500
+        500 file:/srv/repo/apt ./ Packages

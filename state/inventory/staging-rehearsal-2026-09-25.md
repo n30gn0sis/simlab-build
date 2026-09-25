@@ -2,7 +2,9 @@
 
 > **TEST CUT — NOT FOR TRANSFER.** The manual items (`dell/`, `gns3/appliances/`) are **SYNTHETIC** placeholders. `bundle-20260925` exists only on VM 9770 and is discarded at its next rollback.
 
-Plan: `work/plans/active/2026-09-24-staging-vm-automation.md` Task 5. The Claude session drove it end to end with `scripts/r770-staging-vm.sh` (scoped token) and SSH. Nothing was pasted by the operator.
+Plan: `work/plans/archive/2026-09-24-staging-vm-automation.md` Task 5. The Claude session drove it end to end with `scripts/r770-staging-vm.sh` (scoped token) and SSH. Nothing was pasted by the operator.
+
+**Dates in this file are the VM's date, UTC** (`date` on VM 9770); the session's own local date when this rehearsal ran was still 2026-09-24, which is why the run spans both dates in the title.
 
 ## Run
 
@@ -58,6 +60,18 @@ GATE FAILED — do not move this media.
 cut exit=1
 ```
 
+**Departure from the plan, on purpose:** Task 5 Step 3 expected exit 2 for an undispositioned-WARN
+bundle ("Exit 2 → disposition each WARN in the evidence file"), with "Exit 1 → stop, debug from the
+log". `r770-build-bundle.sh` always runs the gate as `verify --strict`, and `--strict` fails the run
+(exit 1) on **any** WARN rather than passing with exit 2 — the two exit codes it and `r770-bundle.sh
+verify` distinguish are `--strict` vs. non-strict, not "some WARNs" vs. "none". So this cut's WARNs
+surfaced as the tool's own wording: **"1 warning(s) left undispositioned"** (the count of
+dispositions still owed, following the **2 WARN lines** logged just above it in `BUNDLE_NOTES.md`),
+at exit 1 — not exit 2. Continuing on to the import rehearsal after that exit 1, instead of stopping
+to debug as the plan's literal rule says, was a deliberate departure: the WARNs were the known,
+already-understood docs-mirror gap (finding 2, below), not a new failure, so dispositioning them and
+proceeding was judged safer than treating this as an unplanned stop.
+
 ## WARN dispositions
 
 | WARN | Disposition |
@@ -70,7 +84,7 @@ cut exit=1
 - `/data/staging` is a plain directory here (no LV on the cloud image).
 - APT before: `docker.list`, `ubuntu.sources` → saved to `/root/apt-sources-rehearsal.tar.gz` → after: only `r770-local.list` = `deb [trusted=yes] file:/srv/repo/apt ./`.
 - `apt update`: every line is `file:/srv/repo/apt`. The only errors are `Translation-en` not found (`en.gz/lz4/zst`) — harmless for a flat repo with no translations. **Finding 3:** add `Acquire::Languages "none";` to the runbook's Part 3 so the output is clean.
-- `apt-cache policy docker-ce`: candidate `5:29.8.1-1~ubuntu.24.04~noble` from `file:/srv/repo/apt ./`. That dry run proves little on this VM, since Docker is already installed here, so packages the R770 will need and this VM lacks were dry-run too — **all resolve from the local repo alone, 0 errors**:
+- `apt-cache policy docker-ce`: candidate `5:29.8.1-1~ubuntu.24.04~noble` from `file:/srv/repo/apt ./`. The `docker-ce` dry run itself proves little on this VM, since Docker is already installed here at that same version — `apt-get install --dry-run docker-ce` reports `0 upgraded, 0 newly installed, 0 to remove and 1 not upgraded` (that "1" is `docker-ce` itself, already current; see `import.log`). So packages the R770 will need and this VM lacks were dry-run too — **all resolve from the local repo alone, 0 errors**:
 
 | Package | Inst lines |
 |---|---|
@@ -91,6 +105,19 @@ cut exit=1
 3. **`apt update` Translation-en noise** against the flat repo (above).
 4. **Operator-procedure lesson (controller errors, not script bugs):** a bundle built under `sudo` is root-owned, so staging manual items needs `sudo`. Chain launch commands with `&&`, never `;`, after any step that must succeed first. Both happened in this run and are why attempt 2 exists and why the logs were collected in a second VM boot.
 
-## Raw logs
+## Raw evidence
 
-Kept in the session scratchpad, not the repo (the fetch log is 170 KB): `preflight.log`, `cut-attempt1.log`, `cut-attempt2-aborted.log`, `cut3.log`, `apt-update.log`.
+Committed under [`staging-rehearsal-2026-09-25/`](staging-rehearsal-2026-09-25/) (grepped for
+`pass|token|secret|PVEAPIToken|github_pat|BEGIN .*PRIVATE` before commit — no hits beyond the
+`PASS` preflight lines above). `cut-attempt1.log` is 170 KB of one repeated dpkg warning, so only
+its last 60 lines are kept, as `cut-attempt1-tail.log` — that tail is where the crash (finding 1)
+actually happened.
+
+- [`preflight.log`](staging-rehearsal-2026-09-25/preflight.log)
+- [`cut3.log`](staging-rehearsal-2026-09-25/cut3.log) — attempt 3, the cut that produced `bundle-20260925`
+- [`cut-attempt1-tail.log`](staging-rehearsal-2026-09-25/cut-attempt1-tail.log) — last 60 lines of attempt 1
+- [`cut-attempt2-aborted.log`](staging-rehearsal-2026-09-25/cut-attempt2-aborted.log)
+- [`apt-update.log`](staging-rehearsal-2026-09-25/apt-update.log)
+- [`import.log`](staging-rehearsal-2026-09-25/import.log) — the import rehearsal run
+- [`summary.txt`](staging-rehearsal-2026-09-25/summary.txt)
+- [`image-verify.txt`](staging-rehearsal-2026-09-25/image-verify.txt), [`image-sum.txt`](staging-rehearsal-2026-09-25/image-sum.txt), [`vm-config.txt`](staging-rehearsal-2026-09-25/vm-config.txt), [`gates.txt`](staging-rehearsal-2026-09-25/gates.txt) — VM rebuild evidence, also linked from `staging-vm-9770.md`

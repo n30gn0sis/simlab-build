@@ -1,0 +1,139 @@
+
+== 1/5  Preflight — is this host fit to build?
+== staging preflight ==
+PASS  staging OS: Ubuntu 24.04 — the default path
+PASS  virtualization: kvm — not lxc
+PASS  container runtime: docker 29.8.1
+PASS  docker daemon responds
+PASS  336 GB free on /home/ubuntu/simlab-build (need 150)
+PASS  required host tools present
+PASS  r770-bundle.sh present and executable — it is copied into the bundle root
+PASS  registry pull and in-container apt egress verified
+PASS  docker save writes docker-archive (manifest.json present) — the R770's docker load can read it
+
+READY — all checks passed
+
+== 2/5  Fetch — this is the long one, and it is resumable
+NOTE: resuming previous run in /home/ubuntu/simlab-build/bundle-20260925 — completed items will be skipped (FORCE=1 to redo everything)
+>> Staging container runtime: docker (Docker version 29.8.1, build 4a63305)
+>> No proxy configured (direct egress assumed)
+==== [0/10] Preflight: registry pull + container egress ====
+>> Preflight OK: daemon pull + in-container apt egress verified
+==== [1/10] APT package bundle ====
+>> APT bundle: skipped — complete in a previous run (855 debs cached; FORCE=1 to rebuild)
+==== [2/10] Ubuntu Server ISO ====
+   [skip] ubuntu-24.04.4-live-server-amd64.iso already present
+   [skip] SHA256SUMS already present
+   [skip] SHA256SUMS.gpg already present
+gpg: Signature made Tue Sep 15 19:11:12 2026 UTC
+gpg:                using RSA key 843938DF228D22F7B3742BC0D94AA3F0EFE21092
+gpg: Good signature from "Ubuntu CD Image Automatic Signing Key (2012) <cdimage@ubuntu.com>" [unknown]
+gpg: WARNING: This key is not certified with a trusted signature!
+gpg:          There is no indication that the signature belongs to the owner.
+Primary key fingerprint: 8439 38DF 228D 22F7 B374  2BC0 D94A A3F0 EFE2 1092
+ubuntu-24.04.4-live-server-amd64.iso: OK
+>> Ubuntu ISO 24.04.4 verified: SHA256SUMS GPG signature checked against /usr/share/keyrings/ubuntu-archive-keyring.gpg, then the ISO checked against SHA256SUMS
+==== [3/10] Malcolm 26.08.0 ====
+   [skip] malcolm-26.08.0-docker_install.zip already present
+   [skip] docker-compose.yml already present
+>> Malcolm 26.08.0: images tarball already present (6.8G) — pulls/save skipped
+>> GeoIP DESCOPED by decision 2026-08-31: no MaxMind account — Malcolm runs without geo tagging (v2 of this script has the fetch block if reversed)
+==== [4/10] Monitoring & portal images ====
+>> Monitoring/portal images: tarball already present — pulls/save skipped
+==== [5/10] GNS3 server + VM base images ====
+>> GNS3 wheelhouse: skipped — complete in a previous run
+>> GNS3 wheelhouse (gns3-server==3.0.6): install offline with  python3 -m venv /opt/gns3 && /opt/gns3/bin/pip install --no-index --find-links /path/wheelhouse gns3-server
+>> GNS3 v3 note: server bundles the web UI and enforces auth (admin user on first run); images still live as files under images_path — pre-staging appliances on disk remains valid
+   [skip] noble-server-cloudimg-amd64.img already present
+   [skip] cirros-0.6.3-x86_64-disk.img already present
+>> VM base images: noble cloud image + cirros (validation-suite test VM)
+==== [6/10] GNS3 appliances ====
+   [skip] vyos.gns3a already present
+   [skip] mikrotik-chr.gns3a already present
+   [skip] opnsense.gns3a already present
+   [skip] frr.gns3a already present
+   [skip] alpine-linux.gns3a already present
+   [skip] tinycore-linux.gns3a already present
+   [skip] openwrt.gns3a already present
+   [skip] cisco-iosv.gns3a already present
+   [skip] cisco-iosvl2.gns3a already present
+   [skip] cisco-asav.gns3a already present
+   [skip] fortigate.gns3a already present
+   [skip] pan-vm-fw.gns3a already present
+>> GNS3 definitions: 12 .gns3a files (definitions are free even for licensed appliances)
+>> VyOS rolling 2026.09.24-0028-rolling: already present — skipped
+   [skip] chr-7.24.4.img.zip already present
+>> MikroTik CHR 7.24.4 raw image fetched (unzip on the R770; GNS3/QEMU boots the raw .img directly)
+   [skip] OPNsense-26.7-dvd-amd64.iso.bz2 already present
+   [skip] OPNsense-26.7-checksums-amd64.sha256 already present
+   [skip] OPNsense-26.7-checksums-amd64.sha256.sig already present
+OPNsense-26.7-dvd-amd64.iso.bz2: OK
+>> OPNsense 26.7 dvd ISO verified against its sha256 list
+alpine-virt-3.24.2-x86_64.iso: OK
+>> Alpine virt ISO alpine-virt-3.24.2-x86_64.iso: already present (re-verified) — skipped
+>> GNS3 docker-node images: tarball already present — pulls/save skipped
+>> Licensed GNS3 images: MANUAL — see gns3/appliances/README.txt
+==== [7/10] Enrichment data ====
+   [skip] oui.txt already present
+   [skip] public_suffix_list.dat already present
+   [skip] ipv4-address-space.csv already present
+>> ET Open rules: already present — skipped
+==== [8/10] Docs mirrors ====
+>> WARN: docs mirror for malcolm incomplete/failed (best-effort; rerun resumes it)
+>> WARN: docs mirror for zeek incomplete/failed (best-effort; rerun resumes it)
+>> docs: wireshark skipped — complete in a previous run
+   [skip] gns3-server-docs.tar.gz already present
+>> docs: gns3-server v3.0.6 source tarball (includes docs/) fetched
+==== [9/10] Manual items ====
+>> Dell firmware/tools: MANUAL — see dell/README.txt
+==== [10/10] Manifest ====
+wrote /home/ubuntu/simlab-build/bundle-20260925/MANIFEST.sha256 — 1597 file(s), 14G on disk
+
+Bundle complete: /home/ubuntu/simlab-build/bundle-20260925
+14G	/home/ubuntu/simlab-build/bundle-20260925
+If this run was interrupted, just rerun it — completed items are skipped
+(same-day runs resume automatically; otherwise BUNDLE_DIR=/home/ubuntu/simlab-build/bundle-20260925; FORCE=1 redoes all).
+Review /home/ubuntu/simlab-build/bundle-20260925/BUNDLE_NOTES.md, complete the MANUAL items (dell/, gns3/appliances/), then
+regenerate the manifest after adding manual files:
+  ./scripts/r770-bundle.sh manifest /home/ubuntu/simlab-build/bundle-20260925
+then gate it before the media leaves staging:
+  ./scripts/r770-bundle.sh verify /home/ubuntu/simlab-build/bundle-20260925 --strict
+Then transfer per the supply plan (ext4 drive; verify MANIFEST.sha256 on the R770).
+
+== 3/5  Manual items — nothing below can be scripted
+
+  dell/                    firmware DUPs for the service tag.
+                           Only a DUP NEWER than what is installed; Phase 1
+                           holds the baselines. Keep Dell's published checksum
+                           beside each file.
+
+  gns3/appliances/         licensed appliance images you hold entitlements for.
+                           The .gns3a definitions are already staged and are
+                           free even where the images are not.
+
+Both are added by hand, AFTER the fetch wrote its manifest. That manifest
+cannot see them. Step 4 regenerates it so it can.
+
+
+== 4/5  Manifest — regenerated so it covers the manual additions
+wrote /home/ubuntu/simlab-build/bundle-20260925/MANIFEST.sha256 — 1597 file(s), 14G on disk
+
+== 5/5  Gate — --strict, before the media is allowed to move
+Verifying bundle: /home/ubuntu/simlab-build/bundle-20260925
+ok    MANIFEST.sha256 parses — 1597 entries
+ok    every manifested file is present and unmodified
+ok    no unmanifested files — manual additions are covered
+ok    no incomplete downloads
+ok    malcolm/image-list.txt has its payload
+ok    docker/monitoring-image-list.txt has its payload
+ok    gns3/docker-nodes/image-list.txt has its payload
+      22:- WARN: docs mirror for malcolm incomplete/failed (best-effort; rerun resumes it)
+      23:- WARN: docs mirror for zeek incomplete/failed (best-effort; rerun resumes it)
+WARN  2 WARN line(s) in BUNDLE_NOTES.md — disposition each before the media leaves staging
+ok    dell/ has 1 staged file(s)
+ok    gns3/appliances/ has 9 staged file(s)
+
+RESULT: FAIL (--strict) — 1 warning(s) left undispositioned.
+
+GATE FAILED — do not move this media.
+cut exit=1

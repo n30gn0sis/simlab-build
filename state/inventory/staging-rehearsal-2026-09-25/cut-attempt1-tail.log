@@ -1,0 +1,60 @@
+Status: Downloaded newer image for quay.io/frrouting/frr:10.7.1
+quay.io/frrouting/frr:10.7.1
+>> GNS3 docker-node images: 4 saved (alpine/debian/netshoot/FRR)
+>> Licensed GNS3 images: MANUAL — see gns3/appliances/README.txt
+==== [7/10] Enrichment data ====
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0 29 6450k   29 1919k    0     0  1837k      0  0:00:03  0:00:01  0:00:02 1836k 72 6450k   72 4655k    0     0  2287k      0  0:00:02  0:00:02 --:--:-- 2286k 90 6450k   90 5823k    0     0  1918k      0  0:00:03  0:00:03 --:--:-- 1918k100 6450k  100 6450k    0     0  1756k      0  0:00:03  0:00:03 --:--:-- 1755k
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  326k  100  326k    0     0  1230k      0 --:--:-- --:--:-- --:--:-- 1233k
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100 22972    0 22972    0     0   156k      0 --:--:-- --:--:-- --:--:--  155k
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100 5510k  100 5510k    0     0  13.5M      0 --:--:-- --:--:-- --:--:-- 13.5M
+>> ET Open rules (suricata-7.0) fetched
+==== [8/10] Docs mirrors ====
+>> WARN: docs mirror for malcolm incomplete/failed (best-effort; rerun resumes it)
+>> WARN: docs mirror for zeek incomplete/failed (best-effort; rerun resumes it)
+>> docs: wireshark mirrored
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+100   807    0   807    0     0   1785      0 --:--:-- --:--:-- --:--:--  1785100 11.5M    0 11.5M    0     0  8388k      0 --:--:--  0:00:01 --:--:-- 12.0M100 14.9M    0 14.9M    0     0  7963k      0 --:--:--  0:00:01 --:--:-- 10.1M
+>> docs: gns3-server v3.0.6 source tarball (includes docs/) fetched
+==== [9/10] Manual items ====
+>> Dell firmware/tools: MANUAL — see dell/README.txt
+==== [10/10] Manifest ====
+wrote /home/ubuntu/simlab-build/bundle-20260925/MANIFEST.sha256 — 1595 file(s), 14G on disk
+
+Bundle complete: /home/ubuntu/simlab-build/bundle-20260925
+14G	/home/ubuntu/simlab-build/bundle-20260925
+If this run was interrupted, just rerun it — completed items are skipped
+(same-day runs resume automatically; otherwise BUNDLE_DIR=/home/ubuntu/simlab-build/bundle-20260925; FORCE=1 redoes all).
+Review /home/ubuntu/simlab-build/bundle-20260925/BUNDLE_NOTES.md, complete the MANUAL items (dell/, gns3/appliances/), then
+regenerate the manifest after adding manual files:
+  ./scripts/r770-bundle.sh manifest /home/ubuntu/simlab-build/bundle-20260925
+then gate it before the media leaves staging:
+  ./scripts/r770-bundle.sh verify /home/ubuntu/simlab-build/bundle-20260925 --strict
+Then transfer per the supply plan (ext4 drive; verify MANIFEST.sha256 on the R770).
+
+== 3/5  Manual items — nothing below can be scripted
+
+  dell/                    firmware DUPs for the service tag.
+                           Only a DUP NEWER than what is installed; Phase 1
+                           holds the baselines. Keep Dell's published checksum
+                           beside each file.
+
+  gns3/appliances/         licensed appliance images you hold entitlements for.
+                           The .gns3a definitions are already staged and are
+                           free even where the images are not.
+
+Both are added by hand, AFTER the fetch wrote its manifest. That manifest
+cannot see them. Step 4 regenerates it so it can.
+
+Staged everything you intend to ship? [y/N] ./scripts/r770-build-bundle.sh: line 168: read: read error: 0: Input/output error
+./scripts/r770-build-bundle.sh: line 169: a: unbound variable
+cut exit=1

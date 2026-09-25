@@ -1,5 +1,10 @@
 # Staging VM 9770 — rebuild, scoped access, automated rehearsals — Implementation Plan
 
+> **Outcome (2026-09-25):** Executed. The rebuilt VM came up at **192.168.4.72**, not .28 — every
+> `.28` reference in the plan body below is historical, from before the rebuild. See
+> `state/inventory/staging-vm-9770.md` for the build record and
+> `state/inventory/staging-rehearsal-2026-09-25.md` for the cut + import rehearsal evidence.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** VM 9770 rebuilt to its recorded spec with a clean snapshot, a token scoped to 9770 only, a tested driver script, and one full cut + import rehearsal run from this session with its evidence recorded.

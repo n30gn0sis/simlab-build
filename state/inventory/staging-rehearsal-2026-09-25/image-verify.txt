@@ -1,0 +1,6 @@
+gpg: Signature made Wed Aug 26 11:32:38 2026 HDT
+gpg:                using RSA key D2EB44626FDDC30B513D5BB71A5D6C4C7DB87C81
+gpg: Good signature from "UEC Image Automatic Signing Key <cdimage@ubuntu.com>" [unknown]
+gpg: WARNING: This key is not certified with a trusted signature!
+gpg:          There is no indication that the signature belongs to the owner.
+Primary key fingerprint: D2EB 4462 6FDD C30B 513D  5BB7 1A5D 6C4C 7DB8 7C81

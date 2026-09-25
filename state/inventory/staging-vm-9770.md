@@ -20,6 +20,7 @@
 | Access | User `claude-staging@pve`, role **`SimlabStaging`** = `VM.Audit, VM.PowerMgmt, VM.Snapshot, VM.Snapshot.Rollback`, ACL **`/vms/9770` only**, for the user and for token `claude-staging@pve!lxc101` (privilege-separated). The secret lives only in the session's `/root/.config/simlab/pve-token` (0600); it is never in the repo. Proven by the token alone: `status` works, VM 101 → **HTTP 403**, the guest list the token can see is `[9770]` |
 | TLS | The API serves only its leaf certificate. The session pins it (`/root/.config/simlab/pve-ca.pem`, SHA-256 `6B:C0:E5:AC:25:DC:BD:9D:F0:AF:A8:D3:68:34:ED:90:4B:E7:65:9B:DF:0E:F2:A2:1D:9B:E9:0F:B3:1A:D5:9F`), matched to the host's own `certificates/info`. curl 8.5 verifies against it; nothing uses `-k` |
 | Driver | `scripts/r770-staging-vm.sh status | rollback <snap> | start | stop | wait-ssh` |
+| Raw evidence | `state/inventory/staging-rehearsal-2026-09-25/image-verify.txt`, `image-sum.txt`, `vm-config.txt`, `gates.txt` |
 
 **Gone with the old VM:** the `pre-fetch` snapshot, the LXC-101 key `claude-lxc101-rehearsal`, and the 2026-09-11 cloud-init password. **Still open:** the Proxmox root password was shared in chat again on 2026-09-24 and must be rotated. The host thin-pool watchdog (below) was not re-verified from this session, because the token has no host access.
 

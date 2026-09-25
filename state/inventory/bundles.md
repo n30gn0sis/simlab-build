@@ -11,7 +11,7 @@ updates, ET rules and OUI data are only as fresh as the last bundle.
 
 | Date | Bundle | Size | Key versions | `verify` result | WARN dispositions | Courier | Imported on R770 |
 |---|---|---|---|---|---|---|---|
-| 2026-09-25 | `bundle-20260925` | **14 GB**, **1597 files** | pins per `state/inventory/pin-review-2026-09-24.md` (alertmanager, cadvisor, CHR bumped) | `--strict` **FAIL** (2 undispositioned WARNs); non-strict **exit 2** | 2 docs-mirror WARNs, accepted for the test cut — 3rd cut in a row, now a finding | **TEST CUT — not for transfer** (SYNTHETIC manual items; lives only on VM 9770) | no — import *rehearsed* on VM 9770, see `staging-rehearsal-2026-09-25.md` |
+| 2026-09-25 (UTC) | `bundle-20260925` | **14 GB**, **1597 files** | pins per `state/inventory/pin-review-2026-09-24.md` (alertmanager, cadvisor, CHR bumped) | `--strict` **FAIL** — "1 warning(s) left undispositioned" (2 WARN lines); non-strict **exit 2** | 2 docs-mirror WARNs, accepted for the test cut — 3rd cut in a row, now a finding | **TEST CUT — not for transfer** (SYNTHETIC manual items; lives only on VM 9770) | no — import *rehearsed* on VM 9770, see `staging-rehearsal-2026-09-25.md` |
 | 2026-09-08 (amended 2026-09-12) | `bundle-20260908` | **15 GB**, **1634 files** (was 1617) | Malcolm 26.08.0 · Ubuntu 24.04.4 · gns3-server 3.0.6 · FRR 10.7.1 · alertmanager v0.34.0 · cadvisor v0.60.5 (ghcr.io) | **PASS WITH WARNINGS (exit 2)** | 2 docs-mirror WARNs, accepted — see below | not yet transferred | no |
 | 2026-09-15 | `bundle-20260915` | **14 GB**, **1594 files** | same pins as bundle-20260908 | **PASS WITH WARNINGS (exit 2)** | 3 WARN lines (CHR download + 2 docs mirrors), accepted — see below | test artifact, not transferred | no |
 

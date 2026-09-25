@@ -219,9 +219,13 @@ Verify against the bundle's own lists:
 For the other two pairs, compare directly:
 
 ```bash
-docker image ls --format '{{.Repository}}:{{.Tag}}' | sort > /tmp/loaded.txt
-comm -23 <(sort docker/monitoring-image-list.txt) /tmp/loaded.txt   # expect empty
-comm -23 <(sort gns3/docker-nodes/image-list.txt) /tmp/loaded.txt   # expect empty
+# docker image ls drops the default registry: docker.io/prom/prometheus:TAG is
+# listed as prom/prometheus:TAG, docker.io/library/nginx:TAG as nginx:TAG.
+# Normalise both sides, or every docker.io image looks missing.
+norm() { sed -E 's#^docker\.io/library/##; s#^docker\.io/##'; }
+docker image ls --format '{{.Repository}}:{{.Tag}}' | norm | sort > /tmp/loaded.txt
+comm -23 <(grep -vE '^\s*(#|$)' docker/monitoring-image-list.txt | norm | sort) /tmp/loaded.txt   # expect empty
+comm -23 <(grep -vE '^\s*(#|$)' gns3/docker-nodes/image-list.txt | norm | sort) /tmp/loaded.txt  # expect empty
 ```
 
 Any line printed by `comm` is an image that did not load. Stop.

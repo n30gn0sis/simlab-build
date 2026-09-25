@@ -1,0 +1,14 @@
+Verifying bundle: /home/ubuntu/simlab-build/bundle-20260925
+ok    MANIFEST.sha256 parses — 1596 entries
+ok    every manifested file is present and unmodified
+ok    no unmanifested files — manual additions are covered
+ok    no incomplete downloads
+ok    malcolm/image-list.txt has its payload
+ok    docker/monitoring-image-list.txt has its payload
+ok    gns3/docker-nodes/image-list.txt has its payload
+ok    BUNDLE_NOTES.md has no WARN lines
+WARN  dell/ holds only README.txt — manual downloads not staged (see that README)
+ok    gns3/appliances/ has 8 staged file(s)
+
+RESULT: FAIL (--strict) — 1 warning(s) left undispositioned.
+strict exit=1

@@ -1,0 +1,40 @@
+7460114066d1: Download complete
+67113c48a71c: Download complete
+afb0d5225f6b: Download complete
+02ef011194f6: Download complete
+0c2c7544a070: Download complete
+f7ee36c9aa34: Download complete
+f7ee36c9aa34: Pull complete
+02ef011194f6: Pull complete
+7460114066d1: Pull complete
+4f4fb700ef54: Pull complete
+67113c48a71c: Pull complete
+afb0d5225f6b: Pull complete
+0c2c7544a070: Pull complete
+Digest: sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2
+Status: Downloaded newer image for quay.io/frrouting/frr:10.7.1
+quay.io/frrouting/frr:10.7.1
+>> GNS3 docker-node images: 4 saved (alpine/debian/netshoot/FRR)
+>> Licensed GNS3 images: MANUAL — see gns3/appliances/README.txt
+==== [7/10] Enrichment data ====
+>> ET Open rules (suricata-7.0) fetched
+==== [8/10] Docs mirrors ====
+>> docs: malcolm mirrored — 10 upstream link(s) returned HTTP 4xx (defects on the source site; not retryable)
+>> docs: zeek offline htmlzip (Read the Docs build) fetched
+>> docs: wireshark mirrored
+>> docs: gns3-server v3.0.6 source tarball (includes docs/) fetched
+==== [9/10] Manual items ====
+>> Dell firmware/tools: MANUAL — see dell/README.txt
+==== [10/10] Manifest ====
+wrote /home/ubuntu/simlab-build/bundle-20260925/MANIFEST.sha256 — 1596 file(s), 15G on disk
+Bundle complete: /home/ubuntu/simlab-build/bundle-20260925
+15G	/home/ubuntu/simlab-build/bundle-20260925
+If this run was interrupted, just rerun it — completed items are skipped
+(same-day runs resume automatically; otherwise BUNDLE_DIR=/home/ubuntu/simlab-build/bundle-20260925; FORCE=1 redoes all).
+Review /home/ubuntu/simlab-build/bundle-20260925/BUNDLE_NOTES.md, complete the MANUAL items (dell/, gns3/appliances/), then
+regenerate the manifest after adding manual files:
+  ./scripts/r770-bundle.sh manifest /home/ubuntu/simlab-build/bundle-20260925
+then gate it before the media leaves staging:
+  ./scripts/r770-bundle.sh verify /home/ubuntu/simlab-build/bundle-20260925 --strict
+Then transfer per the supply plan (ext4 drive; verify MANIFEST.sha256 on the R770).
+fetch exit=0

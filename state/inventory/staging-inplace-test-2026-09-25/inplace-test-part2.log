@@ -1,0 +1,18 @@
+== 0b. air gap again (auto-revert 60 min)
+auto-revert scheduled in 60 minute(s)
+BLOCKED (3600s until auto-revert)
+PASS  no internet (pypi.org unreachable)
+== 5b. tag assertion with docker.io normalisation
+   loaded tags: 35
+all images present
+   monitoring-image-list.txt: all 8 present
+   image-list.txt: all 4 present
+PASS  every image in every list loaded (from the bundle, offline)
+== 7.1 gns3-server from the wheelhouse, no index
+   3.0.6
+PASS  gns3-server installed offline from the wheelhouse
+== unblock
+egress restored
+OPEN
+
+IN-PLACE TEST (parts 5b + 7.1): ALL PASS

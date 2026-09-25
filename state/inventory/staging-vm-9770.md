@@ -4,6 +4,25 @@
 **Purpose:** builds the offline supply bundle for the air-gapped R770 `testbed` (tag G8WFGH4).
 **Design + adversarial review:** 8-agent workflow, 3 designs × 4 risk lenses, 32 risks raised.
 
+## Rebuilt 2026-09-24 — current state (supersedes the as-built details below where they differ)
+
+**Why:** on 2026-09-24 VM 9770 was found **absent**. No VM and no snapshots on `proxmox`; it was deleted at some point after the 2026-09-17 teardown. It was rebuilt from this record by the Claude session (LXC on the host), using root@pam once, at the operator's direction (design `docs/superpowers/specs/2026-09-24-staging-vm-automation-design.md`).
+
+| | |
+|---|---|
+| Image | Same pinned `releases/noble/release-20260826/` cloud image. `SHA256SUMS.gpg`: **Good signature**, UEC key `D2EB 4462 6FDD C30B 513D 5BB7 1A5D 6C4C 7DB8 7C81` (same `[unknown]` web-of-trust caveat as before). Image sha256 `d0fe84bb5f80853425fa6be28e2c106f30104c3cfe8611933f2e65c9b63f0e30`, checked again by Proxmox `download-url` ("checksum verified") into `local:import/noble-cloudimg-20260826.qcow2`. The guest reports Ubuntu 24.04.5, kernel 6.8.0-138 |
+| Config | Created through the API to the as-built table below. The resulting config was diffed against every row (VMID/name, `cpu host` ×6, `numa 0`, 8192 MiB `balloon 0`, 400G `local-lvm` with `discard,ssd,iothread,backup=0,mbps_wr=250,mbps_wr_max=400`, MAC `BC:24:11:97:70:01` on `vmbr0`, `serial0 socket`, `onboot 0`) — **all match** |
+| Address | **192.168.4.72** from DHCP, **not** the .28 recorded below (the lease lapsed while the VM was absent). The driver default and the session SSH config use .72. A DHCP reservation for the MAC would make it stable |
+| SSH | User `ubuntu`, key `claude-lxc101-staging-2026-09-24` (ed25519, `SHA256:+utfIe4tSHHI7CefUJoOR4/bounzVGUA0htkPoRz2/M`) injected by cloud-init at creation. **No password set.** Host key `SHA256:fBy4kwlwByKQjGOPwE3S2sWClgg2SQWsDMAHj/datK8` (ED25519) |
+| Installed | Docker CE **29.8.1** (one patch newer than the 29.8.0 below), compose 5.5.1, pigz 2.8, jq, rsync, wget, curl, gpg, unzip, git, tmux, qemu-guest-agent; `ubuntu` in `docker`; 8 G `/swap.img` |
+| Gates | `systemd-detect-virt` = kvm · `/` 387G, 376G free (≥150 G floor) · `hello-world` ok · `ubuntu:24.04` and `python:3.12-slim` pull · in-container apt egress **ok** · pigz on 6 cores · swap 8G active · fstrim.timer enabled · docker and qemu-guest-agent active — **all pass** |
+| Snapshot | **`clean-2026-09-24`** — taken cold (VM shut down), no vmstate, after `docker system prune -a` (0 images) and `apt-get clean`. Every rehearsal rolls back to it |
+| Access | User `claude-staging@pve`, role **`SimlabStaging`** = `VM.Audit, VM.PowerMgmt, VM.Snapshot, VM.Snapshot.Rollback`, ACL **`/vms/9770` only**, for the user and for token `claude-staging@pve!lxc101` (privilege-separated). The secret lives only in the session's `/root/.config/simlab/pve-token` (0600); it is never in the repo. Proven by the token alone: `status` works, VM 101 → **HTTP 403**, the guest list the token can see is `[9770]` |
+| TLS | The API serves only its leaf certificate. The session pins it (`/root/.config/simlab/pve-ca.pem`, SHA-256 `6B:C0:E5:AC:25:DC:BD:9D:F0:AF:A8:D3:68:34:ED:90:4B:E7:65:9B:DF:0E:F2:A2:1D:9B:E9:0F:B3:1A:D5:9F`), matched to the host's own `certificates/info`. curl 8.5 verifies against it; nothing uses `-k` |
+| Driver | `scripts/r770-staging-vm.sh status | rollback <snap> | start | stop | wait-ssh` |
+
+**Gone with the old VM:** the `pre-fetch` snapshot, the LXC-101 key `claude-lxc101-rehearsal`, and the 2026-09-11 cloud-init password. **Still open:** the Proxmox root password was shared in chat again on 2026-09-24 and must be rotated. The host thin-pool watchdog (below) was not re-verified from this session, because the token has no host access.
+
 ## Why this host
 
 Decision of record (dependency manifest §0, operator-approved 2026-09-04): staging moved from

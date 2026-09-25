@@ -404,7 +404,7 @@ ERROR: preflight failed. One of two proxy problems, in order of likelihood:
   raw.githubusercontent.com, releases.ubuntu.com, cloud-images.ubuntu.com,
   download.cirros-cloud.net, download.mikrotik.com, mirrors.dotsrc.org,
   dl-cdn.alpinelinux.org, standards-oui.ieee.org, publicsuffix.org,
-  www.iana.org, rules.emergingthreats.net, malcolm.fyi, docs.zeek.org,
+  www.iana.org, rules.emergingthreats.net, malcolm.fyi, app.readthedocs.org,
   www.wireshark.org
 PREFLIGHT_EOF
     exit 1
@@ -741,23 +741,45 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 # 8. Offline docs mirrors — best effort, never fails the bundle
 # ═════════════════════════════════════════════════════════════════════════════
+docs_mirror() {  # docs_mirror <name> <url> — stamped complete; partial mirrors re-run
+    local name="$1" url="$2" log rc n4xx
+    if stamped "08-docs-${name}.done"; then
+        note "docs: $name skipped — complete in a previous run"; return 0
+    fi
+    log="$(mktemp)"
+    # wget --mirror is itself incremental (timestamping), so a re-run of a
+    # partial mirror only fetches what's missing/newer.
+    timeout 900 wget -nv --mirror --no-parent --convert-links --page-requisites \
+        --adjust-extension -P "$B/docs/$name" -o "$log" "$url" && rc=0 || rc=$?
+    n4xx=$(grep -c 'ERROR 4[0-9][0-9]' "$log" 2>/dev/null) || n4xx=0
+    rm -f "$log"
+    case "$rc" in
+        0)  note "docs: $name mirrored"; stamp_done "08-docs-${name}.done" ;;
+        8)  # 8 = some URL got an HTTP error. With pages on disk that is broken
+            # links on the source site, which no rerun can fix — the mirror is done.
+            if [ -n "$(find "$B/docs/$name" -type f -name 'index.html' -print -quit 2>/dev/null)" ]; then
+                note "docs: $name mirrored — $n4xx upstream link(s) returned HTTP 4xx (defects on the source site; not retryable)"
+                stamp_done "08-docs-${name}.done"
+            else
+                note "WARN: docs mirror for $name failed — server refused (wget exit 8, nothing mirrored)"
+            fi ;;
+        4)   note "WARN: docs mirror for $name failed — network error (wget exit 4; rerun resumes it)" ;;
+        124) note "WARN: docs mirror for $name incomplete — timed out after 900 s (rerun resumes it)" ;;
+        *)   note "WARN: docs mirror for $name failed — wget exit $rc (rerun resumes it)" ;;
+    esac
+}
+
 stage_docs() {
 echo "==== [8/10] Docs mirrors ===="
 if command -v wget >/dev/null 2>&1; then
-    docs_mirror() {  # docs_mirror <name> <url> — stamped complete; partial mirrors re-run
-        local name="$1" url="$2"
-        if stamped "08-docs-${name}.done"; then
-            note "docs: $name skipped — complete in a previous run"; return 0
-        fi
-        # wget --mirror is itself incremental (timestamping), so a re-run of a
-        # partial mirror only fetches what's missing/newer.
-        timeout 900 wget -q --mirror --no-parent --convert-links --page-requisites \
-            --adjust-extension -P "$B/docs/$name" "$url" \
-            && { note "docs: $name mirrored"; stamp_done "08-docs-${name}.done"; } \
-            || note "WARN: docs mirror for $name incomplete/failed (best-effort; rerun resumes it)"
-    }
     docs_mirror malcolm   "https://malcolm.fyi/docs/"
-    docs_mirror zeek      "https://docs.zeek.org/en/current/"
+    # docs.zeek.org sits behind a Cloudflare JS challenge that no non-browser client
+    # passes (HTTP 429 + cf-mitigated: challenge). Read the Docs serves the same docs
+    # as an offline htmlzip from its own domain, which a plain client can fetch.
+    fetch "$B/docs/zeek-docs-htmlzip-current.zip" \
+        "https://app.readthedocs.org/projects/zeek-docs/downloads/htmlzip/current/" \
+        && note "docs: zeek offline htmlzip (Read the Docs build) fetched" \
+        || note "WARN: zeek docs htmlzip fetch failed (rerun resumes it)"
     docs_mirror wireshark "https://www.wireshark.org/docs/wsug_html_chunked/"
     # docs.gns3.com is JS-heavy and mirrors poorly — take the repo docs instead
     fetch "$B/docs/gns3-server-docs.tar.gz" \

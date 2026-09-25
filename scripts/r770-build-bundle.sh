@@ -47,6 +47,7 @@ CONTENTS="r770-build-bundle.sh r770-staging-preflight.sh r770-offline-fetch.sh r
 
 ASSUME_YES="${BUILD_ASSUME_YES:-0}"
 INTERACTIVE=1
+[ -t 0 ] || INTERACTIVE=0
 BUNDLE_DIR="${BUILD_BUNDLE_DIR:-}"
 DO_PACK=0
 FETCH_ARGS=()     # --only/--skip, handed to the fetch verbatim
@@ -132,7 +133,7 @@ case "$rc" in
         elif [ "$INTERACTIVE" = "0" ]; then
             die "warnings need a decision and this run is non-interactive — rerun with --yes once you have dispositioned them"
         else
-            read -r -p "Continue anyway? [y/N] " a
+            read -r -p "Continue anyway? [y/N] " a || a=""
             case "$a" in [yY]*) ;; *) die "stopped at preflight" ;; esac
         fi ;;
     *) die "preflight refused this host — nothing was downloaded" ;;
@@ -164,8 +165,12 @@ Both are added by hand, AFTER the fetch wrote its manifest. That manifest
 cannot see them. Step 4 regenerates it so it can.
 
 MANUAL
-if [ "$ASSUME_YES" != "1" ] && [ "$INTERACTIVE" = "1" ]; then
-    read -r -p "Staged everything you intend to ship? [y/N] " a
+if [ "$ASSUME_YES" = "1" ]; then
+    :
+elif [ "$INTERACTIVE" = "0" ]; then
+    die "stopped before the manifest — stage the manual items, then rerun"
+else
+    read -r -p "Staged everything you intend to ship? [y/N] " a || a=""
     case "$a" in [yY]*) ;; *) die "stopped before the manifest — stage the manual items, then rerun" ;; esac
 fi
 

@@ -193,9 +193,9 @@ Start with Linux bridges (libvirt-managed):
 | `br-lab-mgmt` | VM/appliance management | Yes (RFC1918 /24) | none |
 | `br-lab-nat` | Lab internet access when explicitly needed | Yes | NAT via the mgmt bond (`lacp-trunk.10`), firewalled |
 | `br-lab-tXX` | GNS3/lab transit segments, created per topology | No | none |
-| `br-mirror` | Virtual mirror feed → Malcolm capture (see §7) | No | none |
+| `br-lab` | The mirrored lab bridge: hub mode (`ageing_time 0`), GNS3 Cloud nodes attach through kit TAPs `lab-tapN`; its veth `lab-mon0` ⇄ `lab-mirror0` is the virtual feed Malcolm captures (see §7) | No | none |
 
-**OVS decision:** not installed at initial build. Adopt OVS later *only if* a concrete need appears — port mirroring of many lab segments at once, 802.1Q trunk manipulation inside the fabric, or OpenFlow experiments. Linux bridges + `tc-mirred` cover the initial mirror-to-Malcolm requirement. This decision is recorded and reversible.
+**OVS decision:** not installed at initial build. Adopt OVS later *only if* a concrete need appears — port mirroring of many lab segments at once, 802.1Q trunk manipulation inside the fabric, or OpenFlow experiments. A Linux bridge in hub mode covers the initial mirror-to-Malcolm requirement (decided 2026-09-24 in the R770 kit, replacing per-port `tc mirred`: no per-port rules to chase as GNS3 attaches and detaches TAPs). This decision is recorded and reversible.
 
 ### 4.4 WAN emulation
 
@@ -244,7 +244,7 @@ Bind mounts pin the heavy data where the storage design wants it: PCAP → `/dat
 |---|---|---|
 | Physical 1–4 | TAPs / SPAN ports | Adapter A ports 1–4, AF_PACKET (tpacket v3) |
 | Physical 5–6 | future | Adapter B ports 1–2, same pattern |
-| Virtual mirror | GNS3/VM lab segments | `tc mirred` (or OVS mirror later) from lab bridges → `br-mirror` → a veth/dummy interface Malcolm captures like any other feed |
+| Virtual mirror | GNS3/VM lab segments | `br-lab` in hub mode (`ageing_time 0`, multicast snooping off) floods every frame to its veth port `lab-mon0`; the peer `lab-mirror0` is captured like any other feed (OVS mirror later if ever needed). Built by the kit's `r770-gns3-deploy.sh labnet` |
 | Imported PCAP | analysts via SFTP to `/data/staging` | Malcolm upload/ingest |
 
 ### 7.3 Capture mechanism policy

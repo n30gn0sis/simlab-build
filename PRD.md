@@ -87,7 +87,7 @@ closed and what it newly opened (PERC key custody, NVMe link width).
 - **GeoIP enrichment** — descoped (no MaxMind account); geo fields absent in Arkime/Dashboards. Reversible via fetch-script v2 block.
 - **Suricata alerting** — shipped inside Malcolm but disabled at initial build; enabling requires a CPU-budget re-check.
 - **Windows endpoint VMs / virtio-win** — descoped.
-- **Open vSwitch** — not installed initially (package cached); Linux bridges + `tc-mirred` until a concrete need appears.
+- **Open vSwitch** — not installed initially (package cached); Linux bridges (the lab mirror is a hub-mode bridge, `br-lab`) until a concrete need appears.
 - **DPDK/PF_RING/AF_XDP** — only if measured AF_PACKET loss demands escalation.
 - **Huge pages, CPU pinning beyond the socket split** — only on measured need.
 - **Full APT mirror** — curated bundle chosen; unplanned `apt install` on the gapped box fails by design.

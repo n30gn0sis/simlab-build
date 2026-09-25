@@ -55,6 +55,7 @@ CHR_VER="${CHR_VER:-7.24.4}"                   # check https://mikrotik.com/down
 OPNSENSE_VER="${OPNSENSE_VER:-26.7}"           # check https://opnsense.org/download/
 OPNSENSE_MIRROR="${OPNSENSE_MIRROR:-https://mirrors.dotsrc.org/opnsense/releases/mirror}"
 FRR_IMG="${FRR_IMG:-quay.io/frrouting/frr:10.7.1}"    # check https://quay.io/repository/frrouting/frr?tab=tags
+STRONGSWAN_IMG="${STRONGSWAN_IMG:-docker.io/strongx509/strongswan:6.0.6}"  # check https://hub.docker.com/r/strongx509/strongswan/tags (the strongSwan project's own image; IKEv2 gateways for the kit's ipsec-ike scenario)
 
 MONITOR_IMAGES=(
     "docker.io/prom/prometheus:v3.14.0"
@@ -73,6 +74,7 @@ GNS3_NODE_IMAGES=(
     "docker.io/library/debian:stable-slim"
     "docker.io/nicolaka/netshoot:latest"
     "$FRR_IMG"
+    "$STRONGSWAN_IMG"
 )
 
 # .gns3a appliance definitions to grab from the GNS3 registry (free even when
@@ -826,6 +828,7 @@ echo "==== [10/10] Manifest ===="
     echo "- OPNsense: ${OPNSENSE_VER}"
     echo "- VyOS rolling: ${VYOS_TAG:-unresolved}"
     echo "- FRR image: ${FRR_IMG}"
+    echo "- strongSwan image: ${STRONGSWAN_IMG}"
     echo "- Built: $(date -Is) on $(hostname) with ${CTR}"
     echo; echo "## Import order on the R770"
     echo "1. ./r770-bundle.sh verify .     (before anything else -- the verifier"

@@ -202,7 +202,7 @@ The script's **[0/10] preflight** proves both paths (daemon pull + in-container 
 ```bash
 # proxy vars exported per Step 1.5 (skip if direct egress)
 # optional overrides: MALCOLM_VER, UBUNTU_ISO_VER, GNS3_VER, ET_SURICATA_PATH,
-#                     CHR_VER, OPNSENSE_VER, OPNSENSE_MIRROR, FRR_IMG
+#                     CHR_VER, OPNSENSE_VER, OPNSENSE_MIRROR, FRR_IMG, STRONGSWAN_IMG
 sudo -E ./r770-offline-fetch.sh       # -E preserves the proxy vars under sudo
 ```
 
@@ -297,6 +297,7 @@ Also confirm in `BUNDLE_NOTES.md`: no unresolved `WARN` lines (ET rules 410, VyO
 | `CHR_VER` | mikrotik.com/download/chr |
 | `OPNSENSE_VER` | opnsense.org/download |
 | `FRR_IMG` | quay.io/repository/frrouting/frr?tab=tags |
+| `STRONGSWAN_IMG` | hub.docker.com/r/strongx509/strongswan/tags |
 | `ET_SURICATA_PATH` | rules.emergingthreats.net (matches noble's Suricata 7.0.x; ET returns 410 when a branch retires — script checks) |
 | Monitoring tags (prometheus, alertmanager, blackbox, cadvisor, grafana-oss) | upstream GitHub releases (grafana-oss is held below 13.x — see the pin block for the standing-exception note) |
 

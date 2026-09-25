@@ -21,6 +21,7 @@ This is the definitive list of everything the air-gapped R770 build needs, what 
 | Pin policy (added 2026-09-04) | **Bump moved pins at cut time rather than shipping stale**, since ad-hoc cadence means a bundle may sit for months and nothing is yet deployed to migrate. The one standing exception is grafana-oss, held below 13.x until dashboards are reviewed. Every bump is recorded in `state/inventory/pin-review-<date>.md` |
 | Drive helper script | **Superseded 2026-09-09**: `scripts/r770-bundle.sh verify` is the gate. Was: manual `sha256sum -c`, which cannot see unmanifested files. |
 | Staging container runtime (added 2026-09-14) | **Any runtime, judged by capability, not name** (operator approved 2026-09-14). `STAGING_CTR=<command>` if set, else docker, podman, nerdctl. `scripts/r770-staging-preflight.sh` probes that the engine answers `info`, that a container has egress, and that `save` writes docker-archive (`manifest.json` in the tar) — the one format the R770's `docker load` reads. Rootless podman and Docker CE on RHEL are now **warnings** (exit 2, disposition before fetch day), not refusals; no runtime, an unresponsive engine, podman below 3.0, and an LXC host remain refusals. The recommended default above is unchanged. |
+| iDRAC / PERC (added 2026-09-24) | **No iDRAC or PERC work on the R770** (operator). No firmware, controller-setting, virtual-media or out-of-band actions; nothing queries either. PERC key custody and the iDRAC recovery-path gate are accepted risks (`PRD.md` §6). The Dell firmware checklist (§7) is therefore reference-only. |
 | Fetch in sections (added 2026-09-14) | `scripts/r770-offline-fetch.sh --only s,s` / `--skip s,s` / `--list` / `--dry-run`. Stages run in a fixed order; `--only` never implies the manifest stage (finish with `--only manifest`, or the builder); a sectioned run appends to `BUNDLE_NOTES.md`. `r770-build-bundle.sh` passes the flags through but still pauses, regenerates the manifest and gates `--strict`, so a partial bundle fails the gate by design. |
 
 ---
@@ -130,11 +131,11 @@ Staleness note: with ad-hoc cadence, rules/OUI are only as fresh as the last bun
 
 ## 7. Dell firmware & tools — **MANUAL** (`dell/README.txt` in bundle)
 
-From dell.com/support by service tag **`G8WFGH4`** (confirmed 2026-09-03), with Dell's published checksums: **perccli2** (the PERC **H975i Front** is an NVMe RAID controller — confirmed by discovery, so this is the right tool, not perccli), BIOS DUP, iDRAC firmware, Broadcom NIC firmware DUPs, optionally DSU offline repo. ~2–5 GB. Applied via iDRAC OOB (Phase 2 of the buildout).
+From dell.com/support by service tag **`G8WFGH4`** (confirmed 2026-09-03), with Dell's published checksums: BIOS DUP, iDRAC firmware, Broadcom NIC firmware DUPs, optionally DSU offline repo. ~2–5 GB. Applied via iDRAC OOB (Phase 2 of the buildout).
 
 Installed baselines to compare against before downloading anything (Phase 1 evidence): BIOS **1.7.5** (2026-01-16) · iDRAC/LC **1.30.20.10** · PERC **8.14.0.0.28-40** · backplane **1.92** · Broadcom NIC family **233.1.181.0** · PSU **1408** · CPLD **109.125.104**.
 
-**IPMI-over-LAN is disabled on this chassis** (Serial-over-LAN enabled). `ipmitool` stays in the APT set for in-band use, but no OOB automation may assume it — use **Redfish** or the iDRAC web UI. perccli2 is also the only route to the two storage questions discovery left open: **TRIM passthrough on the VD**, and the **encryption key mode (LKM vs SEKM)** behind the controller's `Security Key Assigned` state.
+**IPMI-over-LAN is disabled on this chassis** (Serial-over-LAN enabled). `ipmitool` stays in the APT set for in-band use, but no OOB automation may assume it — use **Redfish** or the iDRAC web UI. The two storage questions discovery left open — **TRIM passthrough on the VD**, and the **encryption key mode (LKM vs SEKM)** behind the controller's `Security Key Assigned` state — are answered OS-side in Phase 2, not via a PERC CLI.
 
 ## 8. Docs mirrors — scripted §8 (best-effort)
 

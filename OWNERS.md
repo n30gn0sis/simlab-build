@@ -21,6 +21,7 @@ not to look. Where a second statement of a fact is legitimate, the row below
 | The verify command | `scripts/r770-bundle.sh` | none (sole); every operational route must *reference* it by name | yes — `tests/no-legacy-manifest.bats` asserts the reference exists in each route |
 | Hardware of record, phase status, unknowns | `state/BUILD-STATE.md` | `PRD.md` §7 and §11 · `docs/plans/r770-network-lab-buildout.md` §2, §3, §12 — see "Hardware of record" below | partly — the free-extent figure only |
 | Free-extent capacity in VG `ubuntu-vg0` | `state/BUILD-STATE.md` (hardware of record) | `PRD.md` · `docs/plans/r770-network-lab-buildout.md` §3 | yes — two checks in `tests/owners.bats` |
+| LV layout (names, sizes, filesystems, mount points) | `docs/plans/r770-network-lab-buildout.md` §3.2 | `scripts/r770-storage-apply.sh` `LAYOUT` — it runs on the air-gapped host where the repo does not | yes — `tests/storage-apply.bats` compares the two |
 | Bundle sizes, file counts and cycle history | `state/inventory/bundles.md` | none (sole) | partly — the retention-estimate sizes only |
 | Decisions of record (staging host, OS, transfer media, cadence, pin policy) | `docs/plans/r770-dependency-manifest.md` §0 | `CLAUDE.md` "Decisions of record" · `PRD.md` §6 — see "Decisions of record" below | partly — the RHEL/Ubuntu staging-host fact only |
 | Success criteria | `PRD.md` §10 | none (sole) | no |

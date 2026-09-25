@@ -120,6 +120,14 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
     [ ! -s "$NET" ]
 }
 
+@test "the Dell README no longer asks for perccli (removed 2026-09-23)" {
+    run "$SCRIPT" --only manual
+    echo "$output"
+    [ "$status" -eq 0 ]
+    run grep -ci 'perccli' "$BUNDLE_DIR/dell/README.txt"
+    [ "$output" = "0" ]
+}
+
 @test "a sectioned run appends to BUNDLE_NOTES.md instead of wiping the full run's notes" {
     mkdir -p "$BUNDLE_DIR"
     printf '# earlier full run\n- Malcolm images saved\n' > "$BUNDLE_DIR/BUNDLE_NOTES.md"

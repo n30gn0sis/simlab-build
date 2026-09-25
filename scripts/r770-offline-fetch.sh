@@ -33,7 +33,7 @@
 # Usage:  r770-offline-fetch.sh [--only s,s] [--skip s,s] [--list] [--dry-run]
 #
 # Manual steps it will REMIND you about (cannot be scripted):
-#   - Dell firmware/perccli downloads (dell.com, per service tag)
+#   - Dell firmware downloads (dell.com, per service tag)
 #   - Licensed GNS3 vendor appliance images (see gns3/appliances/README.txt)
 #
 # Companion docs: r770-dependency-manifest.md (authoritative dependency list),
@@ -51,17 +51,17 @@ UBUNTU_KEYRING="${UBUNTU_KEYRING:-/usr/share/keyrings/ubuntu-archive-keyring.gpg
     # with a keyring obtained elsewhere (see verify_iso_signature()'s error text).
 GNS3_VER="${GNS3_VER:-3.0.6}"                  # check https://pypi.org/project/gns3-server/
 ET_SURICATA_PATH="${ET_SURICATA_PATH:-suricata-7.0}"  # noble ships Suricata 7.0.x; ET returns 410 on retired paths
-CHR_VER="${CHR_VER:-7.21.5}"                   # check https://mikrotik.com/download/chr
+CHR_VER="${CHR_VER:-7.24.4}"                   # check https://mikrotik.com/download/chr
 OPNSENSE_VER="${OPNSENSE_VER:-26.7}"           # check https://opnsense.org/download/
 OPNSENSE_MIRROR="${OPNSENSE_MIRROR:-https://mirrors.dotsrc.org/opnsense/releases/mirror}"
 FRR_IMG="${FRR_IMG:-quay.io/frrouting/frr:10.7.1}"    # check https://quay.io/repository/frrouting/frr?tab=tags
 
 MONITOR_IMAGES=(
     "docker.io/prom/prometheus:v3.14.0"
-    "docker.io/prom/alertmanager:v0.34.0"
+    "docker.io/prom/alertmanager:v0.34.1"
     "docker.io/prom/blackbox-exporter:v0.28.0"
     "docker.io/grafana/grafana-oss:12.1.0"     # 13.x is current stable; held at 12.x — review dashboards before jumping majors
-    "ghcr.io/google/cadvisor:v0.60.5"   # gcr.io/cadvisor/cadvisor is ABANDONED at v0.55.1 — see below
+    "ghcr.io/google/cadvisor:v0.60.6"   # gcr.io/cadvisor/cadvisor is ABANDONED at v0.55.1 — see below
     "docker.io/library/nginx:stable"
     "docker.io/library/registry:2"
     "docker.io/squidfunk/mkdocs-material:latest"  # pin a tag once you standardize
@@ -777,16 +777,6 @@ echo "==== [9/10] Manual items ===="
 cat > "$B/dell/README.txt" <<'EOF'
 MANUAL DOWNLOADS from dell.com/support — service tag G8WFGH4
 (express service code 35366715688)
-
-REQUIRED regardless of version:
-  - perccli2  (note: perccli2, NOT perccli — the PERC H975i Front is an
-    NVMe RAID controller). Three Phase 2 questions are blocked on it:
-      * PERC encryption key custody: the controller reports encryption
-        Enabled with a Security Key Assigned, and the key mode (LKM vs
-        SEKM) and escrow location are unknown. Lose the key and the
-        virtual disk is unrecoverable.
-      * TRIM passthrough on the VD (decides whether fstrim.timer is real)
-      * NVMe link width: both drives negotiated x2 of a x4-capable link
 
 ONLY IF DELL LISTS SOMETHING NEWER — installed baselines, from Phase 1
 discovery on 2026-09-02/03:

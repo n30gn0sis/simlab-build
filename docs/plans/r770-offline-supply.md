@@ -79,7 +79,7 @@ Without a refresh cadence these silently go stale — geo lookups and rules are 
 
 ### 1.7 Dell / firmware (manual downloads from dell.com — cannot be scripted reliably)
 
-perccli/perccli2 for the PERC, BIOS + iDRAC firmware packages, Broadcom NIC firmware DUPs, optionally Dell System Update (DSU) offline repo for the R770. Store in `bundle/dell/` with the Dell-published checksums. Firmware is applied via iDRAC OOB — one of the few things that doesn't even need the host.
+BIOS + iDRAC firmware packages, Broadcom NIC firmware DUPs, optionally Dell System Update (DSU) offline repo for the R770. Store in `bundle/dell/` with the Dell-published checksums. Firmware is applied via iDRAC OOB — one of the few things that doesn't even need the host.
 
 ### 1.8 Trust anchors, keys, docs
 

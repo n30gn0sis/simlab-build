@@ -132,12 +132,6 @@ baselines from Phase 1 discovery (`r770-idrac-inventory-G8WFGH4.md`):
 | PSU (LiteOn 1100 W ×2) | **1408** | only if newer |
 | CPLD / FPGA | **109.125.104** | only if newer |
 
-**Required regardless of version — this one is not optional:**
-
-- [ ] **`perccli2`** — the management CLI for the PERC. Note it is **perccli2**, not perccli: the H975i is an **NVMe** RAID controller. Three Phase 2 questions are blocked on it:
-  1. **PERC encryption key custody** — the controller reports `Security Key Assigned` with encryption enabled, and nobody has established LKM vs SEKM or where the key is escrowed. Losing it loses the virtual disk and every byte of evidence on it.
-  2. **TRIM passthrough** on the VD — determines whether `fstrim.timer` is meaningful or theatre.
-  3. **NVMe link width** — both drives negotiated x2 of a x4-capable link, halving per-drive bandwidth. Backplane bifurcation by design, or a fault?
 - [ ] Optionally: Dell System Update (DSU) offline repository for the R770
 
 > **Out-of-band note:** IPMI-over-LAN is **disabled** on this chassis (SOL is enabled). Firmware is applied via iDRAC, but any *scripted* OOB work must use **Redfish** — `ipmitool -H` will not connect.

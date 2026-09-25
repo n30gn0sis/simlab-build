@@ -18,20 +18,18 @@ block in `scripts/r770-offline-fetch.sh`; bundle sizes and cycle history from
 
 Read this before planning a window. The install is **not** a single sitting.
 
-| Part | Phase | Blocked by |
+| Part | Phase | Needs first |
 |---|---|---|
-| 1–3 Receive, verify, APT repo | 4 | — ready |
-| 4–5 Docker + images | 6 | needs Part 3 |
-| 6 VM base images | 7 | **Phase 5** |
-| 7 GNS3 | 8 | **Phase 5** |
-| 8 Malcolm | 10 | **Phase 5** |
-| 9–11 Enrichment, portal, docs | 13, 14 | **Phase 5** |
+| 1–3 Receive, verify, APT repo | 3 → import | Phase 3 storage mounted (bundle lands on `/data/staging`) |
+| 4–5 Docker + images | 6 | Part 3 |
+| 6 VM base images | 7 | Part 3 |
+| 7 GNS3 | 8 | Parts 4–6 |
+| 8 Malcolm | 10 | Parts 4–5 |
+| 9–11 Enrichment, portal, docs | 13, 14 | Part 8 |
 
-**Phase 5 (management networking) is BLOCKED** — iDRAC reachability is
-unproven and the management path is an 802.3ad bond with a tagged VLAN, not a
-single port. Parts 6 onward cannot start until it clears. Parts 1–5 can run
-now and are worth running now: they are the long ones, and they prove the
-bundle before the networking work begins.
+There is **no iDRAC gate** — the operator dropped it on 2026-09-24 (no iDRAC or
+PERC work on the R770; see `PRD.md` §6). Phase 5 (management networking) is no
+longer a precondition for these parts; its own risk is handled when it is built.
 
 ---
 
@@ -85,7 +83,7 @@ Record the exact exit code and the summary line. "It passed" is not evidence.
 ### 1.3 Confirm the rollback exists
 
 ```bash
-ls -d /srv/bundles/bundle-*          # the previous bundle is the rollback
+ls -d /data/staging/bundle-*          # the previous bundle is the rollback
 ```
 
 The previous bundle stays on the box until this one has validated end to end.
@@ -94,9 +92,9 @@ Never delete it during an import.
 ### 1.4 Copy to local storage
 
 ```bash
-sudo mkdir -p /srv/bundles
-sudo cp -a /mnt/bundle/bundle-YYYYMMDD /srv/bundles/
-cd /srv/bundles/bundle-YYYYMMDD
+sudo mkdir -p /data/staging
+sudo cp -a /mnt/bundle/bundle-YYYYMMDD /data/staging/
+cd /data/staging/bundle-YYYYMMDD
 ./r770-bundle.sh verify .            # gate again after the copy
 sudo umount /mnt/bundle
 ```
@@ -131,7 +129,7 @@ software. Show current vs proposed and get explicit confirmation first.**
 
 ```bash
 sudo mkdir -p /srv/repo
-sudo cp -a /srv/bundles/bundle-YYYYMMDD/apt /srv/repo/
+sudo cp -a /data/staging/bundle-YYYYMMDD/apt /srv/repo/
 ls /srv/repo/apt/Packages.gz          # the flat-repo index must be present
 ```
 
@@ -197,7 +195,7 @@ Three independent list/payload pairs. Each is loaded, then its tags are
 asserted against the list that travelled with it.
 
 ```bash
-cd /srv/bundles/bundle-YYYYMMDD
+cd /data/staging/bundle-YYYYMMDD
 docker load -i malcolm/malcolm-images-*.tar.gz
 docker load -i docker/monitoring-images.tar.gz
 docker load -i gns3/docker-nodes/gns3-node-images.tar.gz
@@ -209,7 +207,7 @@ docker load -i gns3/docker-nodes/gns3-node-images.tar.gz
 Verify against the bundle's own lists:
 
 ```bash
-./scripts/r770-malcolm-deploy.sh assert-tags /srv/bundles/bundle-YYYYMMDD
+./scripts/r770-malcolm-deploy.sh assert-tags /data/staging/bundle-YYYYMMDD
 ```
 
 For the other two pairs, compare directly:
@@ -224,11 +222,11 @@ Any line printed by `comm` is an image that did not load. Stop.
 
 ---
 
-## Part 6 — VM base images  *(Phase 7 — needs Phase 5)*
+## Part 6 — VM base images  *(Phase 7)*
 
 ```bash
 sudo mkdir -p /srv/vms/base
-sudo cp -a /srv/bundles/bundle-YYYYMMDD/images/* /srv/vms/base/
+sudo cp -a /data/staging/bundle-YYYYMMDD/images/* /srv/vms/base/
 qemu-img info /srv/vms/base/<image>          # confirm format and virtual size
 ```
 
@@ -252,7 +250,7 @@ holding `gns3_server.conf` must be owned by the user the server runs as.
 ```bash
 python3 -m venv /opt/gns3
 /opt/gns3/bin/pip install --no-index \
-    --find-links /srv/bundles/bundle-YYYYMMDD/gns3/wheelhouse gns3-server
+    --find-links /data/staging/bundle-YYYYMMDD/gns3/wheelhouse gns3-server
 /opt/gns3/bin/gns3server --version
 ```
 
@@ -262,8 +260,8 @@ python3 -m venv /opt/gns3
 
 ```bash
 sudo mkdir -p /srv/gns3/{projects,images,appliances}
-sudo cp -a /srv/bundles/bundle-YYYYMMDD/gns3/definitions/*.gns3a /srv/gns3/appliances/
-sudo cp -a /srv/bundles/bundle-YYYYMMDD/gns3/appliances/*        /srv/gns3/images/
+sudo cp -a /data/staging/bundle-YYYYMMDD/gns3/definitions/*.gns3a /srv/gns3/appliances/
+sudo cp -a /data/staging/bundle-YYYYMMDD/gns3/appliances/*        /srv/gns3/images/
 ```
 
 Definitions are free even where the images are licensed. A definition whose
@@ -278,7 +276,7 @@ them against what you actually hold.
 
 ```bash
 sudo mkdir -p /opt/malcolm
-sudo unzip /srv/bundles/bundle-YYYYMMDD/malcolm/*.zip -d /opt/malcolm
+sudo unzip /data/staging/bundle-YYYYMMDD/malcolm/*.zip -d /opt/malcolm
 cd /opt/malcolm
 # Malcolm's own installer, shipped inside its zip -- not a script from this repo.
 # Needs root, needs python3-ruamel.yaml + python3-dotenv (in apt/ since
@@ -358,7 +356,7 @@ goes into git, ever.
 
 ```bash
 sudo mkdir -p /opt/enrichment
-sudo tar xzf /srv/bundles/bundle-YYYYMMDD/enrichment/emerging.rules.tar.gz \
+sudo tar xzf /data/staging/bundle-YYYYMMDD/enrichment/emerging.rules.tar.gz \
     -C /opt/enrichment
 ```
 
@@ -370,7 +368,7 @@ risk of the air gap and belongs in the cycle log, not in a surprise.
 
 ---
 
-## Part 10 — Portal and monitoring  *(Phases 13, 14 — need Phase 5)*
+## Part 10 — Portal and monitoring  *(Phases 13, 14)*
 
 Nginx, Prometheus, Grafana, alertmanager, cAdvisor and the docs site all come
 from the monitoring images loaded in Part 5. Internal CA only — issue portal,
@@ -387,7 +385,7 @@ unreachable is worse than no name.
 
 ```bash
 sudo mkdir -p /srv/docs
-sudo tar xzf /srv/bundles/bundle-YYYYMMDD/docs/*.tar.gz -C /srv/docs
+sudo tar xzf /data/staging/bundle-YYYYMMDD/docs/*.tar.gz -C /srv/docs
 ```
 
 Docs mirrors are best-effort by design — a failed mirror warns, it never fails
@@ -402,11 +400,6 @@ Firmware is applied through iDRAC, not over SSH. Apply only a DUP that is
 
 **IPMI-over-LAN is disabled on this chassis** (Serial-over-LAN is enabled), so
 any scripted out-of-band work must use Redfish. `ipmitool -H` will not connect.
-
-`perccli2` — note the `2`, the H975i is an NVMe controller — is required
-regardless of version. Three Phase 2 questions are blocked on it, including
-PERC encryption key custody. Losing that key loses the virtual disk and every
-byte of evidence on it.
 
 ---
 
@@ -447,7 +440,7 @@ command output saved under `state/inventory/`.** An assertion is not evidence.
 | `docker load` succeeds, tags missing | The tarball is incomplete. Re-cut; do not patch by hand |
 | `pip` hangs | `--no-index` was omitted; it is reaching for PyPI |
 | Root filesystem fills | A volume was not mounted before import. Stop, unwind, mount, redo |
-| SSH lost during a network step | iDRAC is the recovery path — which is why Phase 5 is gated on proving it first |
+| SSH lost during a network step | No out-of-band recovery path — the iDRAC gate was dropped 2026-09-24 (PRD.md §6); Phase 5 relies on `netplan try` and a saved rollback |
 
 One change at a time: reproduce, observe, read logs, form one hypothesis, make
 one controlled change, test, then keep or revert it.

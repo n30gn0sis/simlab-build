@@ -151,7 +151,7 @@ fi
 step "3/5  Manual items — nothing below can be scripted"
 cat <<'MANUAL'
 
-  dell/                    firmware DUPs for the service tag, and perccli2.
+  dell/                    firmware DUPs for the service tag.
                            Only a DUP NEWER than what is installed; Phase 1
                            holds the baselines. Keep Dell's published checksum
                            beside each file.

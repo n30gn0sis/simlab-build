@@ -96,7 +96,7 @@ verifier. Future bundles get it automatically; the fetch script now does the cop
 - [x] Pins reviewed 2026-09-04 — 4 bumped with operator approval, grafana held (`pin-review-2026-09-04.md`)
 - [x] Staging host is a **VM, not LXC** — VM 9770, `systemd-detect-virt`=`kvm`, 376 G free, `docker info` OK (2026-09-04)
 - [ ] Bundle built: `sudo -E ./scripts/r770-offline-fetch.sh`
-- [ ] Manual categories staged: Dell (`dell/`) and licensed GNS3 appliances (`gns3/appliances/`)
+- [ ] Manual category staged: licensed GNS3 appliances (`gns3/appliances/`). Dell firmware is not a bundle item since 2026-09-25
 - [ ] Manifest regenerated **after** the manual additions: `./scripts/r770-bundle.sh manifest bundle-YYYYMMDD`
 - [ ] Gate passed on staging: `./scripts/r770-bundle.sh verify bundle-YYYYMMDD --strict`
 - [ ] Ubuntu ISO GPG signature verified on staging (runbook Step 5)
@@ -116,7 +116,9 @@ Reviewed 2026-09-04; four bumped with operator approval. Full evidence:
 `pin-review-2026-09-04.md`. Malcolm **26.08.0**, alertmanager **v0.34.0**,
 cadvisor **v0.60.5**, FRR **10.7.1**; grafana-oss held at 12.1.0.
 
-## Manual category A — Dell, for service tag `G8WFGH4`
+## Manual category A — Dell, for service tag `G8WFGH4` — NOT A BUNDLE ITEM since 2026-09-25
+
+> Dell firmware is **not a bundle item** (operator, 2026-09-25): it is handled on the R770 directly. Kept for reference only; nothing here gates a cut.
 
 From dell.com/support by service tag. Keep Dell's published checksum beside each
 file, and put everything in `bundle-YYYYMMDD/dell/`.

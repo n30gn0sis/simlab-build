@@ -21,6 +21,7 @@ This is the definitive list of everything the air-gapped R770 build needs, what 
 | Pin policy (added 2026-09-04) | **Bump moved pins at cut time rather than shipping stale**, since ad-hoc cadence means a bundle may sit for months and nothing is yet deployed to migrate. The one standing exception is grafana-oss, held below 13.x until dashboards are reviewed. Every bump is recorded in `state/inventory/pin-review-<date>.md` |
 | Drive helper script | **Superseded 2026-09-09**: `scripts/r770-bundle.sh verify` is the gate. Was: manual `sha256sum -c`, which cannot see unmanifested files. |
 | Staging container runtime (added 2026-09-14) | **Any runtime, judged by capability, not name** (operator approved 2026-09-14). `STAGING_CTR=<command>` if set, else docker, podman, nerdctl. `scripts/r770-staging-preflight.sh` probes that the engine answers `info`, that a container has egress, and that `save` writes docker-archive (`manifest.json` in the tar) — the one format the R770's `docker load` reads. Rootless podman and Docker CE on RHEL are now **warnings** (exit 2, disposition before fetch day), not refusals; no runtime, an unresponsive engine, podman below 3.0, and an LXC host remain refusals. The recommended default above is unchanged. |
+| Dell firmware (added 2026-09-25) | **Not a bundle item** (operator): handled on the R770 directly. `dell/` keeps a README saying so; `r770-bundle.sh verify` no longer checks it, so it cannot block `--strict`. §7 is reference-only |
 | iDRAC / PERC (added 2026-09-24) | **No iDRAC or PERC work on the R770** (operator). No firmware, controller-setting, virtual-media or out-of-band actions; nothing queries either. PERC key custody and the iDRAC recovery-path gate are accepted risks (`PRD.md` §6). The Dell firmware checklist (§7) is therefore reference-only. |
 | Fetch in sections (added 2026-09-14) | `scripts/r770-offline-fetch.sh --only s,s` / `--skip s,s` / `--list` / `--dry-run`. Stages run in a fixed order; `--only` never implies the manifest stage (finish with `--only manifest`, or the builder); a sectioned run appends to `BUNDLE_NOTES.md`. `r770-build-bundle.sh` passes the flags through but still pauses, regenerates the manifest and gates `--strict`, so a partial bundle fails the gate by design. |
 
@@ -129,7 +130,10 @@ Windows endpoint ISOs + virtio-win: **descoped** (not selected).
 
 Staleness note: with ad-hoc cadence, rules/OUI are only as fresh as the last bundle — accepted.
 
-## 7. Dell firmware & tools — **MANUAL** (`dell/README.txt` in bundle)
+## 7. Dell firmware & tools — **NOT A BUNDLE ITEM** (2026-09-25; reference only)
+
+> Dell firmware is **not a bundle item** (operator, 2026-09-25): it is handled on the R770 directly. Nothing below is fetched or staged into the bundle.
+
 
 From dell.com/support by service tag **`G8WFGH4`** (confirmed 2026-09-03), with Dell's published checksums: BIOS DUP, iDRAC firmware, Broadcom NIC firmware DUPs, optionally DSU offline repo. ~2–5 GB. Applied via iDRAC OOB (Phase 2 of the buildout).
 
@@ -166,7 +170,7 @@ Current + previous bundle fit comfortably unless the licensed-appliance set is v
 
 ## 11. Outstanding manual checklist (before the transfer)
 
-1. Dell downloads by service tag → `dell/` (§7).
+1. ~~Dell downloads~~ — not a bundle item since 2026-09-25 (§7).
 2. Inventory + download licensed GNS3 images per your entitlements → `gns3/appliances/` (§4.4).
 3. Verify Ubuntu ISO GPG signature and Malcolm `.sha` files on staging per site policy (script verifies SHA256; GPG per policy).
 4. Site AV/content scan of the drive per policy, then `./r770-bundle.sh verify .` on the R770 before anything is installed.

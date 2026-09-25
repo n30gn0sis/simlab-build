@@ -15,7 +15,7 @@ and `docs/plans/r770-dependency-manifest.md`.
 | 6 gns3 appliances | github.com GNS3 registry; mikrotik.com, opnsense.org | `gns3/appliances/` (licensed vendor images are manual) |
 | 7 enrichment | iana.org, ieee.org OUI, publicsuffix.org, emergingthreats.net, wireshark.org manuf | `enrichment/` |
 | 8 docs mirrors | app.readthedocs.org (Zeek htmlzip), docs.docker.com, malcolm.fyi (wget; WARN if absent) | `docs/` |
-| 9 manual | dell.com firmware (per service tag) — reminder only | `dell/` |
+| 9 manual | licensed GNS3 appliances only; `dell/` holds a README (Dell firmware not a bundle item since 2026-09-25) | `gns3/appliances/`, `dell/` |
 
 ## Staging host requirements
 Ubuntu VM with Docker CE (default) or RHEL 8 with rootful podman; ~150 GB free; curl gpg sha256sum unzip wget; pigz optional.

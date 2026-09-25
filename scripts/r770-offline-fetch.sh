@@ -805,32 +805,11 @@ fi
 stage_manual() {
 echo "==== [9/10] Manual items ===="
 cat > "$B/dell/README.txt" <<'EOF'
-MANUAL DOWNLOADS from dell.com/support — service tag G8WFGH4
-(express service code 35366715688)
-
-ONLY IF DELL LISTS SOMETHING NEWER — installed baselines, from Phase 1
-discovery on 2026-09-02/03:
-  BIOS ................ 1.7.5 (2026-01-16)
-  iDRAC / LC .......... 1.30.20.10
-  PERC H975i Front .... 8.14.0.0.28-40
-  Backplane ........... 1.92
-  Broadcom NICs ....... family 233.1.181.0 (pkg 233.0.195.0)
-  PSU (2x LiteOn 1100W) 1408
-  CPLD / FPGA ......... 109.125.104
-
-Optionally: Dell System Update (DSU) offline repository.
-
-Keep Dell's published checksums alongside each file.
-Firmware is applied via iDRAC out-of-band — schedule in Phase 2. NOTE:
-IPMI-over-LAN is DISABLED on this chassis (Serial-over-LAN is enabled), so
-scripted OOB work must use Redfish; "ipmitool -H" will not connect.
-
-After adding files here, REGENERATE THE MANIFEST — it was written before
-these existed, and sha256sum -c cannot see files it never listed:
-    ./scripts/r770-bundle.sh manifest <bundle-dir>
-    ./scripts/r770-bundle.sh verify   <bundle-dir> --strict
+NOT A BUNDLE ITEM — Dell firmware is handled on the R770 directly
+(operator decision, 2026-09-25). Nothing belongs in this directory, and
+r770-bundle.sh verify does not check it.
 EOF
-note "Dell firmware/tools: MANUAL — see dell/README.txt"
+note "Dell firmware: not a bundle item — handled on the R770 directly (dell/README.txt)"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════

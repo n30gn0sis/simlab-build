@@ -92,6 +92,7 @@ closed and what it newly opened (PERC key custody, NVMe link width).
 - **Huge pages, CPU pinning beyond the socket split** — only on measured need.
 - **Full APT mirror** — curated bundle chosen; unplanned `apt install` on the gapped box fails by design.
 - **Line-rate retention of 4 × 10GbE** — explicitly not a goal; retention is bounded and enforced.
+- **Dell firmware in the bundle** (2026-09-25, operator) — handled on the R770 directly. `dell/` carries only a README saying so, and `r770-bundle.sh verify` does not check it. Licensed GNS3 appliances remain the one manual bundle category.
 - **iDRAC and PERC work on the R770** (2026-09-24, operator) — no firmware updates, controller settings, virtual-media changes or out-of-band actions, and nothing queries either. Accepted risks: PERC key custody is not established (losing the key loses the VD), and iDRAC is not a proven recovery path for Phase 5 (`netplan try` + saved rollback are the protection).
 
 ## 7. Architecture Requirements (summary — authoritative detail in `docs/plans/r770-network-lab-buildout.md`)

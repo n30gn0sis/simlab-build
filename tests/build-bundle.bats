@@ -85,8 +85,8 @@ order() { cut -d' ' -f1 "$ORDER" | tr '\n' ' '; }
     m=$(grep -n '^manifest' "$ORDER" | cut -d: -f1)
     f=$(grep -n '^fetch'    "$ORDER" | cut -d: -f1)
     [ "$f" -lt "$m" ]
-    [[ "$output" == *"dell"* ]]
     [[ "$output" == *"appliance"* ]]
+    [[ "$output" != *"dell/"* ]]      # Dell firmware is not a bundle item (2026-09-25)
 }
 
 @test "the gate runs --strict, so warnings cannot ride out on the media" {

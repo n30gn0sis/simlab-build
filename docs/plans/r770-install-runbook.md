@@ -38,7 +38,7 @@ longer a precondition for these parts; its own risk is handled when it is built.
 Do not skip this because the bundle "looks fine". The gapped side can only
 verify what the manifest asserts; trust is established on staging.
 
-- [ ] Manual categories staged: `dell/` and `gns3/appliances/`
+- [ ] Manual category staged: `gns3/appliances/` (Dell firmware is not a bundle item since 2026-09-25)
 - [ ] **Manifest regenerated after those manual additions** —
       `./scripts/r770-bundle.sh manifest <bundle-dir>`. A manifest written
       before a file existed cannot see that file.
@@ -403,7 +403,9 @@ a bundle. Expect gaps, and expect them to be reading material only.
 
 ---
 
-## Part 12 — Dell firmware  *(Phase 2 — out-of-band, not from this box)*
+## Part 12 — Dell firmware  *(reference only — not a bundle item since 2026-09-25)*
+
+> Dell firmware is **not a bundle item** (operator, 2026-09-25): it is handled on the R770 directly, outside this runbook.
 
 Firmware is applied through iDRAC, not over SSH. Apply only a DUP that is
 **newer than what is installed** — the Phase 1 inventory holds the baselines.

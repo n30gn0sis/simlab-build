@@ -77,7 +77,7 @@ Ubuntu noble cloud image (`noble-server-cloudimg-amd64.img`), CirrOS (tiny test 
 
 Without a refresh cadence these silently go stale — geo lookups and rules are only as current as the last bundle.
 
-### 1.7 Dell / firmware (manual downloads from dell.com — cannot be scripted reliably)
+### 1.7 Dell / firmware — NOT A BUNDLE ITEM since 2026-09-25 (handled on the R770 directly; kept for reference)
 
 BIOS + iDRAC firmware packages, Broadcom NIC firmware DUPs, optionally Dell System Update (DSU) offline repo for the R770. Store in `bundle/dell/` with the Dell-published checksums. Firmware is applied via iDRAC OOB — one of the few things that doesn't even need the host.
 

@@ -153,7 +153,8 @@ order() { cut -d' ' -f1 "$ORDER" | tr '\n' ' '; }
     run bash -c '"$1" < /dev/null' -- "$SCRIPT"
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"stopped before the manifest — stage the manual items, then rerun"* ]]
+    [[ "$output" == *"stopped before the manifest — stage the manual items, then rerun with --yes (or from a terminal to be asked)"* ]]
+    [[ "$output" == *"--yes"* ]]
     [[ "$output" != *"unbound variable"* ]]
 }
 
@@ -162,7 +163,8 @@ order() { cut -d' ' -f1 "$ORDER" | tr '\n' ' '; }
     run bash -c 'exec 0<&-; "$1"' -- "$SCRIPT"
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"stopped before the manifest — stage the manual items, then rerun"* ]]
+    [[ "$output" == *"stopped before the manifest — stage the manual items, then rerun with --yes (or from a terminal to be asked)"* ]]
+    [[ "$output" == *"--yes"* ]]
     [[ "$output" != *"unbound variable"* ]]
 }
 

@@ -168,7 +168,7 @@ MANUAL
 if [ "$ASSUME_YES" = "1" ]; then
     :
 elif [ "$INTERACTIVE" = "0" ]; then
-    die "stopped before the manifest — stage the manual items, then rerun"
+    die "stopped before the manifest — stage the manual items, then rerun with --yes (or from a terminal to be asked)"
 else
     read -r -p "Staged everything you intend to ship? [y/N] " a || a=""
     case "$a" in [yY]*) ;; *) die "stopped before the manifest — stage the manual items, then rerun" ;; esac

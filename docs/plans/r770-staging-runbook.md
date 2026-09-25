@@ -40,7 +40,8 @@ To build on a host with no checkout — a RHEL 8 box, say — carry one file:
 ```bash
 ./scripts/r770-build-bundle.sh --pack > r770-bundle-builder.sh
 scp r770-bundle-builder.sh staging:~/
-ssh staging 'sudo -E bash r770-bundle-builder.sh'      # sudo -E: rootful podman + proxy vars
+ssh -t staging 'sudo -E bash r770-bundle-builder.sh'      # sudo -E: rootful podman + proxy vars
+# -t gives the builder a terminal so it can ask at the manual-items pause; without one it stops there — rerun with --yes once dell/ and gns3/appliances/ are staged
 ```
 
 The packed file carries all four scripts and is gitignored — its payload is

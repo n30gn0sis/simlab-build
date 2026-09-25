@@ -46,8 +46,8 @@ load_token() {
 api() {  # api METHOD PATH [extra curl args] -> response JSON on stdout
     local method=$1 path=$2
     shift 2
-    curl -sS --fail --cacert "$CA" -X "$method" \
-        -H "Authorization: PVEAPIToken=$TOKEN" "$@" "$PVE_URL$path"
+    curl -sS --fail --cacert "$CA" -X "$method" -K - "$@" "$PVE_URL$path" \
+        <<< "header = \"Authorization: PVEAPIToken=$TOKEN\""
 }
 
 # jfield KEY — print data[KEY] (or data itself when KEY is empty) from JSON on stdin
@@ -101,13 +101,17 @@ print("snapshots:", " ".join(names) if names else "(none)")' <<< "$out"
 }
 
 cmd_start() {
-    [ "$(vm_state)" = running ] && { echo "vm 9770 already running"; return 0; }
+    local st
+    st=$(vm_state) || exit 1
+    [ "$st" = running ] && { echo "vm 9770 already running"; return 0; }
     post_task "$BASE/status/start"
     echo "vm 9770 started"
 }
 
 cmd_stop() {
-    [ "$(vm_state)" = stopped ] && { echo "vm 9770 already stopped"; return 0; }
+    local st
+    st=$(vm_state) || exit 1
+    [ "$st" = stopped ] && { echo "vm 9770 already stopped"; return 0; }
     post_task "$BASE/status/shutdown" -d timeout=120 -d forceStop=1
     echo "vm 9770 stopped"
 }
@@ -115,22 +119,23 @@ cmd_stop() {
 cmd_rollback() {
     local snap=${1:-}
     [ -n "$snap" ] || die "rollback needs a snapshot name"
+    [[ "$snap" =~ ^[A-Za-z][A-Za-z0-9_-]{0,39}$ ]] || die "invalid snapshot name: $snap"
     cmd_stop
     post_task "$BASE/snapshot/$snap/rollback"
     echo "vm 9770 rolled back to $snap"
 }
 
 cmd_wait_ssh() {
-    local secs=${1:-300} end
+    local secs=${1:-300} end last_err=""
     end=$((SECONDS + secs))
     while [ "$SECONDS" -lt "$end" ]; do
-        if ssh -o BatchMode=yes -o ConnectTimeout=5 "$VM_HOST" true 2>/dev/null; then
+        if last_err=$(ssh -o BatchMode=yes -o ConnectTimeout=5 "$VM_HOST" true 2>&1 1>/dev/null); then
             echo "ssh to $VM_HOST is up"
             return 0
         fi
         sleep "$POLL"
     done
-    die "ssh to $VM_HOST not up after ${secs}s"
+    die "ssh to $VM_HOST not up after ${secs}s${last_err:+: $last_err}"
 }
 
 case "${1:-}" in

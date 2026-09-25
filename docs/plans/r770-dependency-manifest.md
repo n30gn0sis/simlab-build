@@ -139,7 +139,7 @@ Installed baselines to compare against before downloading anything (Phase 1 evid
 
 ## 8. Docs mirrors — scripted §8 (best-effort)
 
-wget mirrors into `docs/` for 2 a.m. troubleshooting: malcolm.fyi docs, docs.zeek.org, arkime.com docs, docs.gns3.com (JS-heavy; repo docs tree fetched as fallback), Wireshark user guide. Each is `|| warn` — a failed mirror never fails the bundle. ~1–2 GB. mkdocs-material image (§3) lets the internal docs site build offline.
+wget mirrors into `docs/` for 2 a.m. troubleshooting: malcolm.fyi docs, Zeek docs (Read the Docs offline htmlzip — docs.zeek.org itself is behind a Cloudflare challenge), arkime.com docs, docs.gns3.com (JS-heavy; repo docs tree fetched as fallback), Wireshark user guide. Each is `|| warn` — a failed mirror never fails the bundle. ~1–2 GB. mkdocs-material image (§3) lets the internal docs site build offline. A mirror whose only errors are HTTP 4xx on the source site counts as complete and is noted, not warned.
 
 ## 9. Trust anchors & keys
 

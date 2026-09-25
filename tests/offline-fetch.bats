@@ -377,3 +377,119 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
     [ "$status" -eq 0 ]
     [ "$output" -eq 4 ]
 }
+
+# ── docs_mirror() — wget exit-code classification ────────────────────────────
+
+# load_docs_mirror -- eval docs_mirror() (via load_fn) plus hand-written
+# stamped()/stamp_done()/note() stand-ins, and set up a scratch bundle dir.
+load_docs_mirror() {
+    load_fn "$SCRIPT" docs_mirror || { echo "docs_mirror not found in $SCRIPT"; return 1; }
+    stamped()    { [ -f "$B/.stamps/$1" ]; }
+    stamp_done() { touch "$B/.stamps/$1"; }
+    note()       { echo "- $*" >> "$B/NOTES"; echo ">> $*"; }
+    B="$BATS_TEST_TMPDIR/b"; FORCE=0
+    mkdir -p "$B/.stamps" "$B/docs"
+}
+
+# stub_docs_wget -- stub wget (exit code from $WGET_RC; when $WGET_PAGES=1,
+# writes <the -P dir>/host/index.html; writes $WGET_LOG_LINES into the -o
+# file) and timeout (drops the timeout arg, execs the rest so wget's exit
+# code passes straight through).
+stub_docs_wget() {
+    stub wget '
+        p=""; o=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -P) p="$2"; shift 2 ;;
+                -o) o="$2"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        if [ "${WGET_PAGES:-0}" = "1" ]; then
+            mkdir -p "$p/host"
+            touch "$p/host/index.html"
+        fi
+        if [ -n "$o" ]; then
+            printf "%s\n" "${WGET_LOG_LINES:-}" > "$o"
+        fi
+        exit "${WGET_RC:-0}"
+    '
+    stub timeout 'shift; "$@"'
+}
+
+@test "docs_mirror: wget exit 0 mirrors and stamps done" {
+    load_docs_mirror
+    stub_docs_wget
+    export WGET_RC=0
+    run docs_mirror malcolm "https://malcolm.fyi/docs/"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"docs: malcolm mirrored"* ]]
+    [ -f "$B/.stamps/08-docs-malcolm.done" ]
+}
+
+@test "docs_mirror: wget exit 8 with pages on disk classifies upstream 4xx as complete, no WARN" {
+    load_docs_mirror
+    stub_docs_wget
+    export WGET_RC=8 WGET_PAGES=1
+    export WGET_LOG_LINES=$'ERROR 404: Not Found.\nERROR 404: Not Found.'
+    run docs_mirror malcolm "https://malcolm.fyi/docs/"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"mirrored — 2 upstream link(s) returned HTTP 4xx"* ]]
+    [[ "$output" != *"WARN"* ]]
+    [ -f "$B/.stamps/08-docs-malcolm.done" ]
+}
+
+@test "docs_mirror: wget exit 8 with nothing mirrored warns and does not stamp" {
+    load_docs_mirror
+    stub_docs_wget
+    export WGET_RC=8 WGET_PAGES=0
+    run docs_mirror malcolm "https://malcolm.fyi/docs/"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARN"* ]]
+    [[ "$output" == *"server refused (wget exit 8"* ]]
+    [ ! -f "$B/.stamps/08-docs-malcolm.done" ]
+}
+
+@test "docs_mirror: wget exit 4 warns of a network error and does not stamp" {
+    load_docs_mirror
+    stub_docs_wget
+    export WGET_RC=4
+    run docs_mirror malcolm "https://malcolm.fyi/docs/"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARN"* ]]
+    [[ "$output" == *"network error"* ]]
+    [ ! -f "$B/.stamps/08-docs-malcolm.done" ]
+}
+
+@test "docs_mirror: wget exit 124 warns of a timeout and does not stamp" {
+    load_docs_mirror
+    stub_docs_wget
+    export WGET_RC=124
+    run docs_mirror malcolm "https://malcolm.fyi/docs/"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARN"* ]]
+    [[ "$output" == *"timed out after 900 s"* ]]
+    [ ! -f "$B/.stamps/08-docs-malcolm.done" ]
+}
+
+@test "docs_mirror: already stamped skips without calling wget" {
+    load_docs_mirror
+    touch "$B/.stamps/08-docs-malcolm.done"
+    run docs_mirror malcolm "https://malcolm.fyi/docs/"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"skipped — complete in a previous run"* ]]
+    [ ! -s "$NET" ]
+}
+
+@test "zeek docs are fetched as the Read the Docs htmlzip, not mirrored from docs.zeek.org" {
+    run grep -q 'app.readthedocs.org/projects/zeek-docs/downloads/htmlzip/current/' "$SCRIPT"
+    [ "$status" -eq 0 ]
+    run grep -c 'docs_mirror zeek' "$SCRIPT"
+    [ "$output" -eq 0 ]
+}

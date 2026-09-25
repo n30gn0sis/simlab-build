@@ -14,7 +14,7 @@ and `docs/plans/r770-dependency-manifest.md`.
 | 5 gns3 | pypi.org wheelhouse, cloud-images.ubuntu.com, cirros, alpine | `gns3/`, `images/` |
 | 6 gns3 appliances | github.com GNS3 registry; mikrotik.com, opnsense.org | `gns3/appliances/` (licensed vendor images are manual) |
 | 7 enrichment | iana.org, ieee.org OUI, publicsuffix.org, emergingthreats.net, wireshark.org manuf | `enrichment/` |
-| 8 docs mirrors | docs.zeek.org, docs.docker.com, malcolm.fyi (wget; WARN if absent) | `docs/` |
+| 8 docs mirrors | app.readthedocs.org (Zeek htmlzip), docs.docker.com, malcolm.fyi (wget; WARN if absent) | `docs/` |
 | 9 manual | dell.com firmware (per service tag) — reminder only | `dell/` |
 
 ## Staging host requirements

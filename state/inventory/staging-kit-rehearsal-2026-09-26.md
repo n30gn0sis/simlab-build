@@ -63,3 +63,34 @@ All were fixed in the kit test-first and re-proved on the VM (kit PR #5), except
 - The air gap was left blocked, with auto-revert armed; VM close-out is to follow.
 - Resync the kit's `staging/` from this branch once it merges.
 - The dashboards for these scenarios and an automated end-to-end `expect.txt` check are the kit's next sub-projects.
+
+## Addendum — scenario dashboards and the end-to-end check (kit branch `scenario-dashboards`)
+
+The same air-gapped VM ran the kit's next sub-projects: generated Malcolm objects for the scenario pack, and `r770-scenario.sh check`, which counts each `expect.txt` row as Arkime sessions over a run's window.
+
+| Step | Result |
+|---|---|
+| `arkime-views` | 25 views (6 IPsec + 19 scenario) posted and read back; a rerun posts nothing |
+| `dashboards --index-pattern arkime_sessions3-*` | 6 IPsec + 20 scenario objects imported and read back |
+| `check`, all five scenarios, fresh runs | every row PASS: client-server 2/2, ospf 3/3, bgp 3/3, ipsec-ike 4/4, ipsec-esp 2/2 |
+
+### Findings (all fixed in the kit, then re-proved on the VM)
+
+14. **Arkime 5's views API.**
+    - `/api/user/views` answers 404 "Old API"; the list is at `GET /api/views`.
+    - Creating a view needs an `x-arkime-cookie` token, which the `/arkime/sessions` page sets as a cookie.
+    - Names are stripped to `[-a-zA-Z0-9_: ]`.
+    - Duplicate names are accepted.
+    - The kit's `arkime-views` had been written against the old API and had never run on staging.
+15. **ESP was invisible to Malcolm.** Arkime tracks no ESP (IP protocol 50) unless `trackESP` is set, and Zeek's conn log has none. The kit's IPsec "ESP payload" objects had always been empty.
+    - Malcolm offers no knob for it. Arkime 5 reads `ARKIME_<section>__<key>` from the environment, so `configure` now writes `ARKIME_default__trackESP=true` into Malcolm's `config/arkime.env` after every installer run.
+    - A test on staging with `ARKIME_default__espTimeout=30` changed nothing, and was reverted.
+16. **Sessions are bidirectional,** oriented by the first packet. A reverse-direction row is matched through the reply half (`packets.dst > 0`).
+17. **Arkime lags on this Malcolm.** Arkime is not capturing live (`ARKIME_LIVE_CAPTURE=false`): netsniff writes PCAP files and Arkime indexes each file when it closes. netsniff rotates a file only when a packet arrives after `PCAP_ROTATE_MINUTES` (10). On a quiet lab bridge a file stays open until the next traffic (file starts 17:45:38, then 18:15:38).
+    - Zeek-live covers tcp/udp/icmp/ospf in real time, but not ESP.
+    - `check` now waits `PCAP_ROTATE_MINUTES*60+180` s. Past the interval, it sends one marker frame (ethertype 0x88b5) out of the kit's `lab-mon0`, and netsniff (on `lab_mirror0`) rotates. That was proven by hand, then end to end: ipsec-esp and ipsec-ike passed every row with no other traffic.
+
+### Follow-ups for this repo
+
+- **`trackESP` in the runbook.** The install runbook's Malcolm part should set `ARKIME_default__trackESP=true`, the same way the kit does: without it, any ESP a deployment carries is invisible to Arkime.
+- **Why the installer turns `liveArkime` into netsniff.** It is not investigated here. Arkime capturing live would remove the rotation lag.

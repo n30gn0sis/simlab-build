@@ -1,0 +1,27 @@
+
+== 0b. air gap: block internet for host and containers (auto-revert 240 min), prove it  (05:53:17)
+auto-revert scheduled in 240 minute(s)
+BLOCKED (14400s until auto-revert)
+PASS  no internet (archive.ubuntu.com, download.docker.com, pypi.org unreachable)
+
+== 3b. re-check the R770 package set (virtual-package aware); install already ran in part 1  (05:53:41)
+   R770 package set: 59 packages
+PASS  all 59 R770 packages installed from the bundle (524 set up)
+
+== 4. Docker Engine from the bundle  (05:53:42)
+server 29.8.1, storage overlayfs, cgroup 2
+PASS  Docker installed from the bundle and running
+
+== 5. runbook Part 5: load every image tarball, assert every tag  (05:53:52)
+Loaded image: ghcr.io/idaholab/malcolm/zeek:26.08.0
+Loaded image: squidfunk/mkdocs-material:latest
+Loaded image: quay.io/frrouting/frr:10.7.1
+   loaded tags: 35
+all images present
+   monitoring-image-list.txt: all 8 present
+   image-list.txt: all 4 present
+PASS  every image in every list loaded offline
+
+== 5b. smoke: run loaded images with no network  (05:58:21)
+FAIL  zeek container
+test exit=1

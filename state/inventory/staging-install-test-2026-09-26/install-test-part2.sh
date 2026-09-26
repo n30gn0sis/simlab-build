@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Import/install test of bundle-20260926 on VM 9771, made R770-like.
+# Continuation (part 2) of the import/install test of bundle-20260926 on VM 9771, made R770-like.
 # Follows docs/plans/r770-install-runbook.md Parts 1, 3, 4-5 and 7.1 with REAL installs,
 # under a simulated air gap. Stops at the first failed check. Run as ubuntu (uses sudo).
 set -uo pipefail
@@ -9,13 +9,6 @@ ok()   { printf 'PASS  %s\n' "$*"; }
 bad()  { printf 'FAIL  %s\n' "$*"; sudo "$R/scripts/r770-airgap-sim.sh" unblock >/dev/null 2>&1; exit 1; }
 step() { printf '\n== %s  (%s)\n' "$*" "$(date -u +%H:%M:%S)"; }
 
-step "0. make it R770-like: remove the internet-installed Docker and its apt source"
-sudo systemctl stop docker.socket docker containerd >/dev/null 2>&1
-sudo -E apt-get purge -y -q docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras >/tmp/purge.log 2>&1 || { tail -5 /tmp/purge.log; bad "purge docker"; }
-sudo rm -rf /var/lib/docker /var/lib/containerd /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.asc
-command -v docker >/dev/null && bad "docker still on PATH"
-ok "no Docker on the box (purged, state and apt source removed)"
-
 step "0b. air gap: block internet for host and containers (auto-revert 240 min), prove it"
 sudo "$R/scripts/r770-airgap-sim.sh" block --minutes 240 || bad "airgap block"
 sudo "$R/scripts/r770-airgap-sim.sh" status
@@ -24,32 +17,11 @@ for u in https://archive.ubuntu.com https://download.docker.com https://pypi.org
 done
 ok "no internet (archive.ubuntu.com, download.docker.com, pypi.org unreachable)"
 
-step "1. runbook 1.2-1.4: verify in place, copy to /data/staging, verify the copy --strict"
-( cd "$BD" && ./r770-bundle.sh verify . --strict ) | tail -2; [ "${PIPESTATUS[0]}" -eq 0 ] || bad "verify --strict in place"
-sudo mkdir -p /data/staging && sudo cp -a "$BD" /data/staging/ || bad "copy"
-( cd "$S" && ./r770-bundle.sh verify . --strict ) | tail -2; [ "${PIPESTATUS[0]}" -eq 0 ] || bad "verify --strict on the copy"
-ok "bundle passes --strict in place and after the copy"
-
-step "3. runbook Part 3: APT from the bundle only"
-sudo mkdir -p /srv/repo && sudo cp -a "$S/apt" /srv/repo/ || bad "repo placement"
-for f in Packages Packages.gz Release; do [ -s "/srv/repo/apt/$f" ] || bad "repo missing $f"; done
-sudo tar czf /root/apt-sources-install-test.tar.gz /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null
-sudo mv /etc/apt/sources.list.d /etc/apt/sources.list.d.upstream && sudo mkdir -p /etc/apt/sources.list.d
-sudo sh -c ': > /etc/apt/sources.list'
-echo 'deb [trusted=yes] file:/srv/repo/apt ./' | sudo tee /etc/apt/sources.list.d/r770-local.list >/dev/null
-echo 'Acquire::Languages "none";' | sudo tee /etc/apt/apt.conf.d/99r770-no-translations >/dev/null
-sudo rm -rf /var/lib/apt/lists/*
-sudo apt-get update 2>&1 | tee ~/install-apt-update.log | tail -4; [ "${PIPESTATUS[0]}" -eq 0 ] || bad "apt-get update"
-grep -qE '^(Err|E:|W: Skipping)' ~/install-apt-update.log && bad "apt update printed Err/E:/Skipping"
-ok "apt update: exit 0, no Err, no skipped index (Release file works)"
-
+step "3b. re-check the R770 package set (virtual-package aware); install already ran in part 1"
 # The R770 package set is the fetch script's own PKGS list — read it, don't restate it.
 mapfile -t PKGS < <(awk '/^PKGS=\(/{p=1;next} p&&/^\)/{exit} p' "$R/scripts/r770-offline-fetch.sh" | sed 's/#.*//' | tr -s ' \t' '\n' | grep -v '^$')
 echo "   R770 package set: ${#PKGS[@]} packages"
 [ "${#PKGS[@]}" -gt 40 ] || bad "could not read PKGS from the fetch script"
-sudo -E apt-get -y -q dist-upgrade >/tmp/dist-upgrade.log 2>&1 || { tail -8 /tmp/dist-upgrade.log; bad "dist-upgrade from the bundle"; }
-ok "dist-upgrade from the bundle ($(grep -c '^Setting up' /tmp/dist-upgrade.log) packages set up)"
-sudo -E apt-get -y -q install "${PKGS[@]}" >/tmp/pkgs-install.log 2>&1 || { tail -12 /tmp/pkgs-install.log; bad "install of the R770 package set"; }
 # A virtual package (e.g. qemu-kvm on noble, provided by qemu-system-x86) never
 # shows as installed itself; it counts when an installed package provides it.
 installed() { dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'; }

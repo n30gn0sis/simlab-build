@@ -145,6 +145,38 @@ BUNDLE_TOOL="$SCRIPT_DIR/r770-bundle.sh"
     echo "FATAL: $BUNDLE_TOOL not found or not executable — it ships alongside this script" >&2
     exit 1
 }
+
+# Same idea, for the "site" stage: confirm it has something real to ship from
+# before any stage runs, not after hours of downloading (2026-09-26 review --
+# see stage_site()'s comment for the defect this closes). site_validate_source
+# is defined here, ahead of its call, rather than down by stage_site() in its
+# usual numbered section, purely so it exists by the time this runs.
+SITE_MODE=""
+site_validate_source() {  # EITHER a git work tree OR SITE_ARCHIVE+SITE_COMMIT
+    if [ -n "${SITE_ARCHIVE:-}" ]; then
+        [ -s "$SITE_ARCHIVE" ] || {
+            echo "FATAL: SITE_ARCHIVE ($SITE_ARCHIVE) is missing or empty" >&2
+            exit 1
+        }
+        [ -n "${SITE_COMMIT:-}" ] || {
+            echo "FATAL: SITE_ARCHIVE is set but SITE_COMMIT is empty -- both travel together" >&2
+            exit 1
+        }
+        SITE_MODE="archive"
+    else
+        SITE_SRC_ROOT="${SITE_SRC_ROOT:-$SCRIPT_DIR/..}"
+        [ -f "$SITE_SRC_ROOT/scripts/r770-offline-fetch.sh" ] || {
+            echo "FATAL: SITE_SRC_ROOT ($SITE_SRC_ROOT) doesn't look like this repo -- scripts/r770-offline-fetch.sh not found there. Refusing to guess what belongs in site/. (Or set SITE_ARCHIVE + SITE_COMMIT instead -- see a packed builder's cmd_pack.)" >&2
+            exit 1
+        }
+        git -c safe.directory="$SITE_SRC_ROOT" -C "$SITE_SRC_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+            echo "FATAL: SITE_SRC_ROOT ($SITE_SRC_ROOT) is not a git work tree -- site/ ships tracked, committed content only, and there is nothing to track it against. (Or set SITE_ARCHIVE + SITE_COMMIT instead.)" >&2
+            exit 1
+        }
+        SITE_MODE="worktree"
+    fi
+}
+want site && site_validate_source
 # ─────────────────────────────────────────────────────────────────────────────
 
 TS="$(date +%Y%m%d)"
@@ -819,25 +851,33 @@ note "Dell firmware: not a bundle item — handled on the R770 directly (dell/RE
 # 10. site/ — this repo's reviewed scripts/, config/ and docs/analyst-wiki/,
 #     copied into the bundle so the R770 deploy runs exactly this checkout's
 #     TRACKED, COMMITTED code from bundle-*/site/, never a stale copy, an
-#     uncommitted edit, or -- the defect a 2026-09-26 review caught -- whatever
-#     unrelated tree happens to sit at SITE_SRC_ROOT. Under
-#     `r770-build-bundle.sh --pack`, the packed scripts unpack flat into a
-#     `mktemp -d`, so SITE_SRC_ROOT's default used to resolve to /tmp; the old
-#     find-and-cp implementation `continue`d past a missing tree and happily
-#     noted "0 files, exit 0" rather than refusing, and would ship whatever
-#     files a stray /tmp/scripts or /tmp/config happened to hold. stage_site()
-#     now REFUSES (non-zero exit) unless SITE_SRC_ROOT (default: this script's
-#     own repo) both looks like this repo (scripts/r770-offline-fetch.sh
-#     present) and is a real git work tree, unless any of the three trees is
-#     missing, and unless at least one file would ship. It enumerates with
-#     `git ls-files` and reads every file's bytes and mode from HEAD -- never
-#     the working tree or a merely-staged index -- so an uncommitted edit (or
-#     an untracked file) never leaves the checkout; a dirty tree still ships
-#     the last committed content, but leaves a WARN in BUNDLE_NOTES.md rather
-#     than refusing outright, since the operator may be mid-edit on something
-#     that has nothing to do with site/. Always refreshed (never
-#     stamp-skipped): it is small, and it must always match the checkout it
-#     was cut from.
+#     uncommitted edit, or a symlink/submodule that could point outside the
+#     manifest. Two sources are accepted, resolved once by
+#     site_validate_source() at startup (see ~l.148, next to the BUNDLE_TOOL
+#     check) so a doomed run fails in seconds, not after hours of downloads:
+#       worktree  SITE_SRC_ROOT (default: this script's own repo) is a real
+#                 git work tree that looks like this repo.
+#       archive   SITE_ARCHIVE (a `git archive --format=tar HEAD scripts
+#                 config docs/analyst-wiki`) plus SITE_COMMIT (the commit it
+#                 was archived at) -- the path r770-build-bundle.sh --pack's
+#                 cmd_pack() uses, since a packed builder unpacks flat into a
+#                 mktemp -d with NO checkout at all, and the old
+#                 find-and-cp implementation shipped whatever a stray
+#                 /tmp/scripts happened to hold, or silently "0 files, exit
+#                 0", instead of refusing (2026-09-26 review).
+#     Either way, content and mode come from the committed tree -- HEAD via
+#     `git ls-tree -r -z --full-tree` + `cat-file blob` for the worktree path
+#     (never the working tree or a merely-staged index: a staged-but-
+#     uncommitted NEW file is not shipped, only noted as a dirty-tree WARN;
+#     see B2, 2026-09-26), or the archive's own tar entries for the packed
+#     path. A tracked symlink (mode 120000) or submodule (mode 160000) under
+#     any of the three trees REFUSES outright and names the path -- a
+#     symlink in site/ could point somewhere the manifest never covers. The
+#     whole stage builds into $B/site.tmp and only replaces $B/site with an
+#     atomic `mv` on full success; any refusal removes site.tmp and leaves a
+#     previous, good site/ untouched. Always refreshed (never
+#     stamp-skipped): it is small, and it must always match the checkout (or
+#     archive) it was cut from.
 # ═════════════════════════════════════════════════════════════════════════════
 SITE_TREES=(scripts config docs/analyst-wiki)
 
@@ -857,61 +897,95 @@ site_excluded() {  # site_excluded <path relative to the site source root>
     return 1
 }
 
-# sitegit <src> <git-args...> -- every git call stage_site() makes goes
-# through here so it always carries safe.directory for $src. The documented
-# run is `sudo -E ./r770-offline-fetch.sh` against a checkout owned by
-# another (unprivileged) user; without safe.directory, git refuses with
-# "detected dubious ownership" instead of doing anything useful.
+# sitegit <src> <git-args...> -- every git call the site stage makes against a
+# work tree goes through here so it always carries safe.directory for $src.
+# The documented run is `sudo -E ./r770-offline-fetch.sh` against a checkout
+# owned by another (unprivileged) user; without safe.directory, git refuses
+# with "detected dubious ownership" instead of doing anything useful.
 sitegit() {
     local s="$1"; shift
     git -c safe.directory="$s" -C "$s" "$@"
 }
 
+# site_refuse <message...> -- the one way stage_site() gives up: log why,
+# remove any half-built site.tmp, leave a previous good site/ completely
+# alone, and exit non-zero. Never touches $B/site itself.
+site_refuse() {
+    echo "FATAL: $*" >&2
+    rm -rf "$B/site.tmp"
+    exit 1
+}
+
+# site_validate_source() itself lives up near the BUNDLE_TOOL check (~l.148),
+# ahead of its own call -- see the comment there. It sets SITE_MODE and
+# normalizes SITE_SRC_ROOT so stage_site() below never repeats that work.
+
 stage_site() {
 echo "==== [10/11] site/ (this repo's scripts, config, docs/analyst-wiki) ===="
-local src top rel dest mode n commit dirty
+local top rel dest mode oid n commit dirty tmp
 
-src="${SITE_SRC_ROOT:-$SCRIPT_DIR/..}"
-
-[ -f "$src/scripts/r770-offline-fetch.sh" ] || {
-    echo "FATAL: SITE_SRC_ROOT ($src) doesn't look like this repo -- scripts/r770-offline-fetch.sh not found there. Refusing to guess what belongs in site/." >&2
-    exit 1
-}
-sitegit "$src" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
-    echo "FATAL: SITE_SRC_ROOT ($src) is not a git work tree -- site/ ships tracked, committed content only, and there is nothing to track it against." >&2
-    exit 1
-}
-for top in "${SITE_TREES[@]}"; do
-    [ -d "$src/$top" ] || {
-        echo "FATAL: $src/$top is missing -- site/ needs all of: ${SITE_TREES[*]}" >&2
-        exit 1
-    }
-done
-
-commit="$(sitegit "$src" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+rm -rf "$B/site.tmp"
+mkdir -p "$B/site.tmp"
+n=0
 dirty=""
-[ -n "$(sitegit "$src" status --porcelain -- "${SITE_TREES[@]}" 2>/dev/null)" ] && dirty=1
+
+if [ "$SITE_MODE" = "archive" ]; then
+    commit="$SITE_COMMIT"    # a pack refuses a dirty tree at pack time (cmd_pack) -- nothing to detect here
+    tmp="$(mktemp -d)" || site_refuse "mktemp failed while extracting SITE_ARCHIVE"
+    if ! tar xf "$SITE_ARCHIVE" -C "$tmp"; then
+        rm -rf "$tmp"
+        site_refuse "could not extract SITE_ARCHIVE ($SITE_ARCHIVE)"
+    fi
+    for top in "${SITE_TREES[@]}"; do
+        [ -d "$tmp/$top" ] || { rm -rf "$tmp"; site_refuse "$top is missing from SITE_ARCHIVE -- site/ needs all of: ${SITE_TREES[*]}"; }
+    done
+    while IFS= read -r -d '' rel; do
+        rel="${rel#./}"
+        if [ -L "$tmp/$rel" ]; then
+            rm -rf "$tmp"
+            site_refuse "$rel is a symlink in SITE_ARCHIVE -- refusing; a symlink in site/ could point outside the manifest"
+        fi
+        site_excluded "$rel" && continue
+        dest="$B/site.tmp/$rel"
+        mkdir -p "$(dirname "$dest")"
+        cp -p "$tmp/$rel" "$dest"
+        n=$((n + 1))
+    done < <(cd "$tmp" && find . -type f -print0)
+    rm -rf "$tmp"
+else
+    commit="$(sitegit "$SITE_SRC_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    [ -n "$(sitegit "$SITE_SRC_ROOT" status --porcelain -- "${SITE_TREES[@]}" 2>/dev/null)" ] && dirty=1
+
+    for top in "${SITE_TREES[@]}"; do
+        [ -d "$SITE_SRC_ROOT/$top" ] || site_refuse "$SITE_SRC_ROOT/$top is missing -- site/ needs all of: ${SITE_TREES[*]}"
+    done
+
+    # ls-tree -r -z --full-tree HEAD: mode, type, object and path in ONE call,
+    # straight from the committed tree -- never the working tree or a merely-
+    # staged index, so a `git add`ed-but-uncommitted new file is simply absent
+    # here (HEAD doesn't have it yet) rather than fatally unreadable, and a
+    # `git rm --cached` path that is still in HEAD is unaffected and ships.
+    while IFS=$'\t' read -r -d '' meta rel; do
+        mode="${meta%% *}"      # "<mode> <type> <object>" -- first token
+        case "$mode" in
+            120000) site_refuse "$rel is a symlink (mode 120000) -- refusing; a symlink in site/ could point outside the manifest" ;;
+            160000) site_refuse "$rel is a submodule (mode 160000) -- refusing; site/ ships plain tracked files only" ;;
+        esac
+        site_excluded "$rel" && continue
+        dest="$B/site.tmp/$rel"
+        mkdir -p "$(dirname "$dest")"
+        oid="${meta##* }"       # last token -- the blob object id
+        sitegit "$SITE_SRC_ROOT" cat-file blob "$oid" > "$dest" ||
+            site_refuse "$rel ($oid) is tracked but unreadable via cat-file -- committed content only ships"
+        [ "$mode" = "100755" ] && chmod +x "$dest"
+        n=$((n + 1))
+    done < <(sitegit "$SITE_SRC_ROOT" ls-tree -r -z --full-tree HEAD -- "${SITE_TREES[@]}")
+fi
+
+[ "$n" -gt 0 ] || site_refuse "site/ would ship 0 files -- refusing an empty site/"
 
 rm -rf "$B/site"
-mkdir -p "$B/site"
-n=0
-while IFS= read -r -d '' rel; do
-    site_excluded "$rel" && continue
-    dest="$B/site/$rel"
-    mkdir -p "$(dirname "$dest")"
-    sitegit "$src" show "HEAD:$rel" > "$dest" 2>/dev/null || {
-        echo "FATAL: $rel is tracked but unreadable at HEAD ($commit) -- site/ ships committed content only" >&2
-        exit 1
-    }
-    mode="$(sitegit "$src" ls-tree HEAD -- "$rel" | awk '{print $1}')"
-    [ "$mode" = "100755" ] && chmod +x "$dest"
-    n=$((n + 1))
-done < <(sitegit "$src" ls-files -z -- "${SITE_TREES[@]}")
-
-[ "$n" -gt 0 ] || {
-    echo "FATAL: site/ would ship 0 files from $src -- refusing an empty site/" >&2
-    exit 1
-}
+mv "$B/site.tmp" "$B/site"
 
 [ -n "$dirty" ] && note "WARN: site/ built from a dirty tree; uncommitted edits NOT shipped"
 note "site/: $n files from $commit copied"

@@ -19,6 +19,22 @@ setup() {
     child fetch     0
     child manifest  0
     child verify    0
+
+    # --pack now needs a real git checkout to embed site/ as an archive
+    # (2026-09-26 review): BUILD_PACK_ROOT points cmd_pack's git operations at
+    # this synthetic, fully-controlled repo instead of the real simlab-build
+    # checkout, so these tests never depend on -- or are broken by -- this
+    # repo's own ambient working-tree state (which, mid-development, is
+    # legitimately dirty).
+    PACK_SRC="$BATS_TEST_TMPDIR/pack-src"
+    mkdir -p "$PACK_SRC/scripts" "$PACK_SRC/config" "$PACK_SRC/docs/analyst-wiki"
+    echo "x" > "$PACK_SRC/scripts/ok.sh"
+    echo "y" > "$PACK_SRC/config/ok.conf"
+    echo "z" > "$PACK_SRC/docs/analyst-wiki/index.md"
+    git -C "$PACK_SRC" init -q
+    git -C "$PACK_SRC" -c user.name=test -c user.email=test@test.invalid add -A
+    git -C "$PACK_SRC" -c user.name=test -c user.email=test@test.invalid commit -q -m init
+    export BUILD_PACK_ROOT="$PACK_SRC"
 }
 
 # child <name> <exit> — a stub that logs itself, then exits with <exit>
@@ -138,6 +154,52 @@ order() { cut -d' ' -f1 "$ORDER" | tr '\n' ' '; }
     cd "$BATS_TEST_DIRNAME/.."
     run git check-ignore -q r770-bundle-builder.sh
     [ "$status" -eq 0 ]
+}
+
+# --- 2026-09-26 review: --pack must embed the reviewed site/ content --------
+#
+# extract_payload <packed-script> <dest-dir> -- pulls the base64 R770_PAYLOAD
+# blob out of a packed builder and unpacks it into <dest-dir>, without
+# executing the script itself (which would try to run the real orchestrator).
+extract_payload() {
+    sed -n '/^base64 -d/,/^R770_PAYLOAD$/p' "$1" | sed '1d;$d' | base64 -d | tar xz -C "$2"
+}
+
+@test "--pack from a clean checkout embeds the site archive and the exact commit it was packed at" {
+    run "$SCRIPT" --pack
+    echo "$output"
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" > "$BATS_TEST_TMPDIR/packed.sh"
+    local want; want="$(git -C "$PACK_SRC" rev-parse HEAD)"
+    grep -qF "SITE_COMMIT=\"$want\"" "$BATS_TEST_TMPDIR/packed.sh"
+    grep -qF 'export SITE_ARCHIVE="$D/site.tar"' "$BATS_TEST_TMPDIR/packed.sh"
+
+    DEST="$BATS_TEST_TMPDIR/extracted"
+    mkdir -p "$DEST"
+    extract_payload "$BATS_TEST_TMPDIR/packed.sh" "$DEST"
+    [ -s "$DEST/site.tar" ]
+    [ "$(cat "$DEST/site-commit.txt")" = "$want" ]
+    run tar tf "$DEST/site.tar"
+    [[ "$output" == *"scripts/ok.sh"* ]]
+    [[ "$output" == *"config/ok.conf"* ]]
+    [[ "$output" == *"docs/analyst-wiki/index.md"* ]]
+}
+
+@test "--pack from a dirty tree refuses" {
+    echo "uncommitted edit" >> "$PACK_SRC/scripts/ok.sh"
+    run "$SCRIPT" --pack
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"dirty tree"* ]]
+}
+
+@test "--pack refuses when BUILD_PACK_ROOT is not a git checkout" {
+    export BUILD_PACK_ROOT="$BATS_TEST_TMPDIR/not-a-repo"
+    mkdir -p "$BUILD_PACK_ROOT"
+    run "$SCRIPT" --pack
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"git checkout"* ]]
 }
 
 # --- B1: a prompt that can't read stdin must die cleanly, not crash ---

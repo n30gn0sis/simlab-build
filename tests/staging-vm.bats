@@ -264,9 +264,11 @@ snapshot/clean-2026-09-24/rollback" ]
     [ ! -s "$S/calls" ]
 }
 
-@test "9771 has no default SSH host: wait-ssh needs STAGING_VM_HOST" {
+@test "9771 defaults to its DHCP reservation, 192.168.4.26" {
     unset STAGING_VM_HOST
-    STAGING_VMID=9771 run svm wait-ssh 1
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"no default host for VM 9771"* ]]
+    stub ssh 'echo "$*" > "$S/ssh_args"; exit 0'
+    STAGING_VMID=9771 run svm wait-ssh 5
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ssh to ubuntu@192.168.4.26 is up"* ]]
+    grep -q 'ubuntu@192.168.4.26' "$S/ssh_args"
 }

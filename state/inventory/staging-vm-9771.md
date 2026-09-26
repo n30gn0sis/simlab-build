@@ -8,7 +8,7 @@
 |---|---|
 | Created | 2026-09-25 by the Claude session, root@pam used once (operator-approved), `POST …/qemu/9770/clone full=1 snapname=clean-2026-09-24 storage=local-lvm` → task OK |
 | Config | name `r770-staging-2`, `cpu host` ×6, 8192 MiB `balloon 0`, 400G `local-lvm` with `backup=0,discard,ssd,iothread,mbps_wr=250,mbps_wr_max=400`, `serial0 socket`, `onboot 0` — as 9770's clean snapshot |
-| MAC | **`BC:24:11:E7:AF:99`** (new, from the clone). **No DHCP reservation yet**, so the driver has no default host for 9771: pass `STAGING_VM_HOST` |
+| MAC | **`BC:24:11:E7:AF:99`** (new, from the clone). **DHCP reservation: 192.168.4.26** (operator, 2026-09-26; before it the lease moved, .23 then .26). The driver defaults to it |
 | Snapshot | **`clean-2026-09-25`**, taken cold **before first boot**, no vmstate |
 | Access | Same token `claude-staging@pve!lxc101`, role `SimlabStaging`; ACL extended to **`/vms/9771`**. Token now sees exactly `[9770, 9771]`; VM 101 → HTTP 403 |
 | Driver | `STAGING_VMID=9771 scripts/r770-staging-vm.sh …`. The driver accepts exactly 9770 or 9771; any other value (including empty) is refused before any API call |

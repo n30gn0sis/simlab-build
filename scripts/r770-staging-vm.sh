@@ -30,7 +30,7 @@ NODE=proxmox
 VMID="${STAGING_VMID-9770}"
 case "$VMID" in
     9770) DEFAULT_HOST="ubuntu@192.168.4.78" ;;   # DHCP reservation for BC:24:11:97:70:01 (operator, 2026-09-25)
-    9771) DEFAULT_HOST="" ;;                       # no DHCP reservation yet — pass STAGING_VM_HOST
+    9771) DEFAULT_HOST="ubuntu@192.168.4.26" ;;   # DHCP reservation for BC:24:11:E7:AF:99 (operator, 2026-09-26)
     *)    printf 'staging-vm: STAGING_VMID must be 9770 or 9771, got "%s"\n' "$VMID" >&2; exit 1 ;;
 esac
 VM_HOST="${STAGING_VM_HOST:-$DEFAULT_HOST}"

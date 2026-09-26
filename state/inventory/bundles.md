@@ -99,6 +99,7 @@ verifier. Future bundles get it automatically; the fetch script now does the cop
 - [ ] Bundle built: `sudo -E ./scripts/r770-offline-fetch.sh`
 - [ ] Manual category staged: licensed GNS3 appliances (`gns3/appliances/`). Dell firmware is not a bundle item since 2026-09-25
 - [ ] Manifest regenerated **after** the manual additions: `./scripts/r770-bundle.sh manifest bundle-YYYYMMDD`
+- [ ] `site/` present (verify checks it)
 - [ ] Gate passed on staging: `./scripts/r770-bundle.sh verify bundle-YYYYMMDD --strict`
 - [ ] Ubuntu ISO GPG signature verified on staging (runbook Step 5)
 - [ ] Gate passed again **from the transfer media**, before it leaves staging

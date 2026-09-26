@@ -102,6 +102,9 @@ sudo umount /mnt/bundle
 Verifying after the copy catches a truncated or bit-flipped transfer. It costs
 minutes; discovering it during a Malcolm deploy costs a bundle cycle.
 
+The deploy scripts, configs and analyst wiki travel inside the bundle's
+`site/` and are run from `/data/staging/bundle-YYYYMMDD/site/scripts/`.
+
 ---
 
 ## Part 2 — Preconditions

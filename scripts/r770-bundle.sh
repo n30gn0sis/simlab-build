@@ -182,6 +182,37 @@ check_manual() {  # <dir>
     fi
 }
 
+# site/ carries this repo's reviewed scripts/, config/ and docs/analyst-wiki/, so the
+# R770 deploy runs exactly bundle-*/site/ (see r770-offline-fetch.sh's stage_site()
+# and docs/superpowers/specs/2026-09-26-analyst-stack-design.md). Listed here as a
+# list variable, not a single name, so later scripts land in this check as they ship.
+#
+# Both absence cases below are WARN, never FAIL:
+#   - no site/ at all: this bundle predates the site/ delivery path.
+#   - site/ present but missing a required script: as of this check's introduction,
+#     scripts/r770-lab-ca.sh does not exist in the repo yet, so every bundle cut
+#     before it lands would otherwise fail this gate for a script nobody has
+#     written -- that would block bundle building, not protect it. Once the script
+#     ships and the fetch's site stage copies it in, this check passes normally.
+SITE_REQUIRED_SCRIPTS=(scripts/r770-lab-ca.sh)
+
+check_site() {  # <dir>
+    local dir="$1" s missing=()
+    if [ ! -d "$dir/site" ]; then
+        warn "site/ is missing — bundle predates the site/ delivery path (or the fetch's site stage was skipped)"
+        return 0
+    fi
+    for s in "${SITE_REQUIRED_SCRIPTS[@]}"; do
+        [ -s "$dir/site/$s" ] || missing+=("$s")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        printf '      site/%s\n' "${missing[@]}"
+        warn "site/ is missing expected script(s) above (not yet shipped in this repo -- see comment above)"
+    else
+        pass "site/ has the expected deploy script(s)"
+    fi
+}
+
 # A list file without its payload -- or a payload with no list file -- means the
 # bundle cannot be imported. import-bundle.md step 3b docker-loads the payload and
 # then verifies the loaded tags against the list; either half alone is useless.
@@ -269,6 +300,7 @@ cmd_verify() {
     check_required "$dir"
     check_notes    "$dir"
     check_manual   "$dir"
+    check_site     "$dir"
     summary "$strict"
 }
 

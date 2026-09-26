@@ -5,7 +5,7 @@ All bash, all under `scripts/`. No script imports another; they invoke each othe
 
 ```
 r770-build-bundle.sh ──▶ r770-staging-preflight.sh
-        │            ──▶ r770-offline-fetch.sh ──▶ r770-bundle.sh manifest (stage 10/10)
+        │            ──▶ r770-offline-fetch.sh ──▶ r770-bundle.sh manifest (stage 11/11)
         │            ──▶ r770-bundle.sh manifest ; verify --strict
         └── --pack  ──▶ self-extracting file that re-runs the WHOLE chain (never use it just to extract)
 r770-airgap-sim.sh      standalone (staging VM rehearsal)
@@ -19,7 +19,7 @@ r770-precheck.sh        standalone (R770, read-only)
 Runtime: `STAGING_CTR`, else docker, podman, nerdctl; `ctr_save` adds `--multi-image-archive` when `save --help` offers it.
 Stages, resumable via stamp files: 0 preflight egress · 1 apt · 2 ubuntu iso · 3 malcolm ·
 4 monitoring+portal images · 5 gns3 server+wheelhouse+base images · 6 gns3 appliances ·
-7 enrichment · 8 docs mirrors · 9 manual reminders · 10 manifest.
+7 enrichment · 8 docs mirrors · 9 manual reminders · 10 site · 11 manifest.
 Helpers: `note ctr_save have stamped stamp_done fetch seed seed_glob resolve_latest_tag`.
 `resolve_latest_tag <api-url>` — named guard around `curl | grep -m1 '"tag_name"' | sed ...` (used for the VyOS
 rolling release lookup): absorbs the EPIPE `grep -m1` causes by closing its read end before `curl` finishes writing,

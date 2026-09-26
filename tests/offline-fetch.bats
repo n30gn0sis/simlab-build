@@ -50,7 +50,7 @@ load_seed_fns() {
     note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
 }
 
-ALL="preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual manifest"
+ALL="preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site manifest"
 
 # selected <output> -- the stage names the dry run says it would execute, in order
 selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print $NF}' | tr '\n' ' ' | sed 's/ $//'; }
@@ -93,7 +93,7 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
     run "$SCRIPT" --skip docs,manifest,preflight --dry-run
     echo "$output"
     [ "$status" -eq 0 ]
-    [ "$(selected "$output")" = "apt iso malcolm monitoring gns3 appliances enrichment manual" ]
+    [ "$(selected "$output")" = "apt iso malcolm monitoring gns3 appliances enrichment manual site" ]
 }
 
 @test "an unknown stage name is rejected by name, before anything runs" {
@@ -136,6 +136,72 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
     [ "$status" -eq 0 ]
     grep -q 'Malcolm images saved' "$BUNDLE_DIR/BUNDLE_NOTES.md"
     grep -qE 'rerun|section' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+# ── site/ stage — copies this repo's scripts/config/docs-analyst-wiki into the bundle ──
+
+# setup_site_fixture <dir> -- a small source tree with real content plus a
+# planted secret-looking file under config/, standing in for a repo checkout.
+setup_site_fixture() {
+    local src="$1"
+    mkdir -p "$src/scripts" "$src/config/nginx" "$src/docs/analyst-wiki"
+    printf '#!/usr/bin/env bash\necho hi\n' > "$src/scripts/hello.sh"
+    chmod +x "$src/scripts/hello.sh"
+    echo "not executable" > "$src/scripts/README.txt"
+    echo "server { }"   > "$src/config/nginx/site.conf"
+    echo "SECRET=1"     > "$src/config/x.env"
+    echo "fake key"     > "$src/config/y.key"
+    echo "# wiki page"  > "$src/docs/analyst-wiki/index.md"
+}
+
+@test "--only site copies scripts/config/docs-analyst-wiki, excludes secrets, keeps +x, writes the note, touches no network" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_fixture "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ -s "$BUNDLE_DIR/site/scripts/hello.sh" ]
+    [ -x "$BUNDLE_DIR/site/scripts/hello.sh" ]
+    [ ! -x "$BUNDLE_DIR/site/scripts/README.txt" ]
+    [ -s "$BUNDLE_DIR/site/config/nginx/site.conf" ]
+    [ -s "$BUNDLE_DIR/site/docs/analyst-wiki/index.md" ]
+    [ ! -e "$BUNDLE_DIR/site/config/x.env" ]
+    [ ! -e "$BUNDLE_DIR/site/config/y.key" ]
+    grep -qE 'site/: 4 files from .* copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+    [ ! -e "$BUNDLE_DIR/MANIFEST.sha256" ]
+    [ ! -s "$NET" ]
+}
+
+@test "the site stage falls back to 'unknown' when the source tree is not a git repo" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_fixture "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q 'site/: 4 files from unknown copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+@test "the site stage always refreshes: a stale file from a previous copy is removed" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_fixture "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    [ "$status" -eq 0 ]
+    [ -s "$BUNDLE_DIR/site/scripts/hello.sh" ]
+    rm "$SRC/scripts/hello.sh"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ ! -e "$BUNDLE_DIR/site/scripts/hello.sh" ]
+}
+
+@test "--list shows the new site stage as always refreshed" {
+    run "$SCRIPT" --list
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$(echo "$output" | grep -E '^\s*site ')" == *"runs every time"* ]]
 }
 
 @test "resolve_latest_tag survives grep -m1 closing the pipe early under set -euo pipefail" {

@@ -87,14 +87,14 @@ PYTHON_BUILD_IMG="docker.io/library/python:3.12-slim"
 
 # ── stages: run all, or a selection ──────────────────────────────────────────
 # Fixed order. --only picks from it (given in any order), --skip removes from it.
-STAGES=(preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual manifest)
+STAGES=(preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site manifest)
 ONLY=""; SKIP=""; LIST=0; DRY_RUN=0
 usage() {
     cat <<'USAGE'
 usage: r770-offline-fetch.sh [--only s1,s2,...] [--skip s1,s2,...] [--list] [--dry-run] [-h]
 
 Runs every stage in order unless told otherwise. The stages, in run order:
-  preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual manifest
+  preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site manifest
 
   --only s,s   run just these (fixed order applies). NEVER implies manifest:
                finish with  --only manifest  or let r770-build-bundle.sh do it
@@ -103,6 +103,7 @@ Runs every stage in order unless told otherwise. The stages, in run order:
   --dry-run    show which stages this command line would run, then exit
 
 Environment: BUNDLE_DIR  FORCE=1  SEED_FROM=<dir|none>  STAGING_CTR=<runtime>  HTTP(S)_PROXY
+             SITE_SRC_ROOT=<dir>  (repo checkout the "site" stage copies from; default: this script's own repo)
 A sectioned run appends to BUNDLE_NOTES.md; a full run starts it over.
 USAGE
 }
@@ -174,6 +175,7 @@ stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker fo
         enrichment) [ -s "$B/enrichment/oui.txt" ] ;;
         docs)       [ "$(ls "$B/.stamps"/08-docs-*.done 2>/dev/null | wc -l)" -ge 3 ] ;;
         manual)     [ -s "$B/dell/README.txt" ] ;;
+        site)       return 1 ;;   # always refreshed — never "done", see stage_site()
         manifest)   [ -s "$B/MANIFEST.sha256" ] ;;
         *)          return 1 ;;
     esac
@@ -181,7 +183,7 @@ stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker fo
 if [ "$LIST" = "1" ]; then
     echo "== stages in $B  (marker = looks complete; proof is r770-bundle.sh verify) =="
     for s in "${STAGES[@]}"; do
-        if stage_marker "$s"; then m="done"; elif [ "$s" = "preflight" ]; then m="runs every time"; else m="-"; fi
+        if stage_marker "$s"; then m="done"; elif [ "$s" = "preflight" ] || [ "$s" = "site" ]; then m="runs every time"; else m="-"; fi
         printf '  %-11s %s\n' "$s" "$m"
     done
     exit 0
@@ -374,7 +376,7 @@ fi
 #    before committing to hours of downloads. Tests the exact path step 1 uses.
 # ═════════════════════════════════════════════════════════════════════════════
 stage_preflight() {
-echo "==== [0/10] Preflight: registry pull + container egress ===="
+echo "==== [0/11] Preflight: registry pull + container egress ===="
 if ! timeout 300 "$CTR" run --rm "${PROXY_ENV[@]}" "$UBUNTU_BUILD_IMG" \
         bash -ec "apt-get update -qq" >/dev/null 2>&1; then
     cat <<'PREFLIGHT_EOF'
@@ -417,7 +419,7 @@ note "Preflight OK: daemon pull + in-container apt egress verified"
 #    (:Z relabels the mount for SELinux hosts; ignored where SELinux is absent)
 # ═════════════════════════════════════════════════════════════════════════════
 stage_apt() {
-echo "==== [1/10] APT package bundle ===="
+echo "==== [1/11] APT package bundle ===="
 PKGS=(
     # virtualization
     qemu-kvm qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients
@@ -507,7 +509,7 @@ verify_iso_signature() {  # verify_iso_signature <dir with SHA256SUMS + SHA256SU
 # 2. Ubuntu ISO + checksums
 # ═════════════════════════════════════════════════════════════════════════════
 stage_iso() {
-echo "==== [2/10] Ubuntu Server ISO ===="
+echo "==== [2/11] Ubuntu Server ISO ===="
 ISO="ubuntu-${UBUNTU_ISO_VER}-live-server-amd64.iso"
 fetch "$B/isos/$ISO"            "https://releases.ubuntu.com/noble/$ISO"
 fetch "$B/isos/SHA256SUMS"      "https://releases.ubuntu.com/noble/SHA256SUMS"
@@ -521,7 +523,7 @@ note "Ubuntu ISO $UBUNTU_ISO_VER verified: SHA256SUMS GPG signature checked agai
 # 3. Malcolm — install package + all container images
 # ═════════════════════════════════════════════════════════════════════════════
 stage_malcolm() {
-echo "==== [3/10] Malcolm ${MALCOLM_VER} ===="
+echo "==== [3/11] Malcolm ${MALCOLM_VER} ===="
 fetch "$B/malcolm/malcolm-${MALCOLM_VER}-docker_install.zip" \
     "https://github.com/idaholab/Malcolm/releases/download/v${MALCOLM_VER}/malcolm-${MALCOLM_VER}-docker_install.zip"
 
@@ -548,7 +550,7 @@ note "GeoIP DESCOPED by decision 2026-08-31: no MaxMind account — Malcolm runs
 # 4. Monitoring / portal images
 # ═════════════════════════════════════════════════════════════════════════════
 stage_monitoring() {
-echo "==== [4/10] Monitoring & portal images ===="
+echo "==== [4/11] Monitoring & portal images ===="
 seed "$B/docker/monitoring-images.tar.gz"
 if have "$B/docker/monitoring-images.tar.gz"; then
     note "Monitoring/portal images: tarball already present — pulls/save skipped"
@@ -564,7 +566,7 @@ printf '%s\n' "${MONITOR_IMAGES[@]}" > "$B/docker/monitoring-image-list.txt"
 # 5. GNS3 wheelhouse + VM base images
 # ═════════════════════════════════════════════════════════════════════════════
 stage_gns3() {
-echo "==== [5/10] GNS3 server + VM base images ===="
+echo "==== [5/11] GNS3 server + VM base images ===="
 # seed the wheelhouse from a previous bundle; if the pinned gns3-server dist
 # came over, the set is complete (pip downloaded it with its deps) — stamp it
 if ! stamped 05-wheelhouse.done; then
@@ -599,7 +601,7 @@ note "VM base images: noble cloud image + cirros (validation-suite test VM)"
 # 6. GNS3 appliances — definitions + free images + docker-node images
 # ═════════════════════════════════════════════════════════════════════════════
 stage_appliances() {
-echo "==== [6/10] GNS3 appliances ===="
+echo "==== [6/11] GNS3 appliances ===="
 # 6a. .gns3a definitions from the GNS3 registry (tolerant: missing names WARN)
 for a in "${GNS3A_DEFS[@]}"; do
     seed "$B/gns3/definitions/${a}.gns3a"
@@ -728,7 +730,7 @@ note "Licensed GNS3 images: MANUAL — see gns3/appliances/README.txt"
 # 7. Enrichment / rules data  (GeoIP descoped — see section 3 note)
 # ═════════════════════════════════════════════════════════════════════════════
 stage_enrichment() {
-echo "==== [7/10] Enrichment data ===="
+echo "==== [7/11] Enrichment data ===="
 fetch "$B/enrichment/oui.txt"            "https://standards-oui.ieee.org/oui/oui.txt" || note "WARN: oui.txt fetch failed — retry manually"
 fetch "$B/enrichment/public_suffix_list.dat" "https://publicsuffix.org/list/public_suffix_list.dat" || true
 fetch "$B/enrichment/ipv4-address-space.csv" "https://www.iana.org/assignments/ipv4-address-space/ipv4-address-space.csv" || true
@@ -778,7 +780,7 @@ docs_mirror() {  # docs_mirror <name> <url> — stamped complete; partial mirror
 }
 
 stage_docs() {
-echo "==== [8/10] Docs mirrors ===="
+echo "==== [8/11] Docs mirrors ===="
 if command -v wget >/dev/null 2>&1; then
     docs_mirror malcolm   "https://malcolm.fyi/docs/"
     # docs.zeek.org sits behind a Cloudflare JS challenge that no non-browser client
@@ -803,7 +805,7 @@ fi
 # 9. Manual-download placeholders
 # ═════════════════════════════════════════════════════════════════════════════
 stage_manual() {
-echo "==== [9/10] Manual items ===="
+echo "==== [9/11] Manual items ===="
 cat > "$B/dell/README.txt" <<'EOF'
 NOT A BUNDLE ITEM — Dell firmware is handled on the R770 directly
 (operator decision, 2026-09-25). Nothing belongs in this directory, and
@@ -813,10 +815,64 @@ note "Dell firmware: not a bundle item — handled on the R770 directly (dell/RE
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 10. Manifest
+# 10. site/ — this repo's reviewed scripts/, config/ and docs/analyst-wiki/,
+#     copied into the bundle so the R770 deploy runs exactly this checkout's
+#     code from bundle-*/site/, not from wherever a shell happens to be. Always
+#     refreshed (never stamp-skipped): it is small, and it must always match
+#     the checkout it was cut from, never a stale copy from an earlier run.
+# ═════════════════════════════════════════════════════════════════════════════
+SITE_TREES=(scripts config docs/analyst-wiki)
+
+site_excluded() {  # site_excluded <path relative to the site source root>
+    # Anything gitignored or secret-looking never leaves the checkout: no
+    # *.env anywhere, no .git, and nothing under config/ matching *.key,
+    # *.pem or htpasswd (Malcolm/nginx credential material, never source).
+    local rel="$1" base
+    base="$(basename "$rel")"
+    case "$rel" in
+        .git|*/.git|*/.git/*) return 0 ;;
+    esac
+    case "$base" in
+        *.env) return 0 ;;
+    esac
+    case "$rel" in
+        config/*)
+            case "$base" in
+                *.key|*.pem|htpasswd) return 0 ;;
+            esac
+            ;;
+    esac
+    return 1
+}
+
+stage_site() {
+echo "==== [10/11] site/ (this repo's scripts, config, docs/analyst-wiki) ===="
+local src commit n dest rel f
+src="${SITE_SRC_ROOT:-$SCRIPT_DIR/..}"
+commit="$(git -C "$src" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+rm -rf "$B/site"
+mkdir -p "$B/site"
+n=0
+for top in "${SITE_TREES[@]}"; do
+    [ -d "$src/$top" ] || continue
+    while IFS= read -r -d '' f; do
+        rel="${f#"$src"/}"
+        site_excluded "$rel" && continue
+        dest="$B/site/$rel"
+        mkdir -p "$(dirname "$dest")"
+        cp -p "$f" "$dest"
+        [ -x "$f" ] && chmod +x "$dest"
+        n=$((n + 1))
+    done < <(find "$src/$top" -type f -print0)
+done
+note "site/: $n files from $commit copied"
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 11. Manifest
 # ═════════════════════════════════════════════════════════════════════════════
 stage_manifest() {
-echo "==== [10/10] Manifest ===="
+echo "==== [11/11] Manifest ===="
 {
     echo; echo "## Versions"
     echo "- Malcolm: ${MALCOLM_VER}"

@@ -62,7 +62,7 @@ Where a measured property drives a requirement, the requirement states the
 consequence rather than the measurement: §5 goal 2 for the NUMA socket split
 (node numbering is interleaved, so pinning must use explicit CPU lists, never
 ranges), §7 for the storage layout and network zones, and §11 for what discovery
-closed and what it newly opened (PERC key custody, NVMe link width).
+closed and what it newly opened (NVMe link width).
 
 ## 5. Goals & Success Metrics
 
@@ -119,7 +119,7 @@ Work proceeds in 16 dependency-ordered phases (discovery → BIOS/firmware → s
 
 Claude Code is the build agent that executes these phases from the staging host over SSH under `CLAUDE.md`; it is a tool, not a user.
 
-Hard rules: never guess device/interface names; never touch RAID, partitions, bootloader, firmware, SSH, Netplan, default route, or firewall without an explicit gate; `netplan try` for remote network changes; iDRAC verified before any networking phase; never mark VERIFIED without evidence; never fabricate command output. Full text in `CLAUDE.md`.
+Hard rules: never guess device/interface names; never touch RAID, partitions, bootloader, firmware, SSH, Netplan, default route, or firewall without an explicit gate; `netplan try` for remote network changes; never mark VERIFIED without evidence; never fabricate command output. Full text in `CLAUDE.md`.
 
 ## 10. Success Criteria (validation suite, all must pass)
 
@@ -140,16 +140,14 @@ Hard rules: never guess device/interface names; never touch RAID, partitions, bo
 
 **Open, in priority order:**
 
-1. **PERC encryption key custody — ACCEPTED RISK (2026-09-24, §6: no PERC work).** Encryption is on with a Security Key assigned and nobody has established LKM vs SEKM, who holds the passphrase, or where it is escrowed. Losing it loses the VD and every byte of evidence on it. No longer a gate.
-2. **iDRAC unproven as a recovery path — ACCEPTED RISK (2026-09-24, §6: no iDRAC work).** Address known, different subnet from management, no login demonstrated. Phase 5 relies on `netplan try` and a saved rollback instead; there is no independent recovery path.
-3. **Management is a bond + tagged VLAN**, not a single addressed port, which raises Phase 5 from medium to high consequence. A mistake in bond mode, slave membership, or the VLAN tag drops the only in-band path.
-4. **Retention is days, not weeks — and the prior model was 10× optimistic.** The buildout plan's retention table was computed for 15 TB while labelled 1.5 TB; corrected, 3.25 TiB of PCAP holds ~3.3 days at 100 Mbps and ~8 hours at 1 Gbps. All figures remain models until feed rates are measured in Phase 10. The 14 free drive bays are the escape hatch.
-5. **NVMe link width x2 of x4 — NEW.** Half the per-drive bandwidth. Backplane bifurcation by design, or a fault? **Resolved 2026-09-24: by design** — the PERC13 family runs NVMe drives at a maximum x2 lane width (Phase 2 assessment).
-6. **One RAID-1 VD shared** by capture I/O, indexing and VM disks — now known to be running at half link width. Disk-latency monitoring is the tripwire; dedicated PCAP NVMe in the free bays is the fix if proven.
-7. **RAM is the binding constraint** for lab size, not CPU. Outlook improved: 8 of 32 DIMM slots populated, so 256 GB is a simple upgrade that also fixes the half-channel bandwidth caveat.
-8. **Backup escapes the chassis only** when the Restic repo is copied off-box — owner still needed.
-9. **Licensed appliance inventory** still open — sizes the transfer media and lab capability.
-10. **Housekeeping from discovery** (non-blocking): iDRAC virtual media causes persistent `sdb`/`sr0` I/O errors that pollute health baselines — detach it; `pam_lastlog.so` is missing on 24.04 and logs a PAM error per login; `systemd-networkd-wait-online` stalls boot waiting on eight legitimately-down capture ports; gateway 10.10.10.1 did not answer ping (possibly filtered — confirm, don't assume).
+1. **Management is a bond + tagged VLAN**, not a single addressed port, which raises Phase 5 from medium to high consequence. A mistake in bond mode, slave membership, or the VLAN tag drops the only in-band path.
+2. **Retention is days, not weeks — and the prior model was 10× optimistic.** The buildout plan's retention table was computed for 15 TB while labelled 1.5 TB; corrected, 3.25 TiB of PCAP holds ~3.3 days at 100 Mbps and ~8 hours at 1 Gbps. All figures remain models until feed rates are measured in Phase 10. The 14 free drive bays are the escape hatch.
+3. **NVMe link width x2 of x4 — NEW.** Half the per-drive bandwidth. Backplane bifurcation by design, or a fault? **Resolved 2026-09-24: by design** — the PERC13 family runs NVMe drives at a maximum x2 lane width (Phase 2 assessment).
+4. **One RAID-1 VD shared** by capture I/O, indexing and VM disks — now known to be running at half link width. Disk-latency monitoring is the tripwire; dedicated PCAP NVMe in the free bays is the fix if proven.
+5. **RAM is the binding constraint** for lab size, not CPU. Outlook improved: 8 of 32 DIMM slots populated, so 256 GB is a simple upgrade that also fixes the half-channel bandwidth caveat.
+6. **Backup escapes the chassis only** when the Restic repo is copied off-box — owner still needed.
+7. **Licensed appliance inventory** still open — sizes the transfer media and lab capability.
+8. **Housekeeping from discovery** (non-blocking): iDRAC virtual media causes persistent `sdb`/`sr0` I/O errors that pollute health baselines — detach it; `pam_lastlog.so` is missing on 24.04 and logs a PAM error per login; `systemd-networkd-wait-online` stalls boot waiting on eight legitimately-down capture ports; gateway 10.10.10.1 did not answer ping (possibly filtered — confirm, don't assume).
 
 ## 12. Deliverables
 

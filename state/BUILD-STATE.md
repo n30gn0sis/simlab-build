@@ -65,9 +65,7 @@
 | Actual PERC model/firmware/TRIM | **RESOLVED for model + firmware** (H975i Front, 8.14.0.0.28-40); TRIM/discard answered OS-side in Phase 2 (`lsblk -D`, sysfs) — perccli removed from the build 2026-09-23 |
 | Capture NIC media (SFP+ vs BASE-T) | **RESOLVED — 10GBASE-T copper. Order copper TAPs / RJ45 SPAN, not optics** |
 | NUMA locality of OCP adapters + PERC | **RESOLVED — PERC + Slot 10 + mgmt on node 0; Slot 4 on node 1 (quads split across sockets)** |
-| iDRAC recovery path verified | **DROPPED 2026-09-24 — accepted risk** (operator: no iDRAC work on the R770). Phase 5 relies on `netplan try` + saved rollback |
 | Dell service tag for firmware downloads | **RESOLVED — G8WFGH4** (closes runbook Step 0E) |
-| PERC encryption key custody (LKM vs SEKM, escrow) | **DROPPED 2026-09-24 — accepted risk** (operator: no PERC work). Losing the key loses the VD; no phase is gated on it |
 | NVMe x2-of-x4 negotiated link width | **ANSWERED 2026-09-24 — by design**: Dell's PERC13/PERC12 User's Guide (covers H975i Front) gives NVMe drive speeds "at maximum x2 lane width". Source read from a third-party-hosted copy of the official PDF (Dell's site blocked automated fetch); goes into the Phase 2 assessment |
 | Licensed GNS3 appliance entitlements | OPEN (operator) |
 | Site transfer-media scan policy | OPEN (operator) |

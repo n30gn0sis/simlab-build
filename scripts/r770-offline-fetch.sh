@@ -440,10 +440,6 @@ PKGS=(
     # Malcolm's install.py imports these and the cloud image ships neither;
     # found by the 2026-09-12 staging rehearsal after bundle-20260908 was cut
     python3-ruamel.yaml python3-dotenv
-    # GNS3 opens every link (Cloud TAP ports included) through uBridge, which is
-    # not in the pip wheelhouse; without it no project opens ("uBridge is not
-    # available"). Found by the kit's staging rehearsal, 2026-09-26.
-    ubridge
     # kernel/security update tracking
     linux-generic-hwe-24.04
 )

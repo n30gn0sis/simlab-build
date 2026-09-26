@@ -16,6 +16,7 @@
 
 - Scripts are shellcheck-clean with **no `# shellcheck disable` directives**. `r770-offline-fetch.sh` keeps only the repo's existing legacy exclusion set (`-e SC2015,SC2012,SC2010,SC1091`), with no new exclusions.
 - **Copy drafts verbatim.** After copying, `sha256sum` of each repo file must equal the value below. If a draft needs a change, stop and report NEEDS_CONTEXT instead of editing it.
+- **Review findings are fixed in the repo** (operator, 2026-09-26). After a task review, fix rounds edit the repo files directly, and each fix gets a scoped re-review. The repo then intentionally differs from the draft; the ledger records each such divergence. The sha256 table only proves the *initial* copy.
 - **No secret in the repo, a log, argv or a subagent prompt:** the analyst password, the Proxmox root password and the token.
 - **Owned facts are referenced, not restated** (`OWNERS.md`). `git add` BEFORE `./tests/run.sh`, and the suite must be green before each commit.
 - **Chain gates with `&&`, never `;`** (session memory). Collect evidence **before** stopping a VM.

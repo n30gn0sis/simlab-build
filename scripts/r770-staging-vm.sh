@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# r770-staging-vm.sh — drive staging VM 9770 on the Proxmox host, from the
+# r770-staging-vm.sh — drive a staging VM (9770 or 9771) on the Proxmox host, from the
 # Claude Code session's LXC. Never runs on the VM or the R770.
 #
 #   status              power state, uptime and snapshot names
@@ -9,8 +9,9 @@
 #                       (stop = ACPI shutdown, forced after 120 s)
 #   wait-ssh [secs]     wait until the VM answers SSH (default 300 s)
 #
-# The target is fixed: node proxmox, VMID 9770. The API token (scoped by its
-# role to /vms/9770 only) is read from a mode-600 file outside the repo, and
+# The target is pinned: node proxmox, VMID 9770 by default, or 9771 with
+# STAGING_VMID=9771 — nothing else (9771 is a clone for a second session,
+# 2026-09-25). The API token (scoped by its role to /vms/9770 and /vms/9771 only) is read from a mode-600 file outside the repo, and
 # the Proxmox CA is pinned rather than skipped with -k.
 #
 # Design: docs/superpowers/specs/2026-09-24-staging-vm-automation-design.md
@@ -23,11 +24,16 @@ set -uo pipefail
 PVE_URL="${STAGING_PVE_URL:-https://192.168.4.21:8006/api2/json}"
 TOKEN_FILE="${STAGING_PVE_TOKEN_FILE:-/root/.config/simlab/pve-token}"
 CA="${STAGING_PVE_CA:-/root/.config/simlab/pve-ca.pem}"
-VM_HOST="${STAGING_VM_HOST:-ubuntu@192.168.4.78}"   # DHCP reservation for BC:24:11:97:70:01 (operator, 2026-09-25)
 POLL="${STAGING_POLL_SECS:-2}"
 TRIES="${STAGING_TASK_TRIES:-300}"
 NODE=proxmox
-VMID=9770
+VMID="${STAGING_VMID-9770}"
+case "$VMID" in
+    9770) DEFAULT_HOST="ubuntu@192.168.4.78" ;;   # DHCP reservation for BC:24:11:97:70:01 (operator, 2026-09-25)
+    9771) DEFAULT_HOST="" ;;                       # no DHCP reservation yet — pass STAGING_VM_HOST
+    *)    printf 'staging-vm: STAGING_VMID must be 9770 or 9771, got "%s"\n' "$VMID" >&2; exit 1 ;;
+esac
+VM_HOST="${STAGING_VM_HOST:-$DEFAULT_HOST}"
 BASE="/nodes/$NODE/qemu/$VMID"
 TOKEN=""
 
@@ -93,7 +99,7 @@ cmd_status() {
     out=$(api GET "$BASE/status/current") || die "could not read VM $VMID status"
     python3 -c 'import json,sys
 d = json.load(sys.stdin)["data"]
-print("vm 9770:", d.get("status"), "uptime", d.get("uptime", 0))' <<< "$out"
+print("vm " + sys.argv[1] + ":", d.get("status"), "uptime", d.get("uptime", 0))' "$VMID" <<< "$out"
     out=$(api GET "$BASE/snapshot") || die "could not list snapshots"
     python3 -c 'import json,sys
 names = [s["name"] for s in json.load(sys.stdin)["data"] if s["name"] != "current"]
@@ -103,17 +109,17 @@ print("snapshots:", " ".join(names) if names else "(none)")' <<< "$out"
 cmd_start() {
     local st
     st=$(vm_state) || exit 1
-    [ "$st" = running ] && { echo "vm 9770 already running"; return 0; }
+    [ "$st" = running ] && { echo "vm $VMID already running"; return 0; }
     post_task "$BASE/status/start"
-    echo "vm 9770 started"
+    echo "vm $VMID started"
 }
 
 cmd_stop() {
     local st
     st=$(vm_state) || exit 1
-    [ "$st" = stopped ] && { echo "vm 9770 already stopped"; return 0; }
+    [ "$st" = stopped ] && { echo "vm $VMID already stopped"; return 0; }
     post_task "$BASE/status/shutdown" -d timeout=120 -d forceStop=1
-    echo "vm 9770 stopped"
+    echo "vm $VMID stopped"
 }
 
 cmd_rollback() {
@@ -122,11 +128,12 @@ cmd_rollback() {
     [[ "$snap" =~ ^[A-Za-z][A-Za-z0-9_-]{0,39}$ ]] || die "invalid snapshot name: $snap"
     cmd_stop
     post_task "$BASE/snapshot/$snap/rollback"
-    echo "vm 9770 rolled back to $snap"
+    echo "vm $VMID rolled back to $snap"
 }
 
 cmd_wait_ssh() {
     local secs=${1:-300} end last_err=""
+    [ -n "$VM_HOST" ] || die "no default host for VM $VMID — set STAGING_VM_HOST=ubuntu@<address>"
     end=$((SECONDS + secs))
     while [ "$SECONDS" -lt "$end" ]; do
         if last_err=$(ssh -o BatchMode=yes -o ConnectTimeout=5 "$VM_HOST" true 2>&1 1>/dev/null); then

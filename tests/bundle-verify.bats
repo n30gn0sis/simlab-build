@@ -292,6 +292,17 @@ pair_bundle() {   # a bundle with all three list/payload pairs intact
     [[ "$output" == *"is missing expected script(s)"* ]]
 }
 
+@test "a site/ present but missing scripts/r770-bundle.sh warns -- SITE_REQUIRED_SCRIPTS has teeth beyond lab-ca.sh" {
+    rm "$BUNDLE/site/scripts/r770-bundle.sh"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"RESULT: PASS WITH WARNINGS"* ]]
+    [[ "$output" == *"site/scripts/r770-bundle.sh"* ]]
+    [[ "$output" == *"is missing expected script(s)"* ]]
+}
+
 @test "--strict promotes a missing site/ to failure like any other warning" {
     rm -rf "$BUNDLE/site"
     "$SCRIPT" manifest "$BUNDLE"

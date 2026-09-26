@@ -187,14 +187,22 @@ check_manual() {  # <dir>
 # and docs/superpowers/specs/2026-09-26-analyst-stack-design.md). Listed here as a
 # list variable, not a single name, so later scripts land in this check as they ship.
 #
-# Both absence cases below are WARN, never FAIL:
+# Both absence cases below are WARN here in cmd_verify -- but that is NOT the same
+# as "won't block a bundle build". r770-build-bundle.sh's gate (step 5/5) always
+# runs `verify --strict`, and --strict promotes every WARN to FAIL, so a real
+# build DOES stop on either case. WARN (rather than an unconditional FAIL, which
+# is what check_hashes/check_coverage give a tampered or truncated file) is the
+# right severity because "missing" is sometimes a legitimate, dispositionable
+# state rather than corruption this script must always refuse:
 #   - no site/ at all: this bundle predates the site/ delivery path.
 #   - site/ present but missing a required script: as of this check's introduction,
 #     scripts/r770-lab-ca.sh does not exist in the repo yet, so every bundle cut
-#     before it lands would otherwise fail this gate for a script nobody has
-#     written -- that would block bundle building, not protect it. Once the script
-#     ships and the fetch's site stage copies it in, this check passes normally.
-SITE_REQUIRED_SCRIPTS=(scripts/r770-lab-ca.sh)
+#     before it lands would otherwise warn for a script nobody has written. Once
+#     the script ships and the fetch's site stage copies it in, this check passes
+#     normally. The other three below already exist and ship today, so a real
+#     bundle missing one of THEM is a genuine defect to disposition, not a
+#     not-yet-written placeholder.
+SITE_REQUIRED_SCRIPTS=(scripts/r770-bundle.sh scripts/r770-malcolm-deploy.sh scripts/r770-airgap-sim.sh scripts/r770-lab-ca.sh)
 
 check_site() {  # <dir>
     local dir="$1" s missing=()

@@ -139,24 +139,53 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
 }
 
 # ── site/ stage — copies this repo's scripts/config/docs-analyst-wiki into the bundle ──
+#
+# 2026-09-26 review fix: the old fixture was a plain directory, no git. Under
+# `r770-build-bundle.sh --pack`, the unpacked scripts run flat out of a
+# `mktemp -d`, so SITE_SRC_ROOT's default resolved to /tmp -- and the old
+# stage_site() would happily ship whatever was lying around there (or "0
+# files, exit 0" if nothing was), because missing trees were `continue`d
+# past rather than refused. stage_site() now refuses outright unless
+# SITE_SRC_ROOT is a real git work tree that looks like this repo, has all
+# three trees, and yields at least one file; and it ships content read from
+# HEAD, never the working tree or a dirty index, so these fixtures build a
+# real (tiny) git repo rather than a bare directory.
 
-# setup_site_fixture <dir> -- a small source tree with real content plus a
-# planted secret-looking file under config/, standing in for a repo checkout.
-setup_site_fixture() {
+gitc() { git -c user.name=test -c user.email=test@test.invalid "$@"; }
+
+# setup_site_repo <dir> -- a real git repo standing in for a checkout: tracked
+# scripts/config/docs-analyst-wiki content, including the marker file
+# (scripts/r770-offline-fetch.sh) stage_site() uses to confirm SITE_SRC_ROOT
+# really is a repo like this one. Also plants six TRACKED secret-looking
+# files -- two of them outside config/, which the old denylist never looked
+# at -- to prove the widened filter still excludes them even though they are
+# committed (defence in depth, not merely ".gitignore already kept them
+# out"). Everything is committed, so HEAD and the working tree start
+# identical; individual tests dirty it further as needed.
+setup_site_repo() {
     local src="$1"
-    mkdir -p "$src/scripts" "$src/config/nginx" "$src/docs/analyst-wiki"
+    mkdir -p "$src/scripts/sub" "$src/config/nginx" "$src/docs/analyst-wiki"
+    printf '#!/usr/bin/env bash\n' > "$src/scripts/r770-offline-fetch.sh"
     printf '#!/usr/bin/env bash\necho hi\n' > "$src/scripts/hello.sh"
     chmod +x "$src/scripts/hello.sh"
     echo "not executable" > "$src/scripts/README.txt"
     echo "server { }"   > "$src/config/nginx/site.conf"
-    echo "SECRET=1"     > "$src/config/x.env"
-    echo "fake key"     > "$src/config/y.key"
     echo "# wiki page"  > "$src/docs/analyst-wiki/index.md"
+    echo "SECRET=1"     > "$src/config/x.env"                    # *.env, inside config/
+    echo "fake key"     > "$src/config/y.key"                    # *.key, inside config/
+    echo "SECRET=2"     > "$src/scripts/outside.env"              # *.env, OUTSIDE config/
+    echo "fake cert"    > "$src/docs/analyst-wiki/site.pem"       # *.pem, OUTSIDE config/
+    echo "fake creds"   > "$src/scripts/htpasswd"                 # htpasswd, OUTSIDE config/
+    echo "fake creds"   > "$src/docs/analyst-wiki/.htpasswd"      # .htpasswd, OUTSIDE config/
+    echo "not a repo"   > "$src/scripts/sub/.git"                 # .git (a plain file), OUTSIDE config/
+    git -C "$src" init -q
+    gitc -C "$src" add -A
+    gitc -C "$src" commit -q -m init
 }
 
-@test "--only site copies scripts/config/docs-analyst-wiki, excludes secrets, keeps +x, writes the note, touches no network" {
+@test "--only site ships only TRACKED content, excludes secrets anywhere (not just config/), keeps +x, writes the note, touches no network" {
     SRC="$BATS_TEST_TMPDIR/site-src"
-    setup_site_fixture "$SRC"
+    setup_site_repo "$SRC"
     export SITE_SRC_ROOT="$SRC"
     run "$SCRIPT" --only site
     echo "$output"
@@ -168,29 +197,129 @@ setup_site_fixture() {
     [ -s "$BUNDLE_DIR/site/docs/analyst-wiki/index.md" ]
     [ ! -e "$BUNDLE_DIR/site/config/x.env" ]
     [ ! -e "$BUNDLE_DIR/site/config/y.key" ]
-    grep -qE 'site/: 4 files from .* copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+    [ ! -e "$BUNDLE_DIR/site/scripts/outside.env" ]
+    [ ! -e "$BUNDLE_DIR/site/docs/analyst-wiki/site.pem" ]
+    [ ! -e "$BUNDLE_DIR/site/scripts/htpasswd" ]
+    [ ! -e "$BUNDLE_DIR/site/docs/analyst-wiki/.htpasswd" ]
+    [ ! -e "$BUNDLE_DIR/site/scripts/sub/.git" ]
+    grep -qE 'site/: 5 files from [0-9a-f]{7,40} copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
     [ ! -e "$BUNDLE_DIR/MANIFEST.sha256" ]
     [ ! -s "$NET" ]
 }
 
-@test "the site stage falls back to 'unknown' when the source tree is not a git repo" {
+@test "a real commit hash appears in the note" {
     SRC="$BATS_TEST_TMPDIR/site-src"
-    setup_site_fixture "$SRC"
+    setup_site_repo "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    local want; want="$(git -C "$SRC" rev-parse --short HEAD)"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -qF "from $want copied" "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+@test "an untracked file under config/ is NOT shipped" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    echo "oops" > "$SRC/config/untracked.txt"
     export SITE_SRC_ROOT="$SRC"
     run "$SCRIPT" --only site
     echo "$output"
     [ "$status" -eq 0 ]
-    grep -q 'site/: 4 files from unknown copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+    [ ! -e "$BUNDLE_DIR/site/config/untracked.txt" ]
 }
 
-@test "the site stage always refreshes: a stale file from a previous copy is removed" {
+@test "a tracked file with an uncommitted edit ships the COMMITTED content, not the working-tree edit" {
     SRC="$BATS_TEST_TMPDIR/site-src"
-    setup_site_fixture "$SRC"
+    setup_site_repo "$SRC"
+    echo "TAMPERED" > "$SRC/scripts/hello.sh"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    run cat "$BUNDLE_DIR/site/scripts/hello.sh"
+    [[ "$output" != *"TAMPERED"* ]]
+    [[ "$output" == *"echo hi"* ]]
+}
+
+@test "a dirty tree still ships committed content and leaves a WARN in the notes" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    echo "TAMPERED" > "$SRC/scripts/hello.sh"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q 'WARN: site/ built from a dirty tree; uncommitted edits NOT shipped' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+@test "a clean tree leaves no dirty-tree WARN in the notes" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    ! grep -q 'dirty tree' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+@test "a SITE_SRC_ROOT that doesn't look like this repo refuses, before touching git" {
+    SRC="$BATS_TEST_TMPDIR/not-a-repo"
+    mkdir -p "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"r770-offline-fetch.sh"* ]]
+    [ ! -d "$BUNDLE_DIR/site" ]
+    [ ! -s "$NET" ]
+}
+
+@test "a SITE_SRC_ROOT that looks like this repo but is not a git work tree refuses" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki"
+    touch "$SRC/scripts/r770-offline-fetch.sh"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"git work tree"* ]]
+    [ ! -d "$BUNDLE_DIR/site" ]
+}
+
+@test "a missing tree (docs/analyst-wiki removed) refuses" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    rm -rf "$SRC/docs"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"docs/analyst-wiki"* ]]
+}
+
+@test "0 tracked files under the three trees refuses, even though the identity marker exists" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki"
+    touch "$SRC/scripts/r770-offline-fetch.sh"    # present, but UNTRACKED below
+    git -C "$SRC" init -q
+    gitc -C "$SRC" commit -q -m init --allow-empty
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"0 files"* ]]
+}
+
+@test "the site stage always refreshes: a file removed at HEAD is not re-shipped from a prior copy" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
     export SITE_SRC_ROOT="$SRC"
     run "$SCRIPT" --only site
     [ "$status" -eq 0 ]
     [ -s "$BUNDLE_DIR/site/scripts/hello.sh" ]
-    rm "$SRC/scripts/hello.sh"
+    gitc -C "$SRC" rm -q scripts/hello.sh
+    gitc -C "$SRC" commit -q -m "remove hello.sh"
     run "$SCRIPT" --only site
     echo "$output"
     [ "$status" -eq 0 ]

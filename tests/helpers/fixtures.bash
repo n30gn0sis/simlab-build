@@ -18,15 +18,22 @@ make_bundle() {
     echo "fake deb"             > "$d/apt/example_1.0_amd64.deb"
     # site/ — this repo's reviewed scripts/config/docs-analyst-wiki, as
     # r770-offline-fetch.sh's stage_site() copies them. Includes a stand-in
-    # scripts/r770-lab-ca.sh so this "complete bundle" fixture satisfies
-    # r770-bundle.sh's check_site() with a plain pass, not a WARN -- the WARN
-    # path (that script genuinely absent, as every real bundle is until it
-    # ships) is exercised separately in bundle-verify.bats, not by this
-    # general-purpose fixture that many other tests assert a clean PASS on.
+    # for every script r770-bundle.sh's SITE_REQUIRED_SCRIPTS lists, so this
+    # "complete bundle" fixture satisfies check_site() with a plain pass, not
+    # a WARN -- except scripts/r770-lab-ca.sh, which genuinely does not exist
+    # in the repo yet (Task 2). That one WARN path is exercised separately in
+    # bundle-verify.bats, not by this general-purpose fixture that many other
+    # tests assert a clean PASS on.
     printf '#!/usr/bin/env bash\necho hi\n' > "$d/site/scripts/hello.sh"
     chmod +x "$d/site/scripts/hello.sh"
     printf '#!/usr/bin/env bash\necho fixture-ca\n' > "$d/site/scripts/r770-lab-ca.sh"
     chmod +x "$d/site/scripts/r770-lab-ca.sh"
+    printf '#!/usr/bin/env bash\necho fixture-bundle\n' > "$d/site/scripts/r770-bundle.sh"
+    chmod +x "$d/site/scripts/r770-bundle.sh"
+    printf '#!/usr/bin/env bash\necho fixture-malcolm-deploy\n' > "$d/site/scripts/r770-malcolm-deploy.sh"
+    chmod +x "$d/site/scripts/r770-malcolm-deploy.sh"
+    printf '#!/usr/bin/env bash\necho fixture-airgap-sim\n' > "$d/site/scripts/r770-airgap-sim.sh"
+    chmod +x "$d/site/scripts/r770-airgap-sim.sh"
     echo "server { }" > "$d/site/config/nginx.conf"
     echo "# wiki"      > "$d/site/docs/analyst-wiki/index.md"
     echo "fake malcolm images"  > "$d/malcolm/malcolm-images-0.0.0-fixture.tar.gz"

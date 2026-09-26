@@ -45,9 +45,9 @@ LABCA_MIN_DAYS="${LABCA_MIN_DAYS:-30}"
 
 PKI_DIR="$LABCA_DIR/pki"
 CA_CRT="$PKI_DIR/ca.crt"
+CA_KEY="$PKI_DIR/private/ca.key"
 CERT_CRT="$PKI_DIR/issued/lab.crt"
 CERT_KEY="$PKI_DIR/private/lab.key"
-CERT_REQ="$PKI_DIR/reqs/lab.req"
 
 die() { echo "r770-lab-ca: $*" >&2; exit 1; }
 
@@ -57,6 +57,34 @@ build_san() {
         out="${out:+$out,}DNS:$n"
     done
     printf '%s' "$out"
+}
+
+# match_san SAN_TEXT NAME -- whole-token match against an
+# `openssl x509 -ext subjectAltName` dump, so "DNS:portal.labx" never
+# satisfies a check for "portal.lab" (a plain substring grep would).
+match_san() {
+    local out="$1" name="$2" tok
+    for tok in $(tr ',' ' ' <<< "$out"); do
+        [ "$tok" = "DNS:$name" ] && return 0
+    done
+    return 1
+}
+
+# pki_problem -- prints a non-empty message and returns success when the PKI
+# is in a state apply must never touch, silence (and failure) when it's sane.
+# A partial pki/ (from an interrupted run, a bad restore, or a lost disk) is
+# NOT "no CA yet": easyrsa init-pki in batch mode wipes pki/ unconditionally,
+# so treating it as absent would silently mint a new CA no client trusts.
+# Likewise, an installed ca.crt with no pki/ behind it must never be
+# "helpfully" replaced by a fresh one.
+pki_problem() {
+    if [ -d "$PKI_DIR" ]; then
+        if [ ! -f "$CA_CRT" ] || [ ! -f "$CA_KEY" ]; then
+            echo "PKI at $PKI_DIR exists but is incomplete (missing ca.crt or private/ca.key) -- refusing to touch it. Restore the PKI from backup, or move $PKI_DIR aside deliberately if a new CA is truly intended."
+        fi
+    elif [ -f "$LABCA_SSL_DIR/ca.crt" ]; then
+        echo "no PKI at $PKI_DIR, but a CA is already installed at $LABCA_SSL_DIR/ca.crt. Clients trust that CA. Restore the PKI from backup, or move $LABCA_SSL_DIR/ca.crt aside deliberately if a new CA is truly intended."
+    fi
 }
 
 # The invocation form design.md fixes: options before the command, run from
@@ -76,6 +104,13 @@ easyrsa_issue() {  # easyrsa_issue SAN
     )
 }
 
+easyrsa_revoke() {
+    (
+        cd "$LABCA_DIR" || exit 1
+        EASYRSA_BATCH=1 "$LABCA_EASYRSA" --pki-dir="$PKI_DIR" revoke lab
+    )
+}
+
 create_ca() {
     echo "CREATE  CA in $LABCA_DIR (CN=\"R770 Lab CA\")"
     easyrsa_init_and_ca || die "easyrsa CA creation failed (init-pki/build-ca)"
@@ -90,23 +125,34 @@ issue_cert() {
 }
 
 reissue_cert() {
-    local ts f
-    ts=$(date +%Y%m%dT%H%M%S)
-    echo "REISSUE cert lab — moving previous cert/key/req aside (timestamp $ts)"
-    for f in "$CERT_CRT" "$CERT_KEY" "$CERT_REQ"; do
-        [ -e "$f" ] || continue
-        mv -f "$f" "${f}.pre-reissue-${ts}" || die "could not move aside $f"
-    done
-    issue_cert
+    # Real easy-rsa 3.1.7 (confirmed on VM 9771): moving the old cert/key/req
+    # aside leaves index.txt with two "V" entries for the same cert -- the
+    # old one is never revoked. `revoke lab` then `build-server-full lab
+    # nopass` is the clean sequence: index.txt ends R (revoked) then V
+    # (freshly issued). If the build fails after the revoke, die loudly; the
+    # CA is untouched either way, and CERT_CRT is gone, so the next plain
+    # `apply` sees no cert and issues a fresh one -- no special recovery path
+    # needed.
+    local san; san=$(build_san)
+    echo "REISSUE cert lab — revoking the previous cert, then issuing a new one"
+    easyrsa_revoke || die "easyrsa revoke failed for cert lab -- the CA and the previous cert are unchanged"
+    echo "ISSUE   cert lab (SANs: $LABCA_NAMES)"
+    easyrsa_issue "$san" || die "easyrsa build-server-full failed after revoking the previous cert lab -- the CA is unaffected; the next apply will see no cert and issue a fresh one"
+    [ -f "$CERT_CRT" ] || die "easyrsa reported success but $CERT_CRT is missing"
 }
 
 install_file() {  # install_file SRC DEST MODE
-    local src=$1 dest=$2 mode=$3
+    local src=$1 dest=$2 mode=$3 tmp
     if [ -f "$dest" ] && cmp -s "$src" "$dest"; then
+        # Content already matches, but mode may have drifted (e.g. a key
+        # left at 0644) -- re-apply it every time, not only on first install.
+        chmod "$mode" "$dest" || die "could not chmod $dest"
         echo "SKIP    $dest already installed"
         return 0
     fi
-    install -m "$mode" "$src" "$dest" || die "could not install $dest"
+    tmp="$(dirname "$dest")/.$(basename "$dest").tmp.$$"
+    install -m "$mode" "$src" "$tmp" || die "could not stage $dest"
+    mv -f "$tmp" "$dest" || die "could not install $dest"
     echo "INSTALL $dest (mode $mode)"
 }
 
@@ -121,6 +167,12 @@ plan_install() {  # plan_install SRC DEST MODE
 
 cmd_plan() {
     echo "== r770-lab-ca plan =="
+    local problem; problem=$(pki_problem)
+    if [ -n "$problem" ]; then
+        echo "REFUSE  $problem"
+        echo "== plan only — no changes made =="
+        return 1
+    fi
     if [ -f "$CA_CRT" ]; then
         echo "KEEP    CA exists in $LABCA_DIR — never regenerated"
     else
@@ -147,6 +199,9 @@ cmd_apply() {
         shift
     done
 
+    local problem; problem=$(pki_problem)
+    [ -z "$problem" ] || die "$problem"
+
     mkdir -p "$LABCA_DIR"   || die "could not create $LABCA_DIR"
     chmod 0700 "$LABCA_DIR" || die "could not chmod 0700 $LABCA_DIR"
 
@@ -164,6 +219,12 @@ cmd_apply() {
         issue_cert
     fi
 
+    # Never install half a pair: a lab.crt with no matching lab.key (or vice
+    # versa) is worse than not installing at all.
+    if [ ! -f "$CERT_CRT" ] || [ ! -f "$CERT_KEY" ]; then
+        die "cert lab is incomplete (missing $CERT_CRT or $CERT_KEY) -- refusing to install a mismatched pair"
+    fi
+
     mkdir -p "$LABCA_SSL_DIR" || die "could not create $LABCA_SSL_DIR"
     install_file "$CERT_CRT" "$LABCA_SSL_DIR/lab.crt" 0644
     install_file "$CERT_KEY" "$LABCA_SSL_DIR/lab.key" 0600
@@ -172,7 +233,7 @@ cmd_apply() {
 
 cmd_verify() {
     local crt="$LABCA_SSL_DIR/lab.crt" key="$LABCA_SSL_DIR/lab.key" ca="$LABCA_SSL_DIR/ca.crt"
-    local ok=0 name san_out mode
+    local ok=0 name san_out mode pub_crt pub_key
 
     if openssl verify -CAfile "$ca" "$crt" >/dev/null 2>&1; then
         echo "PASS    chain verifies ($crt against $ca)"
@@ -183,7 +244,7 @@ cmd_verify() {
 
     san_out=$(openssl x509 -in "$crt" -noout -ext subjectAltName 2>/dev/null || true)
     for name in $LABCA_NAMES; do
-        if grep -qF "DNS:$name" <<< "$san_out"; then
+        if match_san "$san_out" "$name"; then
             echo "PASS    SAN has DNS:$name"
         else
             echo "FAIL    SAN missing DNS:$name"
@@ -203,6 +264,22 @@ cmd_verify() {
         echo "PASS    $key is mode 600"
     else
         echo "FAIL    $key is mode ${mode:-missing}, expected 600"
+        ok=1
+    fi
+
+    pub_crt=$(openssl x509 -in "$crt" -noout -pubkey 2>/dev/null)
+    pub_key=$(openssl pkey -in "$key" -pubout 2>/dev/null)
+    if [ -n "$pub_crt" ] && [ "$pub_crt" = "$pub_key" ]; then
+        echo "PASS    $key's public key matches $crt"
+    else
+        echo "FAIL    $key does not match $crt (public key mismatch)"
+        ok=1
+    fi
+
+    if [ -f "$CA_CRT" ] && cmp -s "$CA_CRT" "$ca"; then
+        echo "PASS    installed $ca matches $CA_CRT"
+    else
+        echo "FAIL    installed $ca does not match $CA_CRT (or it is missing)"
         ok=1
     fi
 

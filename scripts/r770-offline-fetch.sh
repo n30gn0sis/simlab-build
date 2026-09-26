@@ -53,7 +53,7 @@ GNS3_VER="${GNS3_VER:-3.0.6}"                  # check https://pypi.org/project/
 ET_SURICATA_PATH="${ET_SURICATA_PATH:-suricata-7.0}"  # noble ships Suricata 7.0.x; ET returns 410 on retired paths
 CHR_VER="${CHR_VER:-7.24.4}"                   # check https://mikrotik.com/download/chr
 OPNSENSE_VER="${OPNSENSE_VER:-26.7}"           # check https://opnsense.org/download/
-OPNSENSE_MIRROR="${OPNSENSE_MIRROR:-https://mirrors.dotsrc.org/opnsense/releases/mirror}"
+OPNSENSE_MIRROR="${OPNSENSE_MIRROR:-https://pkg.opnsense.org/releases/mirror}"   # OPNsense's own; mirrors.dotsrc.org stopped answering (2026-09-24/25)
 FRR_IMG="${FRR_IMG:-quay.io/frrouting/frr:10.7.1}"    # check https://quay.io/repository/frrouting/frr?tab=tags
 
 MONITOR_IMAGES=(
@@ -402,7 +402,7 @@ ERROR: preflight failed. One of two proxy problems, in order of likelihood:
   production.cloudflare.docker.com, ghcr.io, gcr.io, quay.io, pypi.org,
   files.pythonhosted.org, github.com, objects.githubusercontent.com,
   raw.githubusercontent.com, releases.ubuntu.com, cloud-images.ubuntu.com,
-  download.cirros-cloud.net, download.mikrotik.com, mirrors.dotsrc.org,
+  download.cirros-cloud.net, download.mikrotik.com, pkg.opnsense.org,
   dl-cdn.alpinelinux.org, standards-oui.ieee.org, publicsuffix.org,
   www.iana.org, rules.emergingthreats.net, malcolm.fyi, app.readthedocs.org,
   www.wireshark.org

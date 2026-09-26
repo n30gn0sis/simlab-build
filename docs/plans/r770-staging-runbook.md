@@ -16,7 +16,7 @@ Everything heavy still runs inside containers (`ubuntu:24.04`, `python:3.12-slim
 - [x] **C. Supply strategy** — curated bundle (decided). Revisit apt-mirror only if unplanned `apt install` on the gapped box becomes recurring.
 - [x] **D. Transfer media** — 256 GB+ USB/NVMe, ext4 (decided). Site policy for media scanning/signing still to confirm (Step 6 must match it).
 - [x] **E. Dell service tag** — **`G8WFGH4`** (express service code 35366715688), confirmed by Phase 1 discovery 2026-09-03. Firmware baselines to compare against in Step 4: BIOS **1.7.5** (2026-01-16) · iDRAC/LC **1.30.20.10** · PERC H975i Front **8.14.0.0.28-40** · backplane **1.92** · Broadcom NIC **233.1.181.0** (pkg) / 233.0.195.0 · PSU **1408** · CPLD **109.125.104**.
-- [ ] **F. Proxy details** if the staging host egresses through one: proxy URL (+credentials if any), and confirm the allowlist covers the domains printed by the script's preflight failure message (registries, Ubuntu archives, download.docker.com, PyPI, GitHub, and the appliance mirrors).
+- [ ] **F. Proxy details** if the staging host egresses through one: proxy URL (+credentials if any), and confirm the allowlist covers the domains printed by the script's preflight failure message (registries, Ubuntu archives, download.docker.com, GNS3's PPA on launchpad, PyPI, GitHub, and the appliance mirrors).
 
 ## Step 0.5 — The short path: one command
 
@@ -202,7 +202,7 @@ The script's **[0/10] preflight** proves both paths (daemon pull + in-container 
 ```bash
 # proxy vars exported per Step 1.5 (skip if direct egress)
 # optional overrides: MALCOLM_VER, UBUNTU_ISO_VER, GNS3_VER, ET_SURICATA_PATH,
-#                     CHR_VER, OPNSENSE_VER, OPNSENSE_MIRROR, FRR_IMG
+#                     CHR_VER, OPNSENSE_VER, OPNSENSE_MIRROR, FRR_IMG, STRONGSWAN_IMG
 sudo -E ./r770-offline-fetch.sh       # -E preserves the proxy vars under sudo
 ```
 
@@ -297,6 +297,7 @@ Also confirm in `BUNDLE_NOTES.md`: no unresolved `WARN` lines (ET rules 410, VyO
 | `CHR_VER` | mikrotik.com/download/chr |
 | `OPNSENSE_VER` | opnsense.org/download |
 | `FRR_IMG` | quay.io/repository/frrouting/frr?tab=tags |
+| `STRONGSWAN_IMG` | hub.docker.com/r/strongx509/strongswan/tags |
 | `ET_SURICATA_PATH` | rules.emergingthreats.net (matches noble's Suricata 7.0.x; ET returns 410 when a branch retires — script checks) |
 | Monitoring tags (prometheus, alertmanager, blackbox, cadvisor, grafana-oss) | upstream GitHub releases (grafana-oss is held below 13.x — see the pin block for the standing-exception note) |
 

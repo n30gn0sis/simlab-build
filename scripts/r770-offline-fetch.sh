@@ -55,6 +55,7 @@ CHR_VER="${CHR_VER:-7.24.4}"                   # check https://mikrotik.com/down
 OPNSENSE_VER="${OPNSENSE_VER:-26.7}"           # check https://opnsense.org/download/
 OPNSENSE_MIRROR="${OPNSENSE_MIRROR:-https://mirrors.dotsrc.org/opnsense/releases/mirror}"
 FRR_IMG="${FRR_IMG:-quay.io/frrouting/frr:10.7.1}"    # check https://quay.io/repository/frrouting/frr?tab=tags
+STRONGSWAN_IMG="${STRONGSWAN_IMG:-docker.io/strongx509/strongswan:6.0.6}"  # check https://hub.docker.com/r/strongx509/strongswan/tags (the strongSwan project's own image; IKEv2 gateways for the kit's ipsec-ike scenario)
 
 MONITOR_IMAGES=(
     "docker.io/prom/prometheus:v3.14.0"
@@ -73,6 +74,7 @@ GNS3_NODE_IMAGES=(
     "docker.io/library/debian:stable-slim"
     "docker.io/nicolaka/netshoot:latest"
     "$FRR_IMG"
+    "$STRONGSWAN_IMG"
 )
 
 # .gns3a appliance definitions to grab from the GNS3 registry (free even when
@@ -398,7 +400,8 @@ ERROR: preflight failed. One of two proxy problems, in order of likelihood:
      sudo), then rerun; this script forwards them into every container.
 
   Also confirm the proxy allowlists: archive.ubuntu.com, security.ubuntu.com,
-  download.docker.com, registry-1.docker.io, auth.docker.io,
+  download.docker.com, ppa.launchpadcontent.net, api.launchpad.net, keyserver.ubuntu.com,
+  registry-1.docker.io, auth.docker.io,
   production.cloudflare.docker.com, ghcr.io, gcr.io, quay.io, pypi.org,
   files.pythonhosted.org, github.com, objects.githubusercontent.com,
   raw.githubusercontent.com, releases.ubuntu.com, cloud-images.ubuntu.com,
@@ -457,6 +460,14 @@ else
     apt-get -y --download-only -o Dir::Cache::archives=/out install \
         docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -qq
     cp /etc/apt/keyrings/docker.asc /out/docker-repo-key.asc
+    # uBridge from GNS3's own PPA -- the build's one recorded exception to the
+    # no-PPA rule (CLAUDE.md). GNS3 opens every link through it, the
+    # gns3-server wheelhouse does not carry it, and Ubuntu's archive has no
+    # ubridge. add-apt-repository installs the PPA's signing key, so apt
+    # verifies the download; only ubridge is taken from the PPA.
+    apt-get -y install -qq software-properties-common >/dev/null
+    add-apt-repository -y ppa:gns3/ppa >/dev/null
+    apt-get -y --download-only -o Dir::Cache::archives=/out install ubridge -qq
     # build local repo metadata
     apt-get -y install -qq dpkg-dev apt-utils >/dev/null
     cd /out && rm -f lock Release Packages && rm -rf partial
@@ -470,7 +481,7 @@ else
     # Written outside /out and moved in, so it does not hash a half-written copy of itself.
     apt-ftparchive release . > /tmp/Release && mv /tmp/Release Release
 "
-note "APT bundle: $(ls "$B/apt"/*.deb 2>/dev/null | wc -l) debs incl. docker-ce + dist-upgrade security debs; Packages, Packages.gz and Release generated (serve as a trivial repo)"
+note "APT bundle: $(ls "$B/apt"/*.deb 2>/dev/null | wc -l) debs incl. docker-ce, ubridge (GNS3 PPA) + dist-upgrade security debs; Packages, Packages.gz and Release generated (serve as a trivial repo)"
 stamp_done 01-apt.done
 fi
 }
@@ -826,6 +837,7 @@ echo "==== [10/10] Manifest ===="
     echo "- OPNsense: ${OPNSENSE_VER}"
     echo "- VyOS rolling: ${VYOS_TAG:-unresolved}"
     echo "- FRR image: ${FRR_IMG}"
+    echo "- strongSwan image: ${STRONGSWAN_IMG}"
     echo "- Built: $(date -Is) on $(hostname) with ${CTR}"
     echo; echo "## Import order on the R770"
     echo "1. ./r770-bundle.sh verify .     (before anything else -- the verifier"

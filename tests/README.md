@@ -16,7 +16,7 @@ Sixteen suites. `./tests/run.sh` runs them all; the table below is the whole gat
 |---|---|
 | `airgap-sim.bats` | the air-gap simulator's generated rules (stub iptables), the unprivileged `status` refusal, and the auto-revert sleeper's PID lifecycle |
 | `build-bundle.bats` | the builder's order and refusals: preflight before fetch, pause before manifest, strict gate last, `--pack` output valid and gitignored, `--only`/`--skip` passed through |
-| `malcolm-deploy.bats` | offline image load then tag assertion; a missing tag or list fails loudly |
+| `malcolm-deploy.bats` | offline image load then tag assertion; a missing tag or list fails loudly; `install`/`configure`/`auth`/`bind-loopback`/`start`/`health`/`verify` against stubbed installer, compose and network tools — idempotent re-runs, the loopback rebind is enforced before `start`, `auth` hashes are pipe-fed and never appear in argv/env/log, and `verify` proves a real capture round-trips through Arkime/Zeek |
 | `offline-fetch.bats` | the fetch's selection logic: `--list`, `--dry-run`, `--only` in fixed order with no implied manifest, `--skip`, rejections, one real network-free `--only manual` run, notes appended on sectioned runs |
 | `staging-preflight.bats` | host fitness under an isolated PATH: runtime found by name or `STAGING_CTR`, capability probes (engine, egress, save format), refusals vs. warnings, disk, tools, verifier |
 | `bundle-manifest.bats` | `r770-bundle.sh manifest` — coverage, exclusions, the empty-bundle and `.part` refusals, reproducibility, spaces in filenames |

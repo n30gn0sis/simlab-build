@@ -288,14 +288,14 @@ them against what you actually hold.
 ### 8.1 Unpack and configure
 
 ```bash
-sudo mkdir -p /opt/malcolm
-sudo unzip /data/staging/bundle-YYYYMMDD/malcolm/*.zip -d /opt/malcolm
-cd /opt/malcolm
-# Malcolm's own installer, shipped inside its zip -- not a script from this repo.
-# Needs root, needs python3-ruamel.yaml + python3-dotenv (in apt/ since
-# 2026-09-12), and needs --non-interactive or it opens a TUI menu and waits.
-sudo python3 /opt/malcolm/scripts/install.py --non-interactive --defaults --configure \
-    --skip-splash --export-malcolm-config-file /opt/malcolm/malcolm-config.json
+cd /data/staging/bundle-YYYYMMDD
+# install: unzips the bundle's malcolm-*-docker_install.zip into MALCOLM_ROOT
+# (default /opt/malcolm). configure: Malcolm's own install.py --non-interactive
+# --configure, importing the R770 config below -- not a script from this repo.
+# Needs root, needs python3-ruamel.yaml + python3-dotenv (in apt/ since 2026-09-12).
+sudo ./site/scripts/r770-malcolm-deploy.sh install /data/staging/bundle-YYYYMMDD
+sudo ./site/scripts/r770-malcolm-deploy.sh configure \
+    /data/staging/bundle-YYYYMMDD/site/config/malcolm/malcolm-config.json
 ```
 
 The installer extracts Malcolm to `/opt/malcolm/malcolm` and sizes the JVM
@@ -310,17 +310,11 @@ certs, the OpenSearch keystore and `arkime/etc/wise.ini` all come from
 Unattended form, hashes generated on the box:
 
 ```bash
-cd /opt/malcolm/malcolm
-H_SSL=$(openssl passwd -1 "$ADMIN_PW")
-H_HT=$(docker run --rm --entrypoint sh ghcr.io/idaholab/malcolm/nginx-proxy:<tag> \
-         -c "htpasswd -bnBC 10 '' '$ADMIN_PW'" | tr -d ':\n')
-./scripts/auth_setup --auth-noninteractive --auth-method basic \
-    --auth-admin-username analyst \
-    --auth-admin-password-openssl "$H_SSL" --auth-admin-password-htpasswd "$H_HT" \
-    --auth-generate-webcerts --auth-generate-fwcerts \
-    --auth-generate-netbox-passwords --auth-generate-valkey-password \
-    --auth-generate-postgres-password --auth-generate-opensearch-internal-creds \
-    --auth-generate-keycloak-db-password
+# /root/analyst-pw: mode 600, one line, the analyst password and nothing else.
+# auth reads it once into a shell variable and only ever puts it on a pipe
+# (openssl passwd -stdin, htpasswd-in-docker) -- never in argv, env, or a log.
+sudo ./site/scripts/r770-malcolm-deploy.sh auth /data/staging/bundle-YYYYMMDD \
+    --password-file /root/analyst-pw
 ```
 
 Exporting the configuration makes it a replayable artifact rather than a
@@ -344,12 +338,16 @@ re-apply after every installer run — the installer regenerates the file, and a
 `docker-compose.override.yml` is ignored because `control.py` passes `-f`):
 
 ```bash
-cd /opt/malcolm/malcolm
-sed -i 's|^    - 0.0.0.0:443:443/tcp$|    - 127.0.0.1:8443:443/tcp|' docker-compose.yml
-./scripts/start        # NOT raw 'docker compose up': control.py creates the
-                       # keystore and touches files compose needs first
-docker compose ps      # 27 services; arkime and logstash are the last to go healthy
-ss -ltnp | grep -E ':(443|8443) '    # expect 127.0.0.1:8443 and nothing on 0.0.0.0:443
+# Verified on this box's compose file: the published-port line is
+# `    - 0.0.0.0:443:443`, with no `/tcp` suffix (both spellings are accepted;
+# a bare sed for the `/tcp` form silently no-ops on this file).
+sudo ./site/scripts/r770-malcolm-deploy.sh bind-loopback
+# start runs Malcolm's own ./scripts/start --quiet, not raw 'docker compose up':
+# control.py creates the keystore and touches files compose needs first, and
+# without --quiet it tails logs forever instead of returning.
+sudo ./site/scripts/r770-malcolm-deploy.sh start
+sudo ./site/scripts/r770-malcolm-deploy.sh health   # 27 services; arkime and logstash are last to go healthy
+sudo ./site/scripts/r770-malcolm-deploy.sh verify --password-file /root/analyst-pw
 ```
 
 **Integration decided by measurement (2026-09-12, staging).** Malcolm sits

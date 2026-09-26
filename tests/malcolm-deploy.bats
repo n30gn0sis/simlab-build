@@ -10,6 +10,7 @@ ghcr.io/idaholab/malcolm/zeek:0.0.0-fixture
 EOF
     export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
     mkdir -p "$BATS_TEST_TMPDIR/bin"
+    setup_deploy
 }
 
 # Stub the docker CLI so the suite never touches a real daemon.
@@ -76,4 +77,681 @@ stub_docker_reporting() {
     echo "$output"
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a directory"* ]]
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# install | configure | auth | bind-loopback | start | health | verify
+#
+# These run the script on an ISOLATED PATH: stubs ($BIN) first, then a fixed
+# list of real read-only tools ($REAL). docker, python3, unzip, openssl, ss,
+# tcpdump, curl and id are stubs; Malcolm's own auth_setup and start are fake
+# scripts inside a fake MALCOLM_ROOT. State lives in $S:
+#   $S/argv        every stub/fake call: "<name> <argv...>", one per line
+#   $S/stdin.*     what openssl / docker run / curl -K read on stdin
+#   $S/ps          what `docker compose ps` prints (Name State Health)
+#   $S/ss          what `ss -H -ltnp` prints
+#   $S/arkime      recordsFiltered the Arkime API returns (default 0)
+#   $S/zeek_writes if present, the Arkime query also makes Zeek write a log
+# ═════════════════════════════════════════════════════════════════════════════
+
+PW='Pw-7f3e9c1d-NEVER-IN-ARGV'
+# Malcolm 26.08's real line (compose line 1459) has no /tcp suffix.
+OPEN='    - 0.0.0.0:443:443'
+LOOP='    - 127.0.0.1:8443:443'
+
+setup_deploy() {
+    BIN="$BATS_TEST_TMPDIR/bin"; REAL="$BATS_TEST_TMPDIR/real"
+    export S="$BATS_TEST_TMPDIR/state"
+    export MALCOLM_ROOT="$BATS_TEST_TMPDIR/opt/malcolm"
+    export MALCOLM_TMPDIR="$BATS_TEST_TMPDIR/tmp"
+    export MALCOLM_POLL_SECS=0 VERIFY_CAPTURE_SECS=0 VERIFY_TIMEOUT=0
+    export FAKE_UID=0
+    MD="$MALCOLM_ROOT/malcolm"
+    mkdir -p "$BIN" "$REAL" "$S" "$MALCOLM_TMPDIR"
+    for t in bash env cat sed awk grep find sort head tr basename dirname sha256sum \
+             stat mkdir cp mv chmod rm date wc mktemp sleep; do
+        p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$REAL/$t"
+    done
+    TEST_PATH="$BIN:$REAL"
+
+    PWFILE="$BATS_TEST_TMPDIR/analyst-pw"
+    printf '%s\n' "$PW" > "$PWFILE"; chmod 600 "$PWFILE"
+    CONF="$BATS_TEST_TMPDIR/malcolm-config.json"
+    echo '{"configuration": {"autoSuricata": false}}' > "$CONF"
+
+    # The compose file as Malcolm's installer writes it: one nginx-proxy 443 mapping.
+    printf '%s\n' 'services:' '  nginx-proxy:' '    ports:' "$OPEN" \
+        '  arkime:' '    image: x' > "$S/compose.fixture"
+
+    stub id 'echo "$FAKE_UID"'
+    stub unzip 'echo "unzip $*" >> "$S/argv"
+d=""; prev=""; for a; do [ "$prev" = -d ] && d=$a; prev=$a; done
+[ -f "$S/zip_empty" ] && exit 0
+mkdir -p "$d/installer" && echo "# fake installer" > "$d/install.py" && : > "$d/malcolm_20260901_000000.tar.gz"'
+    stub python3 'echo "python3 $*" >> "$S/argv"; echo "$PWD" > "$S/python3.cwd"
+[ -f "$S/installer_noenv" ] && exit 0
+mkdir -p "$MALCOLM_ROOT/malcolm/config"
+echo "OPENSEARCH_JAVA_OPTS=-Xmx4g" > "$MALCOLM_ROOT/malcolm/config/opensearch.env"
+cp "$S/compose.fixture" "$MALCOLM_ROOT/malcolm/docker-compose.yml"'
+    stub openssl 'echo "openssl $*" >> "$S/argv"; cat > "$S/stdin.openssl"; echo "\$1\$salt\$fakemd5hash"'
+    stub docker 'echo "docker $*" >> "$S/argv"
+case "$1 $2" in
+  "compose ps") cat "$S/ps" 2>/dev/null; exit 0 ;;
+esac
+if [ "$1" = run ]; then cat > "$S/stdin.docker"; printf ":\$2y\$10\$fakebcrypthash\n\n"; exit 0; fi
+exit 0'
+    stub ss 'echo "ss $*" >> "$S/argv"; cat "$S/ss" 2>/dev/null'
+    stub tcpdump 'echo "tcpdump $*" >> "$S/argv"
+prev=""; for a; do [ "$prev" = -w ] && head -c 200 /dev/zero | tr "\0" x > "$a"; prev=$a; done'
+    stub curl 'echo "curl $*" >> "$S/argv"
+case " $* " in
+  *" -K "*)
+    cat >> "$S/stdin.curl"
+    if [ -f "$S/zeek_writes" ]; then
+        mkdir -p "$MALCOLM_ROOT/malcolm/zeek-logs/processed/x"; echo log > "$MALCOLM_ROOT/malcolm/zeek-logs/processed/x/conn.log"
+    fi
+    printf "{\"recordsTotal\":9,\"recordsFiltered\":%s,\"data\":[]}\n" "$(cat "$S/arkime" 2>/dev/null || echo 0)" ;;
+esac
+exit 0'
+}
+
+stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$BIN/$1"; chmod +x "$BIN/$1"; }
+
+md() { PATH="$TEST_PATH" "$SCRIPT" "$@" < /dev/null; }
+
+calls() { [ -f "$S/argv" ] || { echo 0; return; }; grep -c "^$1 " "$S/argv" || true; }
+
+# Proves the plaintext never reached any argv (stubs AND Malcolm's fakes) or the output.
+no_secret_leak() {
+    if grep -rF -- "$PW" "$S/argv"; then echo "password in argv"; return 1; fi
+    if [[ "$output" == *"$PW"* ]]; then echo "password in output"; return 1; fi
+}
+
+bundle_full() {
+    echo 'ghcr.io/idaholab/malcolm/nginx-proxy:0.0.0-fixture' >> "$BUNDLE/malcolm/image-list.txt"
+    echo 'zip bytes' > "$BUNDLE/malcolm/malcolm-0.0.0-fixture-docker_install.zip"
+    echo 'bundle compose' > "$BUNDLE/malcolm/docker-compose.yml"
+}
+
+# A configured tree: installer, .env, compose file, Malcolm's auth_setup + start.
+malcolm_tree() {
+    mkdir -p "$MALCOLM_ROOT/scripts" "$MD/config" "$MD/scripts" "$MD/nginx" "$MD/pcap/upload" "$MD/zeek-logs"
+    echo "# fake installer" > "$MALCOLM_ROOT/install.py"
+    echo "X=1" > "$MD/config/opensearch.env"
+    cp "$S/compose.fixture" "$MD/docker-compose.yml"
+    printf '#!/usr/bin/env bash\necho "auth_setup $*" >> "$S/argv"; echo "$PWD" > "$S/auth_setup.cwd"
+u=""; prev=""; for a; do [ "$prev" = --auth-admin-username ] && u=$a; prev=$a; done
+echo "$u:\\$2y\\$10\\$x" > nginx/htpasswd\n' > "$MD/scripts/auth_setup"
+    printf '#!/usr/bin/env bash\necho "start $*" >> "$S/argv"; echo "$PWD" > "$S/start.cwd"
+printf "%%s\\n" "malcolm-arkime-1 running starting" > "$S/ps"\n' > "$MD/scripts/start"
+    chmod +x "$MD/scripts/auth_setup" "$MD/scripts/start"
+}
+
+healthy_ps() {
+    printf '%s\n' 'malcolm-arkime-1 running healthy' 'malcolm-zeek-1 running healthy' \
+        'malcolm-nginx-proxy-1 running healthy' 'malcolm-filebeat-1 running' > "$S/ps"
+}
+
+good_ss() {
+    printf '%s\n' \
+        'LISTEN 0 4096 127.0.0.1:8443 0.0.0.0:* users:(("docker-proxy",pid=4242,fd=7))' \
+        'LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=900,fd=3))' > "$S/ss"
+}
+
+# ── install ──────────────────────────────────────────────────────────────────
+
+@test "install unpacks the zip into MALCOLM_ROOT and copies the bundle's compose file" {
+    bundle_full
+    run md install "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PASS    installed malcolm-0.0.0-fixture-docker_install.zip"* ]]
+    grep -qxF "unzip -q -o $BUNDLE/malcolm/malcolm-0.0.0-fixture-docker_install.zip -d $MALCOLM_ROOT" "$S/argv"
+    [ -f "$MALCOLM_ROOT/install.py" ]
+    [ ! -e "$MALCOLM_ROOT/scripts" ]
+    cmp "$BUNDLE/malcolm/docker-compose.yml" "$MALCOLM_ROOT/docker-compose.yml"
+}
+
+@test "install is idempotent: a second run unzips nothing" {
+    bundle_full
+    md install "$BUNDLE"
+    run md install "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already installed"* ]]
+    [ "$(calls unzip)" -eq 1 ]
+}
+
+@test "install reports already installed when malcolm/docker-compose.yml exists" {
+    bundle_full; malcolm_tree
+    run md install "$BUNDLE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already installed"* ]]
+    [ "$(calls unzip)" -eq 0 ]
+}
+
+@test "install refuses with no installer zip in the bundle" {
+    run md install "$BUNDLE"
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"found 0"* ]]
+    [ "$(calls unzip)" -eq 0 ]
+}
+
+@test "install refuses when two installer zips are present" {
+    bundle_full
+    echo other > "$BUNDLE/malcolm/malcolm-26.09.0-docker_install.zip"
+    run md install "$BUNDLE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"found 2"* ]]
+    [ "$(calls unzip)" -eq 0 ]
+}
+
+@test "install refuses when not root and touches nothing" {
+    bundle_full; FAKE_UID=1000
+    run md install "$BUNDLE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"root"* ]]
+    [ "$(calls unzip)" -eq 0 ]
+    [ ! -e "$MALCOLM_ROOT" ]
+}
+
+@test "install fails when the zip holds no install.py" {
+    bundle_full; touch "$S/zip_empty"
+    run md install "$BUNDLE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"FAIL"*"no install.py"* ]]
+}
+
+# ── configure ────────────────────────────────────────────────────────────────
+
+@test "configure refuses before install and never runs python3" {
+    run md configure "$CONF"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"not installed"* ]]
+    [ "$(calls python3)" -eq 0 ]
+}
+
+@test "configure runs install.py non-interactively with the import flag and without --defaults" {
+    bundle_full; md install "$BUNDLE"
+    run md configure "$CONF"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -qxF "python3 $MALCOLM_ROOT/install.py --non-interactive --configure --skip-splash --import-malcolm-config-file $CONF" "$S/argv"
+    ! grep -q -- '--defaults' "$S/argv"
+    [ "$(cat "$S/python3.cwd")" = "$MALCOLM_ROOT" ]
+    [ "$(cat "$MALCOLM_ROOT/.r770-deploy/configure.sha256")" = "$(sha256sum < "$CONF" | awk '{print $1}')" ]
+    [[ "$output" == *"run bind-loopback again"* ]]
+}
+
+@test "configure is idempotent for the same config, and re-runs when the config changes" {
+    bundle_full; md install "$BUNDLE"
+    md configure "$CONF"
+    run md configure "$CONF"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already configured"* ]]
+    [ "$(calls python3)" -eq 1 ]
+    echo '{"configuration": {"autoSuricata": false, "osMemory": "8g"}}' > "$CONF"
+    run md configure "$CONF"
+    [ "$status" -eq 0 ]
+    [ "$(calls python3)" -eq 2 ]
+}
+
+@test "configure re-runs when the stamp matches but the .env files are gone" {
+    bundle_full; md install "$BUNDLE"; md configure "$CONF"
+    rm "$MD"/config/*.env
+    run md configure "$CONF"
+    [ "$status" -eq 0 ]
+    [ "$(calls python3)" -eq 2 ]
+}
+
+@test "configure falls back to scripts/install.py when there is no top-level install.py" {
+    malcolm_tree
+    mv "$MALCOLM_ROOT/install.py" "$MALCOLM_ROOT/scripts/install.py"
+    rm "$MD"/config/*.env
+    run md configure "$CONF"
+    [ "$status" -eq 0 ]
+    grep -q "^python3 $MALCOLM_ROOT/scripts/install.py --non-interactive" "$S/argv"
+}
+
+@test "configure FAILS when the installer exits 0 but writes no .env files" {
+    bundle_full; md install "$BUNDLE"; touch "$S/installer_noenv"
+    run md configure "$CONF"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"FAIL"*".env"* ]]
+    [ ! -f "$MALCOLM_ROOT/.r770-deploy/configure.sha256" ]
+}
+
+@test "configure refuses a missing config file" {
+    bundle_full; md install "$BUNDLE"
+    run md configure "$BATS_TEST_TMPDIR/nope.json"
+    [ "$status" -ne 0 ]
+    [ "$(calls python3)" -eq 0 ]
+}
+
+# ── auth ─────────────────────────────────────────────────────────────────────
+
+@test "auth hashes on stdin, passes only hashes to auth_setup, never leaks the password" {
+    bundle_full; malcolm_tree
+    run md auth "$BUNDLE" --password-file "$PWFILE"
+    echo "$output"; cat "$S/argv"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PASS    auth"* ]]
+    no_secret_leak
+    # The password went to the hashers on stdin...
+    grep -qxF "$PW" "$S/stdin.openssl"
+    grep -qxF "$PW" "$S/stdin.docker"
+    grep -qxF 'openssl passwd -1 -stdin' "$S/argv"
+    grep -qxF "docker run --rm -i --pull never --network none --entrypoint htpasswd ghcr.io/idaholab/malcolm/nginx-proxy:0.0.0-fixture -niBC 10 " "$S/argv"
+    # ...and auth_setup got the hashes, leading ':' and newlines stripped.
+    grep -qF -- '--auth-noninteractive --auth-method basic --auth-admin-username analyst' "$S/argv"
+    grep -qF -- '--auth-admin-password-openssl $1$salt$fakemd5hash --auth-admin-password-htpasswd $2y$10$fakebcrypthash --auth-generate-webcerts' "$S/argv"
+    [ "$(cat "$S/auth_setup.cwd")" = "$MD" ]
+    [ -s "$MD/nginx/htpasswd" ]
+}
+
+@test "auth honours --user" {
+    bundle_full; malcolm_tree
+    run md auth "$BUNDLE" --password-file "$PWFILE" --user alice
+    [ "$status" -eq 0 ]
+    grep -qF -- '--auth-admin-username alice' "$S/argv"
+    no_secret_leak
+}
+
+@test "auth refuses a password file that is not mode 600, and runs nothing" {
+    bundle_full; malcolm_tree; chmod 644 "$PWFILE"
+    run md auth "$BUNDLE" --password-file "$PWFILE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"644"* ]]
+    [ "$(calls openssl)" -eq 0 ]; [ "$(calls docker)" -eq 0 ]; [ "$(calls auth_setup)" -eq 0 ]
+    no_secret_leak
+}
+
+@test "auth refuses an empty password file" {
+    bundle_full; malcolm_tree; : > "$PWFILE"
+    run md auth "$BUNDLE" --password-file "$PWFILE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"empty"* ]]
+    [ "$(calls auth_setup)" -eq 0 ]
+}
+
+@test "auth is idempotent when htpasswd exists, and --force redoes it" {
+    bundle_full; malcolm_tree
+    echo 'analyst:$2y$10$old' > "$MD/nginx/htpasswd"
+    run md auth "$BUNDLE" --password-file "$PWFILE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already authenticated"* ]]
+    [ "$(calls auth_setup)" -eq 0 ]; [ "$(calls openssl)" -eq 0 ]
+    run md auth "$BUNDLE" --password-file "$PWFILE" --force
+    [ "$status" -eq 0 ]
+    [ "$(calls auth_setup)" -eq 1 ]
+    no_secret_leak
+}
+
+@test "auth refuses before configure (no .env files)" {
+    bundle_full; malcolm_tree; rm "$MD"/config/*.env
+    run md auth "$BUNDLE" --password-file "$PWFILE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not configured"* ]]
+    [ "$(calls auth_setup)" -eq 0 ]
+}
+
+@test "auth refuses when the image list has no nginx-proxy image" {
+    malcolm_tree
+    run md auth "$BUNDLE" --password-file "$PWFILE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"nginx-proxy"* ]]
+    [ "$(calls openssl)" -eq 0 ]; [ "$(calls auth_setup)" -eq 0 ]
+}
+
+@test "auth FAILS when auth_setup leaves no htpasswd" {
+    bundle_full; malcolm_tree
+    printf '#!/usr/bin/env bash\necho "auth_setup $*" >> "$S/argv"\n' > "$MD/scripts/auth_setup"
+    run md auth "$BUNDLE" --password-file "$PWFILE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"FAIL"*"htpasswd"* ]]
+    no_secret_leak
+}
+
+# ── bind-loopback ────────────────────────────────────────────────────────────
+
+@test "bind-loopback rewrites the one mapping and keeps a timestamped backup" {
+    malcolm_tree
+    cp "$MD/docker-compose.yml" "$BATS_TEST_TMPDIR/orig.yml"
+    run md bind-loopback
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -qxF "$LOOP" "$MD/docker-compose.yml"
+    ! grep -qF '0.0.0.0:443' "$MD/docker-compose.yml"
+    bak=$(ls "$MD"/docker-compose.yml.bak-*)
+    cmp "$bak" "$BATS_TEST_TMPDIR/orig.yml"
+    # Only that line changed.
+    sed 's|^    - 0\.0\.0\.0:443:443$|    - 127.0.0.1:8443:443|' "$bak" | cmp - "$MD/docker-compose.yml"
+    # Round trip: reversing the one line gives back the original exactly.
+    sed 's|^    - 127\.0\.0\.1:8443:443$|    - 0.0.0.0:443:443|' "$MD/docker-compose.yml" | cmp - "$BATS_TEST_TMPDIR/orig.yml"
+}
+
+@test "bind-loopback also accepts the /tcp spelling and keeps the suffix" {
+    malcolm_tree
+    printf '%s\n' 'services:' '  nginx-proxy:' '    ports:' '    - 0.0.0.0:443:443/tcp' > "$MD/docker-compose.yml"
+    run md bind-loopback
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -qxF '    - 127.0.0.1:8443:443/tcp' "$MD/docker-compose.yml"
+    ! grep -qF '0.0.0.0:443' "$MD/docker-compose.yml"
+    run md bind-loopback
+    [[ "$output" == *"already bound"* ]]
+}
+
+@test "bind-loopback refuses one /tcp and one bare mapping (2 matches)" {
+    malcolm_tree
+    echo '    - 0.0.0.0:443:443/tcp' >> "$MD/docker-compose.yml"
+    cp "$MD/docker-compose.yml" "$BATS_TEST_TMPDIR/orig.yml"
+    run md bind-loopback
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"found 2"* ]]
+    cmp "$MD/docker-compose.yml" "$BATS_TEST_TMPDIR/orig.yml"
+}
+
+@test "bind-loopback is idempotent: already bound, no second backup" {
+    malcolm_tree
+    md bind-loopback
+    run md bind-loopback
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already bound"* ]]
+    [ "$(ls "$MD"/docker-compose.yml.bak-* | wc -l)" -eq 1 ]
+}
+
+@test "bind-loopback refuses when the mapping is absent (0 matches), changing nothing" {
+    malcolm_tree
+    printf '%s\n' 'services:' '  nginx-proxy:' '    ports:' '    - 443:443/tcp' > "$MD/docker-compose.yml"
+    cp "$MD/docker-compose.yml" "$BATS_TEST_TMPDIR/orig.yml"
+    run md bind-loopback
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"found 0"* ]]
+    cmp "$MD/docker-compose.yml" "$BATS_TEST_TMPDIR/orig.yml"
+    ! ls "$MD"/docker-compose.yml.bak-* 2>/dev/null
+}
+
+@test "bind-loopback refuses two matches, changing nothing" {
+    malcolm_tree
+    echo "$OPEN" >> "$MD/docker-compose.yml"
+    cp "$MD/docker-compose.yml" "$BATS_TEST_TMPDIR/orig.yml"
+    run md bind-loopback
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"found 2"* ]]
+    cmp "$MD/docker-compose.yml" "$BATS_TEST_TMPDIR/orig.yml"
+    ! ls "$MD"/docker-compose.yml.bak-* 2>/dev/null
+}
+
+@test "bind-loopback refuses a loopback line alongside a differently-indented 0.0.0.0:443" {
+    malcolm_tree
+    printf '%s\n' 'services:' "$LOOP" '      - 0.0.0.0:443:443/tcp' > "$MD/docker-compose.yml"
+    run md bind-loopback
+    [ "$status" -ne 0 ]
+    [[ "$output" != *"already bound"* ]]
+}
+
+@test "bind-loopback refuses before install" {
+    run md bind-loopback
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"not installed"* ]]
+}
+
+# ── start ────────────────────────────────────────────────────────────────────
+
+@test "start refuses before bind-loopback and never runs Malcolm's start" {
+    malcolm_tree
+    run md start
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"bind-loopback"* ]]
+    [ "$(calls start)" -eq 0 ]
+}
+
+@test "start refuses while any 0.0.0.0:443 remains, even beside the loopback line" {
+    malcolm_tree
+    printf '%s\n' 'services:' "$LOOP" '      - 0.0.0.0:443:443/tcp' > "$MD/docker-compose.yml"
+    run md start
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"still publishes 0.0.0.0:443"* ]]
+    [ "$(calls start)" -eq 0 ]
+}
+
+@test "start runs Malcolm's own start script from the malcolm dir after bind" {
+    malcolm_tree; md bind-loopback
+    run md start
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(calls start)" -eq 1 ]
+    grep -qxF 'start --quiet' "$S/argv"
+    [ "$(cat "$S/start.cwd")" = "$MD" ]
+    ! grep -q '^docker compose up' "$S/argv"
+}
+
+@test "start is idempotent when every container is already running" {
+    malcolm_tree; md bind-loopback; healthy_ps
+    run md start
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already running"* ]]
+    [ "$(calls start)" -eq 0 ]
+}
+
+@test "start honours MALCOLM_START" {
+    malcolm_tree; md bind-loopback
+    stub mystart 'echo "mystart $*" >> "$S/argv"'
+    MALCOLM_START="mystart --logs false" run md start
+    [ "$status" -eq 0 ]
+    grep -qxF 'mystart --logs false' "$S/argv"
+    [ "$(calls start)" -eq 0 ]
+}
+
+@test "start fails when Malcolm's start script fails" {
+    malcolm_tree; md bind-loopback
+    printf '#!/usr/bin/env bash\nexit 3\n' > "$MD/scripts/start"
+    run md start
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"FAIL"* ]]
+}
+
+# ── health ───────────────────────────────────────────────────────────────────
+
+@test "health passes when all are healthy and only 127.0.0.1:8443 is published" {
+    malcolm_tree; healthy_ps; good_ss
+    run md health --timeout 0
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PASS    all 4 services running and healthy"* ]]
+    [[ "$output" == *"PASS    127.0.0.1:8443 is listening"* ]]
+    grep -qF "docker compose ps --all --format {{.Name}} {{.State}} {{.Health}}" "$S/argv"
+    grep -qxF 'ss -H -ltnp' "$S/argv"
+}
+
+@test "health times out and lists exactly the unhealthy services" {
+    malcolm_tree; good_ss
+    printf '%s\n' 'malcolm-arkime-1 running starting' 'malcolm-zeek-1 running healthy' \
+        'malcolm-logstash-1 exited' 'malcolm-api-1 running unhealthy' 'malcolm-filebeat-1 running' > "$S/ps"
+    run md health --timeout 0
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"FAIL    not healthy after 0s"* ]]
+    [[ "$output" == *"malcolm-arkime-1(running/starting)"* ]]
+    [[ "$output" == *"malcolm-logstash-1(exited)"* ]]
+    [[ "$output" == *"malcolm-api-1(running/unhealthy)"* ]]
+    [[ "$output" != *"malcolm-zeek-1("* ]]
+    [[ "$output" != *"malcolm-filebeat-1("* ]]
+    [ "$(calls ss)" -eq 0 ]
+}
+
+@test "health polls until the stack settles" {
+    malcolm_tree; good_ss
+    echo 'malcolm-arkime-1 running starting' > "$S/ps"
+    stub sleep 'n=$(cat "$S/sleeps" 2>/dev/null || echo 0); echo $((n+1)) > "$S/sleeps"; [ "$n" -ge 2 ] && echo "malcolm-arkime-1 running healthy" > "$S/ps"; exit 0'
+    run md health --timeout 60
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$S/sleeps")" -eq 3 ]
+}
+
+@test "health FAILS when docker-proxy listens on 0.0.0.0:443" {
+    malcolm_tree; healthy_ps; good_ss
+    echo 'LISTEN 0 4096 0.0.0.0:443 0.0.0.0:* users:(("docker-proxy",pid=4243,fd=7))' >> "$S/ss"
+    run md health --timeout 0
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"FAIL    Malcolm published on a wildcard 443"* ]]
+}
+
+@test "health FAILS when docker-proxy listens on [::]:443" {
+    malcolm_tree; healthy_ps; good_ss
+    echo 'LISTEN 0 4096 [::]:443 [::]:* users:(("docker-proxy",pid=4244,fd=7))' >> "$S/ss"
+    run md health --timeout 0
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"wildcard 443"* ]]
+}
+
+@test "health FAILS when nothing listens on 127.0.0.1:8443" {
+    malcolm_tree; healthy_ps
+    echo 'LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=900,fd=3))' > "$S/ss"
+    run md health --timeout 0
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"FAIL    nothing listening on 127.0.0.1:8443"* ]]
+}
+
+@test "health accepts the portal's nginx on 0.0.0.0:443 (not docker-proxy)" {
+    malcolm_tree; healthy_ps; good_ss
+    echo 'LISTEN 0 511 0.0.0.0:443 0.0.0.0:* users:(("nginx",pid=77,fd=6))' >> "$S/ss"
+    run md health --timeout 0
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"non-docker"* ]]
+}
+
+@test "health FAILS on a 443 wildcard listener it cannot attribute" {
+    malcolm_tree; healthy_ps; good_ss
+    echo 'LISTEN 0 511 0.0.0.0:443 0.0.0.0:*' >> "$S/ss"
+    run md health --timeout 0
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no owner shown"* ]]
+}
+
+@test "health honours MALCOLM_COMPOSE" {
+    malcolm_tree; good_ss
+    stub docker-compose 'echo "docker-compose $*" >> "$S/argv"; echo "malcolm-zeek-1 running healthy"'
+    MALCOLM_COMPOSE=docker-compose run md health --timeout 0
+    [ "$status" -eq 0 ]
+    grep -q '^docker-compose ps --all' "$S/argv"
+    [ "$(calls docker)" -eq 0 ]
+}
+
+@test "health FAILS on an empty container list" {
+    malcolm_tree; good_ss; : > "$S/ps"
+    run md health --timeout 0
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no containers"* ]]
+}
+
+@test "health rejects a non-numeric timeout" {
+    malcolm_tree
+    run md health --timeout soon
+    [ "$status" -ne 0 ]
+}
+
+# ── verify ───────────────────────────────────────────────────────────────────
+
+@test "verify captures loopback, uploads it, and PASSes Arkime, Zeek and the zeek container" {
+    malcolm_tree; healthy_ps; echo 12 > "$S/arkime"; touch "$S/zeek_writes"
+    run md verify --password-file "$PWFILE"
+    echo "$output"; cat "$S/argv"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PASS    capture"* ]]
+    [[ "$output" == *"PASS    uploaded"* ]]
+    [[ "$output" == *"PASS    arkime: 12 session(s)"* ]]
+    [[ "$output" == *"PASS    zeek: new log files"* ]]
+    [[ "$output" == *"PASS    zeek container: malcolm-zeek-1 running healthy"* ]]
+    grep -q '^tcpdump -i lo .*-w .*\.pcap tcp port 8443$' "$S/argv"
+    [ "$(grep -c '^curl -sk -o /dev/null --max-time 5 https://127.0.0.1:8443/$' "$S/argv")" -eq 5 ]
+    ls "$MD"/pcap/upload/r770-verify-*.pcap
+    ! ls "$MD"/pcap/upload/.*.part 2>/dev/null
+    # Credentials reached curl on stdin (-K -), never argv.
+    grep -qxF "user = \"analyst:$PW\"" "$S/stdin.curl"
+    grep -q '^curl -sk --max-time 20 -K - https://127.0.0.1:8443/arkime/api/sessions' "$S/argv"
+    no_secret_leak
+    # The temporary capture dir is cleaned up.
+    [ -z "$(ls -A "$MALCOLM_TMPDIR")" ]
+}
+
+@test "verify escapes quotes and backslashes in the curl config" {
+    malcolm_tree; healthy_ps; echo 1 > "$S/arkime"; touch "$S/zeek_writes"
+    printf '%s\n' 'a"b\c' > "$PWFILE"
+    run md verify --password-file "$PWFILE"
+    [ "$status" -eq 0 ]
+    grep -qxF 'user = "analyst:a\"b\\c"' "$S/stdin.curl"
+}
+
+@test "verify FAILS Arkime when no sessions show up before VERIFY_TIMEOUT" {
+    malcolm_tree; healthy_ps; touch "$S/zeek_writes"
+    run md verify --password-file "$PWFILE"
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"FAIL    arkime"* ]]
+    [[ "$output" == *"PASS    zeek: new log files"* ]]
+    no_secret_leak
+}
+
+@test "verify FAILS Zeek when no new logs appear" {
+    malcolm_tree; healthy_ps; echo 3 > "$S/arkime"
+    run md verify --password-file "$PWFILE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"FAIL    zeek: no new files"* ]]
+    [[ "$output" == *"PASS    arkime"* ]]
+}
+
+@test "verify FAILS when the zeek container is not healthy" {
+    malcolm_tree; echo 3 > "$S/arkime"; touch "$S/zeek_writes"
+    printf '%s\n' 'malcolm-arkime-1 running healthy' 'malcolm-zeek-1 restarting' 'malcolm-zeek-live-1 running healthy' > "$S/ps"
+    run md verify --password-file "$PWFILE"
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"FAIL    zeek container not running+healthy: malcolm-zeek-1 restarting"* ]]
+}
+
+@test "verify FAILS when the capture is empty and uploads nothing" {
+    malcolm_tree; healthy_ps
+    stub tcpdump 'echo "tcpdump $*" >> "$S/argv"; echo "tcpdump: lo: permission denied" >&2; exit 1'
+    run md verify --password-file "$PWFILE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"FAIL    capture"* ]]
+    ! ls "$MD"/pcap/upload/*.pcap 2>/dev/null
+}
+
+@test "verify refuses a password file that is not mode 600, before capturing" {
+    malcolm_tree; healthy_ps; chmod 640 "$PWFILE"
+    run md verify --password-file "$PWFILE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"640"* ]]
+    [ "$(calls tcpdump)" -eq 0 ]; [ "$(calls curl)" -eq 0 ]
+}
+
+@test "verify refuses when not root" {
+    malcolm_tree; FAKE_UID=1000
+    run md verify --password-file "$PWFILE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"root"* ]]
+    [ "$(calls tcpdump)" -eq 0 ]
+}
+
+@test "verify refuses without an upload directory" {
+    malcolm_tree; rm -r "$MD/pcap"
+    run md verify --password-file "$PWFILE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"pcap/upload"* ]]
+    [ "$(calls tcpdump)" -eq 0 ]
+}
+
+@test "unknown verb prints usage and fails" {
+    run md frobnicate
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"usage"* ]]
 }

@@ -32,6 +32,7 @@ Everything needed to design, build, validate, and supply the air-gapped Dell Pow
 | `scripts/r770-phase3-run.sh` | Phase 3 as the operator runs it on the R770 — `check` (read-only: identity, discard, fstab, storage plan) and `apply [--fstrim]` (the whole sequence, stops at the first failure); travels on the transfer drive beside `r770-storage-apply.sh` |
 | `scripts/r770-staging-vm.sh` | Drives staging VM 9770 (default) or 9771 (`STAGING_VMID=9771`) on the Proxmox host from the Claude session (`status`, `rollback <snap>`, `start`, `stop`, `wait-ssh`) with a token scoped to that VM only; never runs on the VM or the R770 |
 | `scripts/r770-lab-ca.sh` | The internal CA and the five-name `.lab` certificate (`plan`/`apply`/`verify`/`export-ca`); never regenerates an existing CA; installs `/etc/nginx/ssl/{lab.crt,lab.key,ca.crt}` |
+| `scripts/r770-malcolm-deploy.sh` | Malcolm deploy (`load`/`assert-tags` plus `install`/`configure`/`auth`/`bind-loopback`/`start`/`health`/`verify`) — unattended install, auth material generated on the box and fed as hashes only, rebinds `nginx-proxy` off `0.0.0.0:443` before start, health-polls every service, verify proves a real loopback capture round-trips through Arkime and Zeek; run on the R770 as root |
 | `tests/` | `./tests/run.sh` — the repo's one check: shellcheck, lint, and bats suites, offline and read-only |
 | `work/plans/active/` | In-progress one-shot plans |
 | `work/plans/archive/` | Executed plans, kept as outcome records |

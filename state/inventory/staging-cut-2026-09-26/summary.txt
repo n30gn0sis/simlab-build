@@ -1,0 +1,8 @@
+size: 15G
+manifest entries: 1598
+debs: 855
+SHA256:
+ c5f3ec210865f040573b77c70f03792d7335f56c820916eee450a3c825feb943          1000747 Packages
+ b5e464b79a70fa59e03f2ab6b7d24a7b18abbd224acad37be7345b4efc7cf9b4           292595 Packages.gz
+SHA512:
+03d464b Manifest: correct the OPNsense mirror path

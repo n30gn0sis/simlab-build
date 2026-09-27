@@ -261,6 +261,17 @@ backup_count() { find "$PORTAL_BACKUP_DIR" -type f 2>/dev/null | wc -l; }
     no_mutations
 }
 
+@test "apply refuses a symlinked Malcolm htpasswd before touching anything" {
+    mv "$PORTAL_MALCOLM_HTPASSWD" "$BATS_TEST_TMPDIR/real-htpasswd"
+    ln -s "$BATS_TEST_TMPDIR/real-htpasswd" "$PORTAL_MALCOLM_HTPASSWD"
+    run portal apply
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REFUSE  $PORTAL_MALCOLM_HTPASSWD is a symlink"* ]]
+    no_mutations
+    [ ! -e "$PORTAL_NGINX_DIR/lab.htpasswd" ]
+}
+
 @test "apply refuses a missing vhost source before touching anything" {
     rm "$PORTAL_SITE/config/nginx/docs.lab.conf"
     run portal apply
@@ -518,11 +529,10 @@ backup_count() { find "$PORTAL_BACKUP_DIR" -type f 2>/dev/null | wc -l; }
     ! grep -rnE 'listen[^;]*\b80\b[^;]*default_server' "$REPO/config/nginx" || false
 }
 
-@test "config: each .lab vhost redirects its own name from :80 to https" {
-    for s in portal malcolm docs; do
-        f="$REPO/config/nginx/$s.lab.conf"
-        grep -qE '^\s*listen 80;' "$f"
-        grep -qF 'return 301 https://$host$request_uri;' "$f"
+@test "config: no .lab vhost listens on :80 (the firewall admits 22 and 443 only)" {
+    for f in "$REPO"/config/nginx/*.lab.conf; do
+        ! grep -nE '^\s*listen\s+(\S*:)?80\b' "$f" || false
+        ! grep -nF 'return 301 https://' "$f" || false
     done
 }
 

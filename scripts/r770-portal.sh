@@ -267,8 +267,13 @@ preflight() {
     for f in "$NGINX_DIR/ssl/lab.crt" "$NGINX_DIR/ssl/lab.key" "$NGINX_DIR/ssl/ca.crt"; do
         [ -f "$f" ]; check $? "$f present" "$f missing — run r770-lab-ca.sh apply first"
     done
-    [ -f "$MALCOLM_HTPASSWD" ]
-    check $? "$MALCOLM_HTPASSWD present" "$MALCOLM_HTPASSWD missing — run Malcolm's auth step first"
+    # Never through a symlink: the portal's one login is copied from here.
+    if [ -L "$MALCOLM_HTPASSWD" ]; then
+        check 1 "" "$MALCOLM_HTPASSWD is a symlink — not copying the analyst login through it; give the real file"
+    else
+        [ -f "$MALCOLM_HTPASSWD" ]
+        check $? "$MALCOLM_HTPASSWD present" "$MALCOLM_HTPASSWD missing — run Malcolm's auth step first"
+    fi
     while IFS='|' read -r kind src dest; do
         [ "$kind" = link ] || [ -f "$src" ] || check 1 "" "missing source $src"
     done < <(nginx_items)

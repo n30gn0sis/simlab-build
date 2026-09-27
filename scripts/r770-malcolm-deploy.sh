@@ -17,12 +17,28 @@
 #                              postgres/netbox/valkey/opensearch/keycloak
 #                              credentials too. It is not a password-change path.
 #   bind-loopback              nginx-proxy 0.0.0.0:443:443[/tcp] -> 127.0.0.1:8443:443[/tcp]
+#                              (the file keeps its owner)
 #   start                      Malcolm's own ./scripts/start --quiet (refused before bind-loopback)
 #   health [--timeout SECS]    every service running+healthy; only 127.0.0.1:8443 published
 #   verify --password-file FILE [--user NAME]
 #                              loopback PCAP -> Malcolm's upload dir (read from the
 #                              upload: service's bind mount in docker-compose.yml);
 #                              Arkime sessions, Zeek logs, zeek container healthy
+#
+# The script runs as root and drops privileges only for Malcolm's own tools.
+# $MD/scripts/{auth_setup,start,...} are all symlinks to control.py, which
+# refuses root: getuid/geteuid 0, or getpass.getuser() == root -- and
+# getpass reads LOGNAME/USER first, which sudo sets to root. So auth_setup and
+# start run as the PUID user from $MD/config/process.env (the file the
+# containers use; the installer writes it): runuser -u USER -- env HOME USER
+# LOGNAME set to that user. It is refused if process.env is missing, PUID/PGID
+# are missing or not numbers, PUID is 0, the uid has no passwd entry, or the
+# user is not in the docker group. Before either verb the script chowns $MD
+# to PUID:PGID (skipped when every entry already is), and chowns -R the host
+# data dirs named by the compose binds -- the upload: service's upload dir,
+# pcap-monitor's /pcap source (pcapDir) and opensearch's data source
+# (indexDir) -- when they exist and are still root-owned. install.py
+# (configure) runs as root, as Malcolm allows.
 #
 # `docker load` reports success even when the resulting tag set is incomplete,
 # which is why import-bundle.md step 3b requires verifying loaded tags against
@@ -45,7 +61,8 @@
 # Test overrides:
 #   MALCOLM_ROOT            install root (default /opt/malcolm)
 #   MALCOLM_COMPOSE         compose command (default "docker compose")
-#   MALCOLM_START           start command, run in $MALCOLM_ROOT/malcolm (default "./scripts/start --quiet")
+#   MALCOLM_START           start command, run in $MALCOLM_ROOT/malcolm as the PUID user
+#                           (default "./scripts/start --quiet")
 #   MALCOLM_POLL_SECS       health/verify poll interval (default 10)
 #   MALCOLM_TMPDIR          where verify writes its capture (default /tmp)
 #   VERIFY_TIMEOUT          verify's wait for Arkime/Zeek (default 300)
@@ -76,7 +93,121 @@ is_uint() { [[ ${1:-} =~ ^[0-9]+$ ]]; }
 require_root() {
     local uid
     uid=$(id -u) || refuse "cannot determine uid"
-    [ "$uid" = 0 ] || refuse "must run as root (Malcolm's installer, auth_setup and start all need it)"
+    [ "$uid" = 0 ] || refuse "must run as root (it drops to Malcolm's PUID user for auth_setup and start itself)"
+}
+
+# ── Malcolm's own user ───────────────────────────────────────────────────────
+
+PROCESS_ENV="$MD/config/process.env"
+# Container-side bind targets whose host sources are pcapDir and indexDir.
+PCAP_TARGET='/pcap'
+INDEX_TARGET='/usr/share/opensearch/data'
+
+# Every value of KEY= in process.env: quotes, CR and trailing blanks stripped.
+process_env_value() {
+    sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=[[:space:]]*//p" "$PROCESS_ENV" |
+        tr -d "\r\"'" | sed -E 's/[[:space:]]+$//'
+}
+
+# The user Malcolm's containers and control.py run as. Sets M_USER M_UID M_GID
+# M_HOME, or refuses (nothing has changed yet when it does).
+malcolm_user() {
+    local puid pgid ent name uid home groups
+    [ -f "$PROCESS_ENV" ] ||
+        refuse "no $PROCESS_ENV — Malcolm's configure writes PUID/PGID there (run configure first)"
+    puid=$(process_env_value PUID) || refuse "cannot read $PROCESS_ENV"
+    pgid=$(process_env_value PGID) || refuse "cannot read $PROCESS_ENV"
+    { is_uint "$puid" && [ "$(grep -c . <<< "$puid")" -eq 1 ]; } ||
+        refuse "PUID in $PROCESS_ENV is missing, repeated or not a number ('${puid//$'\n'/ }')"
+    { is_uint "$pgid" && [ "$(grep -c . <<< "$pgid")" -eq 1 ]; } ||
+        refuse "PGID in $PROCESS_ENV is missing, repeated or not a number ('${pgid//$'\n'/ }')"
+    [ "$puid" -ne 0 ] ||
+        refuse "PUID in $PROCESS_ENV is 0: Malcolm's control.py refuses to run as root — set PUID/PGID there to a non-root user in the docker group"
+    ent=$(getent passwd "$puid") ||
+        refuse "PUID $puid (from $PROCESS_ENV) has no passwd entry — create that user or fix PUID/PGID"
+    IFS=: read -r name _ uid _ _ home _ <<< "$ent"
+    [ "$uid" = "$puid" ] || refuse "getent passwd $puid returned uid '$uid' — fix PUID in $PROCESS_ENV"
+    [[ $name =~ ^[A-Za-z0-9._][A-Za-z0-9._-]*$ ]] || refuse "PUID $puid maps to an unusable user name: $name"
+    [ -n "$home" ] || refuse "user $name (PUID $puid) has no home directory in passwd"
+    groups=$(id -nG "$name") || refuse "cannot list the groups of $name"
+    [[ " $groups " == *" docker "* ]] ||
+        refuse "user $name (PUID $puid from $PROCESS_ENV) is not in the docker group — add them: usermod -aG docker $name"
+    command -v runuser > /dev/null || refuse "runuser not found (util-linux)"
+    M_USER=$name M_UID=$puid M_GID=$pgid M_HOME=$home
+}
+
+# Host sources of the bind mounts with container path TARGET in compose
+# service SVC, one per line, relative ones resolved against $MD.
+bind_sources() {
+    local svc=$1 want=$2 src
+    awk -v svc="$svc" -v want="$want" '
+        function val(v) {
+            sub(/^[^:]*:[ \t]*/, "", v); sub(/[ \t]+$/, "", v)
+            gsub(/^["\047]|["\047]$/, "", v)
+            return v
+        }
+        /^[ \t]*(#|$)/ { next }
+        /^[^ ]/         { inup = 0; next }
+        /^  [^ ]/       { inup = ($0 == "  " svc ":" || $0 ~ ("^  " svc ":[ \t]+$")); src = ""; tgt = ""; next }
+        !inup           { next }
+        /^[ \t]*- /     { src = ""; tgt = "" }
+        { line = $0; sub(/^[ \t]*(- )?[ \t]*/, "", line) }
+        line ~ /^source:/ { src = val(line) }
+        line ~ /^target:/ { tgt = val(line) }
+        src != "" && tgt == want { print src; src = ""; tgt = "" }
+    ' "$COMPOSE_FILE" | while IFS= read -r src; do
+        case $src in
+            /*) printf '%s\n' "$src" ;;
+            *)  printf '%s\n' "$MD/${src#./}" ;;
+        esac
+    done
+}
+
+# Make the tree and the data dirs Malcolm's containers write to belong to
+# M_UID:M_GID, as in the rehearsal (a user-owned tree). The installer chowns
+# only config/; nginx/, scripts/, docker-compose.yml etc. stay root's. $MD is
+# skipped when every entry is already owned; a data dir is chowned -R only
+# while it is still root-owned (root created it), so a populated index is not
+# walked on every start. -h: symlinks (scripts/* -> control.py) are changed
+# themselves, never followed.
+own_for_malcolm() {
+    local owner="$M_UID:$M_GID" d dirs=""
+    if [ -f "$COMPOSE_FILE" ]; then
+        # Sorted, so a parent comes before its children: once the parent is
+        # chowned -R, a child is no longer root's and is skipped.
+        dirs=$( { bind_sources upload "$UPLOAD_TARGET"
+                  bind_sources pcap-monitor "$PCAP_TARGET"
+                  bind_sources opensearch "$INDEX_TARGET"; } | LC_ALL=C sort -u) ||
+            fail "cannot read the data-dir binds from $COMPOSE_FILE"
+        while IFS= read -r d; do
+            [ -n "$d" ] || continue
+            case $d in
+                /) refuse "a Malcolm bind source in $COMPOSE_FILE is / — not chowning it; nothing changed" ;;
+                /*) ;;
+                *) refuse "a Malcolm bind source resolved to a relative path ($d); nothing changed" ;;
+            esac
+        done <<< "$dirs"
+    fi
+    if [ -n "$(find "$MD" \( ! -uid "$M_UID" -o ! -gid "$M_GID" \) -print -quit)" ]; then
+        echo "chown -R $owner $MD (Malcolm's PUID/PGID, user $M_USER)"
+        chown -R -h "$owner" -- "$MD" || fail "chown -R $owner $MD failed"
+    fi
+    while IFS= read -r d; do
+        case $d in
+            ""|"$MD"|"$MD"/*) continue ;;   # empty, or covered by the $MD step
+        esac
+        [ -d "$d" ] || continue
+        [ "$(stat -c %u "$d")" = 0 ] || continue
+        echo "chown -R $owner $d (a Malcolm data dir, root-owned)"
+        chown -R -h "$owner" -- "$d" || fail "chown -R $owner $d failed"
+    done <<< "$dirs"
+}
+
+# Run a command as Malcolm's user with a clean identity: control.py's getpass
+# check reads LOGNAME/USER, which sudo set to root. The caller sets cwd and
+# stdin. runuser keeps the environment otherwise (DOCKER_HOST etc.).
+as_malcolm() {
+    runuser -u "$M_USER" -- env HOME="$M_HOME" USER="$M_USER" LOGNAME="$M_USER" "$@"
 }
 
 compose_cmd() {  # the compose command as an array, in COMPOSE
@@ -296,6 +427,7 @@ cmd_auth() {
         echo "already authenticated: $MD/nginx/htpasswd exists (use --force to redo)"
         return 0
     fi
+    malcolm_user
 
     local list img n
     list=$(image_list "$dir")
@@ -318,8 +450,9 @@ cmd_auth() {
     [[ $h_ssl == \$1\$* ]] || fail "openssl did not return an MD5-crypt hash"
     [[ $h_ht == \$2[aby]\$* ]] || fail "htpasswd did not return a bcrypt hash"
 
-    echo "running Malcolm's auth_setup for user $user (hashes only)"
-    (cd "$MD" && ./scripts/auth_setup --auth-noninteractive --auth-method basic \
+    own_for_malcolm
+    echo "running Malcolm's auth_setup as $M_USER for user $user (hashes only)"
+    (cd "$MD" && as_malcolm ./scripts/auth_setup --auth-noninteractive --auth-method basic \
         --auth-admin-username "$user" \
         --auth-admin-password-openssl "$h_ssl" --auth-admin-password-htpasswd "$h_ht" \
         --auth-generate-webcerts --auth-generate-fwcerts \
@@ -351,6 +484,10 @@ cmd_bind_loopback() {
     echo "backup: $bak"
     sed -E -i 's#^    - 0\.0\.0\.0:443:443(/tcp)?$#    - 127.0.0.1:8443:443\1#' "$COMPOSE_FILE" ||
         fail "sed on $COMPOSE_FILE failed; restore with: cp -p $bak $COMPOSE_FILE"
+    # sed -i writes a new file; give it back the original's owner (Malcolm's
+    # PUID once auth/start have run) -- the backup was taken with cp -p.
+    chown --reference="$bak" -- "$COMPOSE_FILE" ||
+        fail "cannot restore the owner of $COMPOSE_FILE; restore with: cp -p $bak $COMPOSE_FILE"
     open=$(grep -cE "$OPEN_RE" "$COMPOSE_FILE" || true)
     if [ "$open" -ne 0 ] || ! grep -qE "$LOOP_RE" "$COMPOSE_FILE"; then
         fail "rebind did not take; restore with: cp -p $bak $COMPOSE_FILE"
@@ -380,8 +517,10 @@ cmd_start() {
     # scripts/start is control.py, which tails logs forever after starting
     # unless -q/--quiet ("Don't show logs as part of start/stop operations").
     read -r -a start <<< "${MALCOLM_START:-./scripts/start --quiet}"
-    echo "starting Malcolm with its own start script"
-    (cd "$MD" && "${start[@]}") < /dev/null || fail "Malcolm's start script failed"
+    malcolm_user
+    own_for_malcolm
+    echo "starting Malcolm with its own start script, as $M_USER"
+    (cd "$MD" && as_malcolm "${start[@]}") < /dev/null || fail "Malcolm's start script failed"
     echo "PASS    start script returned 0 (now run: health)"
 }
 
@@ -459,30 +598,11 @@ cmd_health() {
 # a directory.
 upload_dir() {
     local srcs n src
-    srcs=$(awk -v want="$UPLOAD_TARGET" '
-        function val(v) {
-            sub(/^[^:]*:[ \t]*/, "", v); sub(/[ \t]+$/, "", v)
-            gsub(/^["\047]|["\047]$/, "", v)
-            return v
-        }
-        /^[ \t]*(#|$)/ { next }
-        /^[^ ]/         { inup = 0; next }
-        /^  [^ ]/       { inup = ($0 ~ /^  upload:[ \t]*$/); src = ""; tgt = ""; next }
-        !inup           { next }
-        /^[ \t]*- /     { src = ""; tgt = "" }
-        { line = $0; sub(/^[ \t]*(- )?[ \t]*/, "", line) }
-        line ~ /^source:/ { src = val(line) }
-        line ~ /^target:/ { tgt = val(line) }
-        src != "" && tgt == want { print src; src = ""; tgt = "" }
-    ' "$COMPOSE_FILE") || refuse "cannot read $COMPOSE_FILE"
+    srcs=$(bind_sources upload "$UPLOAD_TARGET") || refuse "cannot read $COMPOSE_FILE"
     n=$(grep -c . <<< "$srcs" || true)
     [ "$n" -eq 1 ] ||
         refuse "expected one bind mount with target $UPLOAD_TARGET in the upload: service of $COMPOSE_FILE, found $n — cannot tell where Malcolm takes uploads"
     src=$srcs
-    case $src in
-        /*) ;;
-        *)  src="$MD/${src#./}" ;;
-    esac
     [ -d "$src" ] ||
         refuse "upload directory $src (from the upload: service in $COMPOSE_FILE) does not exist — is Malcolm installed and started?"
     printf '%s\n' "$src"

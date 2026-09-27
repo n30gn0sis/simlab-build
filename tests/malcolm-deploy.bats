@@ -84,8 +84,13 @@ stub_docker_reporting() {
 #
 # These run the script on an ISOLATED PATH: stubs ($BIN) first, then a fixed
 # list of real read-only tools ($REAL). docker, python3, unzip, openssl, ss,
-# tcpdump, curl and id are stubs; Malcolm's own auth_setup and start are fake
-# scripts inside a fake MALCOLM_ROOT. State lives in $S:
+# tcpdump, curl, id, getent, runuser and chown are stubs; Malcolm's own
+# auth_setup and start are fake scripts inside a fake MALCOLM_ROOT that refuse
+# a root identity the way control.py does (LOGNAME/USER first, as getpass
+# reads them). md() runs the script with LOGNAME=USER=root, as sudo does. The
+# runuser stub records its argv and execs what follows `--` without changing
+# uid; chown records its argv and the path it "chowned" ($S/chowned), which
+# the stat stub then reports as owned by 1000. State lives in $S:
 #   $S/argv        every stub/fake call: "<name> <argv...>", one per line
 #   $S/stdin.*     what openssl / docker run / curl -K read on stdin
 #   $S/ps          what `docker compose ps` prints (Name State Health)
@@ -106,6 +111,11 @@ setup_deploy() {
     export MALCOLM_TMPDIR="$BATS_TEST_TMPDIR/tmp"
     export MALCOLM_POLL_SECS=0 VERIFY_CAPTURE_SECS=0 VERIFY_TIMEOUT=0
     export FAKE_UID=0
+    # Malcolm's user: process.env's PUID/PGID, its passwd entry, its groups;
+    # FAKE_DIR_OWNER is the uid stat reports for a data dir nobody chowned.
+    export FAKE_PASSWD='ubuntu:x:1000:1000:Ubuntu:/home/ubuntu:/bin/bash'
+    export FAKE_GROUPS='ubuntu adm docker'
+    export FAKE_DIR_OWNER=0
     MD="$MALCOLM_ROOT/malcolm"
     mkdir -p "$BIN" "$REAL" "$S" "$MALCOLM_TMPDIR"
     for t in bash env cat sed awk grep find sort head tr basename dirname sha256sum \
@@ -124,11 +134,21 @@ setup_deploy() {
     # real 26.08 render (default config: relative ./pcap/upload).
     compose_with_upload ./pcap/upload > "$S/compose.fixture"
 
-    stub id 'echo "$FAKE_UID"'
+    stub id 'case $1 in -nG) [ "$2" = "${FAKE_PASSWD%%:*}" ] && echo "$FAKE_GROUPS" ;; *) echo "$FAKE_UID" ;; esac'
+    stub getent 'echo "getent $*" >> "$S/argv"; [ "$1" = passwd ] || exit 2
+IFS=: read -r _ _ u _ <<< "$FAKE_PASSWD"; [ "$2" = "$u" ] || exit 2; echo "$FAKE_PASSWD"'
+    stub runuser 'echo "runuser $*" >> "$S/argv"
+[ "$1" = -u ] && [ -n "$2" ] && [ "$3" = -- ] || { echo "runuser stub: unexpected argv: $*" >&2; exit 64; }
+shift 3; exec "$@"'
+    stub chown 'echo "chown $*" >> "$S/argv"; for a; do :; done; echo "$a" >> "$S/chowned"'
     # The password file's owner as stat reports it. Tests run as whatever user
     # bats runs as; FAKE_PW_OWNER stands in for the real owner (default root).
     export FAKE_PW_OWNER=0
     stub stat 'if [ "$1 $2" = "-c %u %a" ]; then m=$("$REAL/stat" -c %a "$3") || exit 1; echo "$FAKE_PW_OWNER $m"; exit 0; fi
+if [ $# -eq 3 ] && [ "$1 $2" = "-c %u" ]; then
+    while IFS= read -r o; do case "$3/" in "$o"/*) echo 1000; exit 0 ;; esac; done < <(cat "$S/chowned" 2>/dev/null)
+    echo "$FAKE_DIR_OWNER"; exit 0
+fi
 exec "$REAL/stat" "$@"'
     stub unzip 'echo "unzip $*" >> "$S/argv"
 d=""; prev=""; for a; do [ "$prev" = -d ] && d=$a; prev=$a; done
@@ -138,6 +158,7 @@ mkdir -p "$d/installer" && echo "# fake installer" > "$d/install.py" && : > "$d/
 [ -f "$S/installer_noenv" ] && exit 0
 mkdir -p "$MALCOLM_ROOT/malcolm/config"
 echo "OPENSEARCH_JAVA_OPTS=-Xmx4g" > "$MALCOLM_ROOT/malcolm/config/opensearch.env"
+printf "PUID=1000\\nPGID=1000\\n" > "$MALCOLM_ROOT/malcolm/config/process.env"
 cp "$S/compose.fixture" "$MALCOLM_ROOT/malcolm/docker-compose.yml"'
     stub openssl 'echo "openssl $*" >> "$S/argv"; cat > "$S/stdin.openssl"; echo "\$1\$salt\$fakemd5hash"'
     stub docker 'echo "docker $*" >> "$S/argv"
@@ -175,12 +196,15 @@ bind_entry() {
 }
 
 # A compose file whose upload: service bind-mounts $1 as the upload dir.
-#   compose_with_upload SRC [UPLOAD_VOLUMES] [PCAP_MONITOR_VOLUMES]
+#   compose_with_upload SRC [UPLOAD_VOLUMES] [PCAP_MONITOR_VOLUMES] [INDEX_SRC]
 # The optional arguments replace the upload: / pcap-monitor: volume entries
-# (build them with bind_entry). pcap-monitor comes BEFORE upload:.
+# (build them with bind_entry). pcap-monitor comes BEFORE upload:. As in a real
+# render, pcap-monitor binds the upload dir's parent (pcapDir) to /pcap, and
+# opensearch binds INDEX_SRC (indexDir; default ./opensearch) to its data dir.
 compose_with_upload() {
     local uv=${2:-$(bind_entry "$1" "$UPLOAD_TARGET")}
-    local pv=${3:-$(bind_entry "$1" /pcap)}
+    local pv=${3:-$(bind_entry "$(dirname "$1")" /pcap)}
+    local iv; iv=$(bind_entry "${4:-./opensearch}" /usr/share/opensearch/data)
     cat <<EOF
 services:
   nginx-proxy:
@@ -195,12 +219,17 @@ $pv
 $uv
   arkime:
     image: x
+  opensearch:
+    image: x
+    volumes:
+$iv
 EOF
 }
 
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$BIN/$1"; chmod +x "$BIN/$1"; }
 
-md() { PATH="$TEST_PATH" "$SCRIPT" "$@" < /dev/null; }
+# As sudo runs it: LOGNAME and USER say root.
+md() { PATH="$TEST_PATH" LOGNAME=root USER=root "$SCRIPT" "$@" < /dev/null; }
 
 calls() { [ -f "$S/argv" ] || { echo 0; return; }; grep -c "^$1 " "$S/argv" || true; }
 
@@ -221,18 +250,32 @@ bundle_full() {
     echo 'bundle compose' > "$BUNDLE/malcolm/docker-compose.yml"
 }
 
-# A configured tree: installer, .env, compose file, Malcolm's auth_setup + start.
+# A configured tree: installer, .env files (process.env with PUID/PGID, as the
+# installer writes it), compose file, Malcolm's auth_setup + start. The fakes
+# refuse a root identity as control.py's main does, and record the identity
+# they ran with in $S/<name>.id ("USER LOGNAME HOME").
 malcolm_tree() {
     mkdir -p "$MALCOLM_ROOT/scripts" "$MD/config" "$MD/scripts" "$MD/nginx" "$MD/pcap/upload" "$MD/zeek-logs"
     echo "# fake installer" > "$MALCOLM_ROOT/install.py"
     echo "X=1" > "$MD/config/opensearch.env"
+    printf 'PUID=1000\nPGID=1000\n' > "$MD/config/process.env"
     cp "$S/compose.fixture" "$MD/docker-compose.yml"
-    printf '#!/usr/bin/env bash\necho "auth_setup $*" >> "$S/argv"; echo "$PWD" > "$S/auth_setup.cwd"
-u=""; prev=""; for a; do [ "$prev" = --auth-admin-username ] && u=$a; prev=$a; done
-echo "$u:\\$2y\\$10\\$x" > nginx/htpasswd\n' > "$MD/scripts/auth_setup"
-    printf '#!/usr/bin/env bash\necho "start $*" >> "$S/argv"; echo "$PWD" > "$S/start.cwd"
-printf "%%s\\n" "malcolm-arkime-1 running starting" > "$S/ps"\n' > "$MD/scripts/start"
-    chmod +x "$MD/scripts/auth_setup" "$MD/scripts/start"
+    fake_control auth_setup 'u=""; prev=""; for a; do [ "$prev" = --auth-admin-username ] && u=$a; prev=$a; done
+echo "$u:\$2y\$10\$x" > nginx/htpasswd'
+    fake_control start 'printf "%s\n" "malcolm-arkime-1 running starting" > "$S/ps"'
+}
+
+# fake_control NAME [BODY]: $MD/scripts/NAME, guarded as control.py's main is:
+# it refuses when getpass would say root (LOGNAME, USER, LNAME, USERNAME).
+fake_control() {
+    cat > "$MD/scripts/$1" <<EOF
+#!/usr/bin/env bash
+who=\${LOGNAME:-\${USER:-\${LNAME:-\${USERNAME:-}}}}
+if [ "\$who" = root ] || [ -z "\$who" ]; then echo "Exception: $1 should not be run as root" >&2; exit 1; fi
+echo "$1 \$*" >> "\$S/argv"; echo "\$PWD" > "\$S/$1.cwd"; echo "\$USER \$LOGNAME \$HOME" > "\$S/$1.id"
+${2:-}
+EOF
+    chmod +x "$MD/scripts/$1"
 }
 
 healthy_ps() {
@@ -542,6 +585,34 @@ good_ss() {
     no_secret_leak
 }
 
+@test "auth runs auth_setup as the PUID user via runuser, identity clean, after chowning the tree" {
+    bundle_full; malcolm_tree
+    run md auth "$BUNDLE" --password-file "$PWFILE"
+    echo "$output"; cat "$S/argv"
+    [ "$status" -eq 0 ]
+    grep -qxF 'getent passwd 1000' "$S/argv"
+    grep -q '^runuser -u ubuntu -- env HOME=/home/ubuntu USER=ubuntu LOGNAME=ubuntu ./scripts/auth_setup --auth-noninteractive ' "$S/argv"
+    [ "$(calls runuser)" -eq 1 ]
+    [ "$(cat "$S/auth_setup.id")" = "ubuntu ubuntu /home/ubuntu" ]
+    [ "$(cat "$S/auth_setup.cwd")" = "$MD" ]
+    # The tree is chowned to PUID:PGID once, before auth_setup runs; the
+    # default binds are relative (inside $MD), so nothing else is.
+    [ "$(calls chown)" -eq 1 ]
+    c=$(grep -nxF "chown -R -h 1000:1000 -- $MD" "$S/argv" | cut -d: -f1)
+    a=$(grep -n '^auth_setup ' "$S/argv" | cut -d: -f1)
+    [ -n "$c" ]; [ -n "$a" ]; [ "$c" -lt "$a" ]
+    no_secret_leak
+}
+
+@test "auth: control.py's root guard is live in the fake (sudo's LOGNAME=root refuses)" {
+    # Proves the identity assertions above can fail: run the fake directly
+    # with the identity sudo leaves behind.
+    malcolm_tree
+    run env LOGNAME=root USER=root S="$S" "$MD/scripts/auth_setup" --x
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"should not be run as root"* ]]
+}
+
 # ── bind-loopback ────────────────────────────────────────────────────────────
 
 @test "bind-loopback rewrites the one mapping and keeps a timestamped backup" {
@@ -682,6 +753,185 @@ good_ss() {
     run md start
     [ "$status" -ne 0 ]
     [[ "$output" == *"FAIL"* ]]
+}
+
+@test "start runs Malcolm's start as the PUID user via runuser, after chowning the tree" {
+    malcolm_tree; md bind-loopback; rm -f "$S/argv" "$S/chowned"
+    run md start
+    echo "$output"; cat "$S/argv"
+    [ "$status" -eq 0 ]
+    grep -qxF 'runuser -u ubuntu -- env HOME=/home/ubuntu USER=ubuntu LOGNAME=ubuntu ./scripts/start --quiet' "$S/argv"
+    [ "$(cat "$S/start.id")" = "ubuntu ubuntu /home/ubuntu" ]
+    [ "$(cat "$S/start.cwd")" = "$MD" ]
+    c=$(grep -nxF "chown -R -h 1000:1000 -- $MD" "$S/argv" | cut -d: -f1)
+    b=$(grep -n '^start ' "$S/argv" | cut -d: -f1)
+    [ -n "$c" ]; [ -n "$b" ]; [ "$c" -lt "$b" ]
+}
+
+@test "start runs MALCOLM_START as the PUID user too" {
+    malcolm_tree; md bind-loopback
+    stub mystart 'echo "mystart $* as ${LOGNAME:-}" >> "$S/argv"'
+    MALCOLM_START="mystart --logs false" run md start
+    [ "$status" -eq 0 ]
+    grep -qxF 'runuser -u ubuntu -- env HOME=/home/ubuntu USER=ubuntu LOGNAME=ubuntu mystart --logs false' "$S/argv"
+    grep -qxF 'mystart --logs false as ubuntu' "$S/argv"
+}
+
+# ── Malcolm's user: PUID/PGID from config/process.env ────────────────────────
+
+# refuses_both PATTERN: auth and start both REFUSE with PATTERN, and neither
+# chowns anything, drops to any user, or runs Malcolm's tools or the hashers.
+refuses_both() {
+    run md auth "$BUNDLE" --password-file "$PWFILE"
+    echo "auth: $output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*$1* ]]
+    run md start
+    echo "start: $output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*$1* ]]
+    [ "$(calls runuser)" -eq 0 ]; [ "$(calls chown)" -eq 0 ]
+    [ "$(calls auth_setup)" -eq 0 ]; [ "$(calls start)" -eq 0 ]
+    [ "$(calls openssl)" -eq 0 ]
+    ! grep -q '^docker run' "$S/argv" || false
+    no_secret_leak
+}
+
+# A bound, configured tree with a clean record.
+bound_tree() { bundle_full; malcolm_tree; md bind-loopback; rm -f "$S/argv" "$S/chowned"; }
+
+@test "PUID=0 in process.env is refused by auth and start" {
+    bound_tree
+    printf 'PUID=0\nPGID=0\n' > "$MD/config/process.env"
+    refuses_both "PUID in $MD/config/process.env is 0"
+}
+
+@test "a missing process.env is refused by auth and start" {
+    bound_tree
+    rm "$MD/config/process.env"
+    refuses_both "no $MD/config/process.env"
+}
+
+@test "a PUID user outside the docker group is refused, with the usermod fix" {
+    bound_tree
+    FAKE_GROUPS='ubuntu adm'
+    refuses_both "not in the docker group — add them: usermod -aG docker ubuntu"
+}
+
+@test "a PUID with no passwd entry is refused" {
+    bound_tree
+    FAKE_PASSWD='someone:x:1001:1001::/home/someone:/bin/bash'
+    refuses_both "PUID 1000 (from $MD/config/process.env) has no passwd entry"
+}
+
+@test "a missing, non-numeric or repeated PUID, or a missing PGID, is refused" {
+    bound_tree
+    printf 'PGID=1000\n' > "$MD/config/process.env"
+    refuses_both "PUID in $MD/config/process.env is missing"
+    printf 'PUID=ubuntu\nPGID=1000\n' > "$MD/config/process.env"
+    refuses_both "PUID in $MD/config/process.env is missing, repeated or not a number ('ubuntu')"
+    printf 'PUID=1000\nPUID=1001\nPGID=1000\n' > "$MD/config/process.env"
+    refuses_both "not a number ('1000 1001')"
+    printf 'PUID=1000\n' > "$MD/config/process.env"
+    refuses_both "PGID in $MD/config/process.env is missing"
+}
+
+@test "a quoted PUID/PGID with CRLF endings among other settings is accepted" {
+    bound_tree
+    printf 'MALCOLM_X=1\r\nPUID="1000"\r\nPGID=1000\r\nZ=2\r\n' > "$MD/config/process.env"
+    run md start
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q '^runuser -u ubuntu -- ' "$S/argv"
+}
+
+@test "the \$MD chown is skipped when every entry is already PUID:PGID" {
+    bound_tree
+    # find -uid ... -print -quit finding nothing = the tree is already owned.
+    stub find 'case " $* " in *" -uid "*) exit 0 ;; esac; exec "$REAL/find" "$@"'
+    run md start
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(calls chown)" -eq 0 ]
+    [ "$(calls start)" -eq 1 ]
+}
+
+# The R770 shape: pcapDir /data/pcap/raw, indexDir /data/index, absolute.
+absolute_binds() {
+    DATA="$BATS_TEST_TMPDIR/data"
+    mkdir -p "$DATA/pcap/raw/upload" "$DATA/index"
+    compose_with_upload "$DATA/pcap/raw/upload" "" "" "$DATA/index" > "$MD/docker-compose.yml"
+    md bind-loopback; rm -f "$S/argv" "$S/chowned"
+}
+
+@test "root-owned pcapDir and indexDir (from the compose binds) are chowned -R before start" {
+    bundle_full; malcolm_tree; absolute_binds
+    grep -qxF "      source: $DATA/pcap/raw" "$MD/docker-compose.yml"
+    grep -qxF "      source: $DATA/index" "$MD/docker-compose.yml"
+    run md start
+    echo "$output"; cat "$S/argv"
+    [ "$status" -eq 0 ]
+    grep -qxF "chown -R -h 1000:1000 -- $DATA/pcap/raw" "$S/argv"
+    grep -qxF "chown -R -h 1000:1000 -- $DATA/index" "$S/argv"
+    # The upload dir is inside pcapDir: covered by its parent, not chowned again.
+    ! grep -qxF "chown -R -h 1000:1000 -- $DATA/pcap/raw/upload" "$S/argv" || false
+    [ "$(calls chown)" -eq 3 ]
+    b=$(grep -n '^start ' "$S/argv" | cut -d: -f1)
+    last=$(grep -n '^chown ' "$S/argv" | tail -1 | cut -d: -f1)
+    [ "$last" -lt "$b" ]
+}
+
+@test "the data dirs are chowned before auth_setup as well" {
+    bundle_full; malcolm_tree; absolute_binds
+    run md auth "$BUNDLE" --password-file "$PWFILE"
+    [ "$status" -eq 0 ]
+    a=$(grep -n '^auth_setup ' "$S/argv" | cut -d: -f1)
+    i=$(grep -nxF "chown -R -h 1000:1000 -- $DATA/index" "$S/argv" | cut -d: -f1)
+    [ -n "$i" ]; [ "$i" -lt "$a" ]
+    no_secret_leak
+}
+
+@test "data dirs no longer root-owned, or absent, are left alone" {
+    bundle_full; malcolm_tree; absolute_binds
+    FAKE_DIR_OWNER=1000
+    run md start
+    [ "$status" -eq 0 ]
+    [ "$(calls chown)" -eq 1 ]
+    grep -qxF "chown -R -h 1000:1000 -- $MD" "$S/argv"
+    rm -f "$S/argv" "$S/chowned"; FAKE_DIR_OWNER=0; rm -r "$DATA"
+    printf '' > "$S/ps"
+    run md start
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(calls chown)" -eq 1 ]
+}
+
+@test "a data bind source of / is refused before anything is chowned" {
+    bundle_full; malcolm_tree
+    compose_with_upload "$MD/pcap/upload" "" "" / > "$MD/docker-compose.yml"
+    md bind-loopback; rm -f "$S/argv" "$S/chowned"
+    run md start
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"is / — not chowning it"* ]]
+    [ "$(calls chown)" -eq 0 ]; [ "$(calls runuser)" -eq 0 ]
+}
+
+@test "bind-loopback gives the edited compose file back its owner" {
+    malcolm_tree
+    run md bind-loopback
+    [ "$status" -eq 0 ]
+    bak=$(ls "$MD"/docker-compose.yml.bak-*)
+    grep -qxF "chown --reference=$bak -- $MD/docker-compose.yml" "$S/argv"
+    [ "$(calls runuser)" -eq 0 ]
+}
+
+@test "configure runs install.py as root, not via runuser" {
+    bundle_full; md install "$BUNDLE"
+    run md configure "$CONF"
+    [ "$status" -eq 0 ]
+    [ "$(calls runuser)" -eq 0 ]
+    grep -qxF 'PUID=1000' "$MD/config/process.env"
 }
 
 # ── health ───────────────────────────────────────────────────────────────────

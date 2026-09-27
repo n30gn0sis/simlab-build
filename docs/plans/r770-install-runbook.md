@@ -301,6 +301,30 @@ sudo ./site/scripts/r770-malcolm-deploy.sh configure \
 The installer extracts Malcolm to `/opt/malcolm/malcolm` and sizes the JVM
 heaps to the host by itself; the imported config then sets them (see 8.3).
 
+**Malcolm's own tools run as the PUID user, never as root.** `auth_setup`,
+`start` and the rest of `malcolm/scripts/` are symlinks to `control.py`, which
+refuses root — including a root *identity*: `getpass.getuser()` reads
+`LOGNAME`/`USER`, which `sudo` sets to root (the 26.08 proof run failed with
+`Exception: auth_setup should not be run as root`). `install.py` (configure)
+is fine as root. The user is the one whose `PUID`/`PGID` configure wrote into
+`malcolm/config/process.env` — the file the containers use — and it **must be
+in the `docker` group**. You still run the script with `sudo`; for `auth` and
+`start` it drops to that user itself (`runuser -u <user> -- env HOME=… USER=…
+LOGNAME=…`, in `malcolm/`). Before either, it chowns `/opt/malcolm/malcolm` to
+`PUID:PGID` (skipped when already owned — the installer chowns only `config/`)
+and `chown -R`s the host data dirs the compose binds name — the upload dir,
+`pcapDir` (pcap-monitor's `/pcap` source, `/data/pcap/raw` here) and
+`indexDir` (opensearch's data source, `/data/index`) — while they are still
+root-owned. It refuses, changing nothing, if `process.env` is missing, `PUID`
+or `PGID` is missing or not a number, `PUID` is 0, the uid has no passwd
+entry, or the user is not in `docker` (fix: `sudo usermod -aG docker <user>`).
+Check before `auth`:
+
+```bash
+grep -E '^P[UG]ID=' /opt/malcolm/malcolm/config/process.env
+id -nG "$(getent passwd "$(sed -n 's/^PUID=//p' /opt/malcolm/malcolm/config/process.env)" | cut -d: -f1)"   # must list docker
+```
+
 `install` on a box that already has Malcolm only ever confirms it: if the
 bundled `malcolm-*-docker_install.zip` has the sha256 recorded at install time
 (`/opt/malcolm/.r770-deploy/install.sha256`) it reports "already installed" and
@@ -338,7 +362,8 @@ MD5-crypt hash (`--auth-admin-password-openssl`) is briefly visible to local
 users in the process list. The htpasswd entry uses bcrypt. Run it on a box with
 no other interactive users.
 
-`auth` is a no-op once `nginx/htpasswd` exists. `--force` re-runs it with
+`auth_setup` runs as the PUID user (8.1), so the files it writes are that
+user's. `auth` is a no-op once `nginx/htpasswd` exists. `--force` re-runs it with
 **every** `--auth-generate-*` flag, so on an initialized stack it also
 regenerates the internal postgres, netbox, valkey, opensearch and keycloak
 credentials. It is not a password-change path; do not use it to rotate the
@@ -372,9 +397,11 @@ re-apply after every installer run — the installer regenerates the file, and a
 # `/tcp` suffix (both spellings are accepted; a bare sed for the `/tcp` form
 # silently no-ops on this file).
 sudo ./site/scripts/r770-malcolm-deploy.sh bind-loopback
+# bind-loopback edits the compose file as root and gives it back its owner.
 # start runs Malcolm's own ./scripts/start --quiet, not raw 'docker compose up':
 # control.py creates the keystore and touches files compose needs first, and
-# without --quiet it tails logs forever instead of returning.
+# without --quiet it tails logs forever instead of returning. It runs as the
+# PUID user from config/process.env (8.1), after the tree and data-dir chown.
 sudo ./site/scripts/r770-malcolm-deploy.sh start
 sudo ./site/scripts/r770-malcolm-deploy.sh health   # 27 services; arkime and logstash are last to go healthy
 sudo ./site/scripts/r770-malcolm-deploy.sh verify --password-file /root/analyst-pw

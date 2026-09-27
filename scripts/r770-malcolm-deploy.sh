@@ -53,10 +53,14 @@
 # (its copy in $STAMP_DIR); with no copy, any path strictly under /data except
 # /data/pcap. /, any top-level dir, /data and /data/pcap (the LV root holding
 # cases/ and archived/) are never allowed. Anything else refuses with nothing
-# changed. A missing data dir is created (its parent must exist: a missing
-# parent means storage is not mounted) so docker does not create it
+# changed. A data dir outside $MD whose filesystem is in fstab but not
+# mounted is refused with nothing changed: the longest `findmnt --fstab`
+# target that is the dir or an ancestor of it must pass `mountpoint -q` (an
+# unmounted LV mountpoint is an empty root-owned dir, so its existence proves
+# nothing). With no such fstab entry the dir is not checked. A missing data
+# dir is then created (its parent must exist) so docker does not create it
 # root-owned. $MD is chowned -R unless every entry already is PUID:PGID; a
-# data dir is chowned -R when it or a direct child is not the PUID's, so a
+# data dir is chowned -R when it or a direct child is not PUID:PGID, so a
 # populated index is not walked on every start. install.py (configure) runs
 # as root, as Malcolm allows.
 #
@@ -255,13 +259,32 @@ check_data_dir() {
     refuse "Malcolm data dir $d is neither under $MD nor pcapDir, pcapDir/upload or indexDir of the imported config ($CONFIG_COPY) — not chowning it; nothing changed"
 }
 
+# Refuse (nothing has changed yet) when data dir D, outside $MD, lies on a
+# filesystem /etc/fstab names that is not mounted. An unmounted LV mountpoint
+# is an empty root-owned dir, so "the parent exists" proves nothing: mkdir and
+# chown would land on the root filesystem, under the mount. FSTAB: the targets
+# of `findmnt --fstab`, one per line; the longest one that is D or an ancestor
+# of D is the one that must be mounted. No such entry: nothing to check.
+check_mounted() {
+    local d=$1 fstab=$2 t best=""
+    case $d in "$MD"/?*) return 0 ;; esac
+    while IFS= read -r t; do
+        case $t in /*) ;; *) continue ;; esac   # swap's "none", blanks
+        case $d/ in "${t%/}"/*) ;; *) continue ;; esac
+        [ "${#t}" -gt "${#best}" ] && best=$t
+    done <<< "$fstab"
+    [ -n "$best" ] || return 0
+    mountpoint -q -- "$best" ||
+        refuse "Malcolm data dir $d lies under $best: $best is in fstab but not mounted — mount it first; nothing changed"
+}
+
 # Make the tree and the data dirs Malcolm's containers write to belong to
 # M_UID:M_GID, as in the rehearsal (a user-owned tree). The installer chowns
 # only config/; nginx/, scripts/, docker-compose.yml etc. stay root's. See the
 # header for the allowlist. -h: symlinks (scripts/* -> control.py) are changed
 # themselves, never followed.
 own_for_malcolm() {
-    local owner="$M_UID:$M_GID" d dirs="" named rc
+    local owner="$M_UID:$M_GID" d dirs="" named rc fstab
     if [ -f "$COMPOSE_FILE" ]; then
         # Sorted, so a parent comes before its children: it is created first,
         # and once it is chowned -R a child is already the PUID's and skipped.
@@ -277,9 +300,14 @@ own_for_malcolm() {
             2) named=fixed ;;
             *) refuse "cannot read pcapDir/indexDir from $CONFIG_COPY; nothing changed" ;;
         esac
+        if ! command -v findmnt > /dev/null || ! command -v mountpoint > /dev/null; then
+            refuse "findmnt and mountpoint (util-linux) are needed to check the data dirs' storage is mounted; nothing changed"
+        fi
+        fstab=$(findmnt --fstab -n -o TARGET 2>/dev/null || true)
         while IFS= read -r d; do
             [ -n "$d" ] || continue
             check_data_dir "$d" "$named"
+            check_mounted "$d" "$fstab"
             # A missing dir is created below; a missing parent (one that is not
             # itself a data dir created first) means storage is not mounted.
             [ -e "$d" ] || [ -d "$(dirname "$d")" ] || grep -qxF -- "$(dirname "$d")" <<< "$dirs" ||
@@ -303,8 +331,8 @@ own_for_malcolm() {
         esac
         [ -d "$d" ] || continue
         # The dir itself or a direct child (root-owned subdirs docker or an
-        # earlier root run left) not the PUID's: walk it. Else leave it.
-        [ -n "$(find "$d" -maxdepth 1 ! -uid "$M_UID" -print -quit)" ] || continue
+        # earlier root run left) not PUID:PGID: walk it. Else leave it.
+        [ -n "$(find "$d" -maxdepth 1 \( ! -uid "$M_UID" -o ! -gid "$M_GID" \) -print -quit)" ] || continue
         echo "chown -R $owner $d (a Malcolm data dir, not all the PUID's)"
         chown -R -h "$owner" -- "$d" || fail "chown -R $owner $d failed"
     done <<< "$dirs"
@@ -512,10 +540,10 @@ cmd_configure() {
     abs="$(cd "$(dirname "$json")" && pwd)/$(basename "$json")"
     want=$(sha_of "$abs") || fail "cannot hash $abs"
     if have_env_files && [ "$(cat "$STAMP_DIR/configure.sha256" 2>/dev/null || true)" = "$want" ]; then
-        # A stamp from before the copy was kept: keep it now (same sha256).
-        if [ ! -f "$CONFIG_COPY" ]; then
+        # A stamp from before the copy was kept, or a copy since altered:
+        # (re)write it from this config, whose sha256 the stamp already holds.
+        cmp -s -- "$abs" "$CONFIG_COPY" ||
             cp "$abs" "$CONFIG_COPY" || fail "cannot keep a copy of $abs in $CONFIG_COPY"
-        fi
         echo "already configured from this config (sha256 $want)"
         return 0
     fi

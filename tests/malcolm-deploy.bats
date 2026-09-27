@@ -128,7 +128,7 @@ setup_deploy() {
     # (default FAKE_DIR_OWNER).
     echo "1000 $HOMEU" > "$S/owners"
     for t in bash env cat sed awk grep find sort head tr basename dirname sha256sum \
-             stat mkdir cp mv chmod rm date wc mktemp sleep timeout realpath; do
+             stat mkdir cp mv chmod rm date wc mktemp sleep timeout realpath cmp; do
         p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$REAL/$t"
     done
     TEST_PATH="$BIN:$REAL"
@@ -159,16 +159,35 @@ if [ $# -eq 3 ] && [ "$1 $2" = "-c %u" ]; then
     while read -r u p; do [ "$3" = "$p" ] && { echo "$u"; exit 0; }; done < <(cat "$S/owners" 2>/dev/null)
     echo "$FAKE_DIR_OWNER"; exit 0
 fi
+if [ $# -eq 3 ] && [ "$1 $2" = "-c %g" ]; then
+    while IFS= read -r o; do case "$3/" in "$o"/*) echo 1000; exit 0 ;; esac; done < <(cat "$S/chowned" 2>/dev/null)
+    while read -r g p; do [ "$3" = "$p" ] && { echo "$g"; exit 0; }; done < <(cat "$S/gowners" 2>/dev/null)
+    while read -r u p; do [ "$3" = "$p" ] && { echo "$u"; exit 0; }; done < <(cat "$S/owners" 2>/dev/null)
+    echo "${FAKE_DIR_GID:-$FAKE_DIR_OWNER}"; exit 0
+fi
 exec "$REAL/stat" "$@"'
-    # The script's data-dir ownership probe (find D -maxdepth 1 ! -uid U
-    # -print -quit), answered from the stat stub's view of ownership.
-    stub find 'if [ $# -eq 8 ] && [ "$2 $3 $4 $5 $7 $8" = "-maxdepth 1 ! -uid -print -quit" ]; then
+    # $S/gowners: "<gid> <path>" -- a group stat reports that differs from the
+    # owner's (default: the gid follows $S/owners / FAKE_DIR_OWNER).
+    export FAKE_DIR_GID=""
+    # The script's data-dir ownership probe (find D -maxdepth 1 \( ! -uid U -o
+    # ! -gid G \) -print -quit), answered from the stat stub's view of ownership.
+    stub find 'if [ $# -eq 14 ] && [ "$2 $3 $4 $5 $6 $8 $9 ${10} ${12} ${13} ${14}" = "-maxdepth 1 ( ! -uid -o ! -gid ) -print -quit" ]; then
     "$REAL/find" "$1" -maxdepth 1 | while IFS= read -r e; do
-        [ "$(stat -c %u "$e")" = "$6" ] || { echo "$e"; break; }
+        if [ "$(stat -c %u "$e")" != "$7" ] || [ "$(stat -c %g "$e")" != "${11}" ]; then echo "$e"; break; fi
     done
     exit 0
 fi
 exec "$REAL/find" "$@"'
+    # fstab and mounts: $S/fstab holds the `findmnt --fstab -n -o TARGET`
+    # lines (default: none, as on a host whose data dirs are on /), $S/mounted
+    # the targets mountpoint -q accepts.
+    stub findmnt 'echo "findmnt $*" >> "$S/argv"
+[ "$*" = "--fstab -n -o TARGET" ] || { echo "findmnt stub: unexpected argv: $*" >&2; exit 64; }
+[ -s "$S/fstab" ] || exit 1
+cat "$S/fstab"'
+    stub mountpoint 'echo "mountpoint $*" >> "$S/argv"
+[ "$1 $2" = "-q --" ] || { echo "mountpoint stub: unexpected argv: $*" >&2; exit 64; }
+grep -qxF -- "$3" "$S/mounted" 2>/dev/null'
     stub unzip 'echo "unzip $*" >> "$S/argv"
 d=""; prev=""; for a; do [ "$prev" = -d ] && d=$a; prev=$a; done
 [ -f "$S/zip_empty" ] && exit 0
@@ -1047,6 +1066,84 @@ absolute_binds() {
     [ "$(calls chown)" -eq 0 ]; [ "$(calls runuser)" -eq 0 ]
 }
 
+# The R770 shape with /data an fstab LV: $DATA (the stand-in for /data) and /
+# are fstab targets. An unmounted LV mountpoint is an empty root-owned dir.
+fstab_data() { printf '%s\n' / "$DATA" none > "$S/fstab"; }
+
+@test "data dirs on an fstab filesystem that is mounted are created and chowned" {
+    bundle_full; malcolm_tree; absolute_binds
+    fstab_data; printf '%s\n' / "$DATA" > "$S/mounted"
+    rmdir "$DATA/index"
+    run md start
+    echo "$output"; cat "$S/argv"
+    [ "$status" -eq 0 ]
+    # The longest fstab target over each dir is the one checked, never /.
+    grep -qxF "mountpoint -q -- $DATA" "$S/argv"
+    ! grep -qxF "mountpoint -q -- /" "$S/argv" || false
+    [ -d "$DATA/index" ]
+    grep -qxF "chown -R -h 1000:1000 -- $DATA/index" "$S/argv"
+    [ "$(calls start)" -eq 1 ]
+}
+
+@test "a data dir on an fstab filesystem that is NOT mounted is refused: no mkdir, no chown" {
+    bundle_full; malcolm_tree; absolute_binds
+    # The unmounted mountpoint: $DATA exists, empty but for what the old
+    # "missing parent" check would pass -- index's parent is there.
+    rm -r "$DATA/pcap"; rmdir "$DATA/index"
+    mkdir -p "$DATA/pcap/raw"
+    fstab_data; echo / > "$S/mounted"
+    run md start
+    echo "$output"; cat "$S/argv"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"$DATA is in fstab but not mounted"*"nothing changed"* ]]
+    [[ "$output" != *"mkdir "* ]]
+    [ ! -e "$DATA/index" ]; [ ! -e "$DATA/pcap/raw/upload" ]
+    [ "$(calls chown)" -eq 0 ]; [ "$(calls runuser)" -eq 0 ]; [ "$(calls start)" -eq 0 ]
+}
+
+@test "a data dir that is itself an unmounted fstab target is refused" {
+    bundle_full; malcolm_tree; absolute_binds
+    printf '%s\n' / "$DATA/index" > "$S/fstab"; echo / > "$S/mounted"
+    run md start
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"$DATA/index is in fstab but not mounted"* ]]
+    [ "$(calls chown)" -eq 0 ]
+}
+
+@test "data dirs with no fstab entry over them are created and chowned as before" {
+    bundle_full; malcolm_tree; absolute_binds
+    # A sibling path that merely shares the prefix is not an ancestor.
+    printf '%s\n' "${DATA}x" none > "$S/fstab"
+    rmdir "$DATA/index"
+    run md start
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(calls mountpoint)" -eq 0 ]
+    [ -d "$DATA/index" ]
+    grep -qxF "chown -R -h 1000:1000 -- $DATA/index" "$S/argv"
+}
+
+@test "the \$MD tree is never mount-checked" {
+    bound_tree
+    printf '%s\n' / "$MALCOLM_ROOT" > "$S/fstab"
+    run md start
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(calls mountpoint)" -eq 0 ]
+}
+
+@test "a data dir whose group alone is not the PGID gets chowned -R" {
+    bundle_full; malcolm_tree; absolute_binds
+    FAKE_DIR_OWNER=1000
+    echo "0 $DATA/index" > "$S/gowners"
+    run md start
+    echo "$output"; cat "$S/argv"
+    [ "$status" -eq 0 ]
+    grep -qxF "chown -R -h 1000:1000 -- $DATA/index" "$S/argv"
+    ! grep -qxF "chown -R -h 1000:1000 -- $DATA/pcap/raw" "$S/argv" || false
+}
+
 @test "a data bind source of / is refused before anything is chowned" {
     bundle_full; malcolm_tree
     compose_with_upload "$MD/pcap/upload" "" "" / > "$MD/docker-compose.yml"
@@ -1179,6 +1276,19 @@ config_copy() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"already configured"* ]]
     cmp "$CONF" "$STAMP/malcolm-config.json"
+}
+
+@test "an already-configured re-run rewrites a config copy that no longer matches the config" {
+    bundle_full; md install "$BUNDLE"
+    md configure "$CONF"
+    echo '{"configuration": {"pcapDir": "/etc"}}' > "$STAMP/malcolm-config.json"
+    rm -f "$S/argv"
+    run md configure "$CONF"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already configured"* ]]
+    cmp "$CONF" "$STAMP/malcolm-config.json"
+    [ "$(calls python3)" -eq 0 ]
 }
 
 @test "PUID/PGID refusals point to processUserId/processGroupId in the imported config, not process.env" {

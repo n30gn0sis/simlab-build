@@ -34,6 +34,7 @@ This is the definitive list of everything the air-gapped R770 build needs, what 
 | Ubuntu Server live ISO + SHA256SUMS(.gpg) | see pin block, `scripts/r770-offline-fetch.sh` | releases.ubuntu.com/noble | `isos/` | ~3.2 GB |
 | Curated .deb set + all deps + `dist-upgrade` security debs | resolved at build time | archive/security.ubuntu.com | `apt/` (with `Packages.gz` repo metadata) | ~3–6 GB |
 | Docker Engine debs (docker-ce, cli, containerd.io, buildx, compose) + repo GPG key | noble/stable current | download.docker.com | `apt/` | ~400 MB |
+| `ubridge` (GNS3 needs it for every link; not in Ubuntu's archive) | GNS3 PPA noble current | ppa:gns3/ppa (launchpad), key verified by apt | `apt/` | <1 MB |
 
 Curated package list (script is authoritative):
 

@@ -55,6 +55,7 @@ CHR_VER="${CHR_VER:-7.24.4}"                   # check https://mikrotik.com/down
 OPNSENSE_VER="${OPNSENSE_VER:-26.7}"           # check https://opnsense.org/download/
 OPNSENSE_MIRROR="${OPNSENSE_MIRROR:-https://pkg.opnsense.org/releases/mirror}"   # OPNsense's own; mirrors.dotsrc.org stopped answering (2026-09-24/25)
 FRR_IMG="${FRR_IMG:-quay.io/frrouting/frr:10.7.1}"    # check https://quay.io/repository/frrouting/frr?tab=tags
+STRONGSWAN_IMG="${STRONGSWAN_IMG:-docker.io/strongx509/strongswan:6.0.6}"  # check https://hub.docker.com/r/strongx509/strongswan/tags (the strongSwan project's own image; IKEv2 gateways for the kit's ipsec-ike scenario)
 
 MONITOR_IMAGES=(
     "docker.io/prom/prometheus:v3.14.0"
@@ -73,6 +74,7 @@ GNS3_NODE_IMAGES=(
     "docker.io/library/debian:stable-slim"
     "docker.io/nicolaka/netshoot:latest"
     "$FRR_IMG"
+    "$STRONGSWAN_IMG"
 )
 
 # .gns3a appliance definitions to grab from the GNS3 registry (free even when
@@ -203,6 +205,15 @@ fi
 note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
 
 # ── --list / --dry-run answer here, before any runtime is needed ─────────────
+# node_list_matches — the GNS3 docker-node archive's image-list.txt names exactly
+# GNS3_NODE_IMAGES, in order. The archive's filename carries no versions, so a
+# cached one (seeded from a previous bundle, or left by a same-day resume) is
+# reused only when its list proves it holds what the pins now name; otherwise
+# a newly pinned image (strongSwan, 2026-09-25) never reaches the bundle.
+node_list_matches() {
+    local f="$B/gns3/docker-nodes/image-list.txt"
+    [ -s "$f" ] && [ "$(cat "$f")" = "$(printf '%s\n' "${GNS3_NODE_IMAGES[@]}")" ]
+}
 stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker for --list; not proof
     case "$1" in
         preflight)  return 1 ;;
@@ -211,7 +222,7 @@ stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker fo
         malcolm)    ls "$B/malcolm"/malcolm-images-*.tar.gz >/dev/null 2>&1 ;;
         monitoring) [ -s "$B/docker/monitoring-images.tar.gz" ] ;;
         gns3)       [ -f "$B/.stamps/05-wheelhouse.done" ] && [ -s "$B/images/noble-server-cloudimg-amd64.img" ] ;;
-        appliances) [ -s "$B/gns3/docker-nodes/gns3-node-images.tar.gz" ] ;;
+        appliances) [ -s "$B/gns3/docker-nodes/gns3-node-images.tar.gz" ] && node_list_matches ;;
         enrichment) [ -s "$B/enrichment/oui.txt" ] ;;
         docs)       [ "$(ls "$B/.stamps"/08-docs-*.done 2>/dev/null | wc -l)" -ge 3 ] ;;
         manual)     [ -s "$B/dell/README.txt" ] ;;
@@ -440,7 +451,8 @@ ERROR: preflight failed. One of two proxy problems, in order of likelihood:
      sudo), then rerun; this script forwards them into every container.
 
   Also confirm the proxy allowlists: archive.ubuntu.com, security.ubuntu.com,
-  download.docker.com, registry-1.docker.io, auth.docker.io,
+  download.docker.com, ppa.launchpadcontent.net, api.launchpad.net, keyserver.ubuntu.com,
+  registry-1.docker.io, auth.docker.io,
   production.cloudflare.docker.com, ghcr.io, gcr.io, quay.io, pypi.org,
   files.pythonhosted.org, github.com, objects.githubusercontent.com,
   raw.githubusercontent.com, releases.ubuntu.com, cloud-images.ubuntu.com,
@@ -499,6 +511,14 @@ else
     apt-get -y --download-only -o Dir::Cache::archives=/out install \
         docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -qq
     cp /etc/apt/keyrings/docker.asc /out/docker-repo-key.asc
+    # uBridge from GNS3's own PPA -- the build's one recorded exception to the
+    # no-PPA rule (CLAUDE.md). GNS3 opens every link through it, the
+    # gns3-server wheelhouse does not carry it, and Ubuntu's archive has no
+    # ubridge. add-apt-repository installs the PPA's signing key, so apt
+    # verifies the download; only ubridge is taken from the PPA.
+    apt-get -y install -qq software-properties-common >/dev/null
+    add-apt-repository -y ppa:gns3/ppa >/dev/null
+    apt-get -y --download-only -o Dir::Cache::archives=/out install ubridge -qq
     # build local repo metadata
     apt-get -y install -qq dpkg-dev apt-utils >/dev/null
     cd /out && rm -f lock Release Packages && rm -rf partial
@@ -512,7 +532,7 @@ else
     # Written outside /out and moved in, so it does not hash a half-written copy of itself.
     apt-ftparchive release . > /tmp/Release && mv /tmp/Release Release
 "
-note "APT bundle: $(ls "$B/apt"/*.deb 2>/dev/null | wc -l) debs incl. docker-ce + dist-upgrade security debs; Packages, Packages.gz and Release generated (serve as a trivial repo)"
+note "APT bundle: $(ls "$B/apt"/*.deb 2>/dev/null | wc -l) debs incl. docker-ce, ubridge (GNS3 PPA) + dist-upgrade security debs; Packages, Packages.gz and Release generated (serve as a trivial repo)"
 stamp_done 01-apt.done
 fi
 }
@@ -731,9 +751,14 @@ fi
 
 # 6f. GNS3 docker-node images (containers used as nodes inside topologies)
 seed "$B/gns3/docker-nodes/gns3-node-images.tar.gz"
-if have "$B/gns3/docker-nodes/gns3-node-images.tar.gz"; then
-    note "GNS3 docker-node images: tarball already present — pulls/save skipped"
+seed "$B/gns3/docker-nodes/image-list.txt"
+if have "$B/gns3/docker-nodes/gns3-node-images.tar.gz" && node_list_matches; then
+    note "GNS3 docker-node images: tarball already present and its image-list.txt matches GNS3_NODE_IMAGES — pulls/save skipped"
 else
+    if [ -e "$B/gns3/docker-nodes/gns3-node-images.tar.gz" ]; then
+        note "GNS3 docker-node images: the cached tarball's image-list.txt does not match GNS3_NODE_IMAGES (missing or different) — rebuilding it"
+        rm -f "$B/gns3/docker-nodes/gns3-node-images.tar.gz" "$B/gns3/docker-nodes/image-list.txt"
+    fi
     NODE_PULLED=()
     for img in "${GNS3_NODE_IMAGES[@]}"; do
         if "$CTR" pull "$img"; then NODE_PULLED+=("$img"); else note "WARN: pull failed for $img — check the tag (FRR tags: quay.io/repository/frrouting/frr?tab=tags)"; fi
@@ -1012,6 +1037,7 @@ echo "==== [11/11] Manifest ===="
     echo "- OPNsense: ${OPNSENSE_VER}"
     echo "- VyOS rolling: ${VYOS_TAG:-unresolved}"
     echo "- FRR image: ${FRR_IMG}"
+    echo "- strongSwan image: ${STRONGSWAN_IMG}"
     echo "- Built: $(date -Is) on $(hostname) with ${CTR}"
     echo; echo "## Import order on the R770"
     echo "1. ./r770-bundle.sh verify .     (before anything else -- the verifier"

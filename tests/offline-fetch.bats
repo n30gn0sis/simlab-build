@@ -906,3 +906,45 @@ stub_docs_wget() {
     run apt-cache "${O[@]}" policy simlab-probe
     [[ "$output" == *"Candidate: 1.0"* ]]
 }
+
+# ── GNS3 docker-node archive — reused only when it holds exactly the pinned list ──
+# A cached gns3-node-images.tar.gz (seeded from a previous bundle, or left by a
+# same-day resume) was reused whenever it existed, so a newly pinned node image
+# (strongSwan) never reached the bundle while the notes claimed it had.
+
+load_node_fns() {
+    load_fn "$SCRIPT" node_list_matches || { echo "node_list_matches not found in $SCRIPT"; return 1; }
+    B="$BUNDLE_DIR"; mkdir -p "$B/gns3/docker-nodes"
+    GNS3_NODE_IMAGES=("docker.io/library/alpine:latest" "quay.io/frrouting/frr:0.0.0-fixture" "docker.io/strongx509/strongswan:0.0.0-fixture")
+}
+
+@test "node_list_matches: the archive's image-list.txt equal to GNS3_NODE_IMAGES, in order, matches" {
+    load_node_fns
+    printf '%s\n' "${GNS3_NODE_IMAGES[@]}" > "$B/gns3/docker-nodes/image-list.txt"
+    run node_list_matches
+    [ "$status" -eq 0 ]
+}
+
+@test "node_list_matches: a list missing a newly pinned image does not match" {
+    load_node_fns
+    printf '%s\n' "${GNS3_NODE_IMAGES[@]:0:2}" > "$B/gns3/docker-nodes/image-list.txt"
+    run node_list_matches
+    [ "$status" -ne 0 ]
+}
+
+@test "node_list_matches: no image-list.txt does not match" {
+    load_node_fns
+    run node_list_matches
+    [ "$status" -ne 0 ]
+}
+
+@test "stage 6f seeds the node image list, reuses the archive only when it matches, and drops a stale one" {
+    run grep -c 'seed "$B/gns3/docker-nodes/image-list.txt"' "$SCRIPT"
+    [ "$output" -ge 1 ]
+    run grep -cE 'if have "\$B/gns3/docker-nodes/gns3-node-images.tar.gz" && node_list_matches; then' "$SCRIPT"
+    [ "$output" -eq 1 ]
+    run grep -c 'rm -f "$B/gns3/docker-nodes/gns3-node-images.tar.gz" "$B/gns3/docker-nodes/image-list.txt"' "$SCRIPT"
+    [ "$output" -eq 1 ]
+    run grep -cE 'appliances\) +\[ -s "\$B/gns3/docker-nodes/gns3-node-images.tar.gz" \] && node_list_matches' "$SCRIPT"
+    [ "$output" -eq 1 ]
+}

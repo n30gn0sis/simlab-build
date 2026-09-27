@@ -47,12 +47,16 @@ This is a shared box. Router/firewall appliances cost real RAM (commonly 2–4 G
 
 The lab's best trick: traffic inside your GNS3 topology can be fed into Malcolm and analyzed exactly like real captured traffic — Zeek logs, Arkime search, dashboards, the lot.
 
-Mechanically, lab bridge segments are mirrored into a dedicated virtual feed that Malcolm captures alongside the physical TAPs (the capture ports themselves are never bridged into the lab — evidence and experiments stay separated). The workflow:
+Mechanically, one shared lab bridge (`br-lab`) is mirrored into a dedicated virtual feed that Malcolm captures alongside the physical TAPs (the capture ports themselves are never bridged into the lab — evidence and experiments stay separated). The workflow:
 
 1. Build and start your topology; get traffic flowing.
-2. Ask the operator to mirror the relevant lab segment (or use the documented mirror script once the build lands — exact procedure **TBD**).
+2. Put the segment you want analyzed on `br-lab`: add a GNS3 **Cloud** node and bind it through its **TAP** tab (not Ethernet) to a free `lab-tapN`; do the same with a second Cloud on the other end of the link. Everything crossing `br-lab` reaches Malcolm.
 3. Analyze in Malcolm. Filter by your lab's IP ranges or the mirror feed's interface/tag to isolate your traffic from the physical feeds.
 
 For a quick look that doesn't need the full Malcolm treatment, GNS3 also has built-in per-link capture (right-click a link → capture) which writes a PCAP you can pull back to Wireshark — handy for a single link, no mirror needed.
+
+## Ready-made scenarios
+
+The operator can run a scenario from the kit's pack instead of building one: `client-server`, `ipsec-esp`, `ipsec-ike`, `ospf` and `bgp`, each with its own address range and one link on `br-lab`. Ask for one by name; `r770-scenario.sh traffic` then generates a known window of traffic you can find in Malcolm by the scenario's range.
 
 Combine with [WAN emulation](wan.md) to watch how protocols behave under latency and loss — captured and analyzed like any other traffic.

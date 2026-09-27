@@ -318,6 +318,19 @@ new config: restart it with Malcolm's own `restart`, as the PUID user (8.1):
 `cd /opt/malcolm/malcolm && sudo -u <puid-user> env HOME=/opt/malcolm/malcolm ./scripts/restart --quiet`,
 then `health`.
 
+**ESP tracking — after every `configure`.** Malcolm's Arkime makes no
+session for ESP (IP protocol 50), and Zeek logs none, so IPsec payload traffic
+is invisible in Malcolm unless Arkime's `trackESP` is on. Malcolm has no config
+key for it, but Arkime 5 reads `ARKIME_<section>__<key>` from the environment,
+and `malcolm/config/arkime.env` is loaded by both Arkime containers. Every
+installer run rewrites the `config/*.env` files, so after each `configure`
+make sure `malcolm/config/arkime.env` holds exactly one line
+`ARKIME_default__trackESP=true` (append it, or replace another value; keep the
+file's owner and mode), then restart so the containers are recreated. Measured
+on staging VM 9770, 2026-09-26 (`state/inventory/staging-kit-rehearsal-2026-09-26.md`,
+finding 15); the R770 kit's `r770-malcolm-deploy.sh configure` does this
+itself. `site/scripts/r770-malcolm-deploy.sh` does not yet — a follow-up.
+
 **Malcolm's own tools run as the PUID user, never as root.** `auth_setup`,
 `start` and the rest of `malcolm/scripts/` are symlinks to `control.py`, which
 refuses root — including a root *identity*: `getpass.getuser()` reads

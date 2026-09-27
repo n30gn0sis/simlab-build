@@ -113,13 +113,22 @@ setup_deploy() {
     export FAKE_UID=0
     # Malcolm's user: process.env's PUID/PGID, its passwd entry, its groups;
     # FAKE_DIR_OWNER is the uid stat reports for a data dir nobody chowned.
-    export FAKE_PASSWD='ubuntu:x:1000:1000:Ubuntu:/home/ubuntu:/bin/bash'
+    # HOMEU: the user's home, which stat reports as theirs (via $S/owners).
+    export HOMEU="$BATS_TEST_TMPDIR/home/ubuntu"
+    export FAKE_PASSWD="ubuntu:x:1000:1000:Ubuntu:$HOMEU:/bin/bash"
     export FAKE_GROUPS='ubuntu adm docker'
     export FAKE_DIR_OWNER=0
     MD="$MALCOLM_ROOT/malcolm"
-    mkdir -p "$BIN" "$REAL" "$S" "$MALCOLM_TMPDIR"
+    # The fixed allowlist rule's data root: DATA stands in for /data.
+    export MALCOLM_DATA_ROOT="$BATS_TEST_TMPDIR/data"; DATA=$MALCOLM_DATA_ROOT
+    export STAMP="$MALCOLM_ROOT/.r770-deploy"
+    export REAL_PY; REAL_PY=$(command -v python3)
+    mkdir -p "$BIN" "$REAL" "$S" "$MALCOLM_TMPDIR" "$HOMEU"
+    # $S/owners: "<uid> <path>" -- what stat reports for a path nobody chowned
+    # (default FAKE_DIR_OWNER).
+    echo "1000 $HOMEU" > "$S/owners"
     for t in bash env cat sed awk grep find sort head tr basename dirname sha256sum \
-             stat mkdir cp mv chmod rm date wc mktemp sleep timeout; do
+             stat mkdir cp mv chmod rm date wc mktemp sleep timeout realpath; do
         p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$REAL/$t"
     done
     TEST_PATH="$BIN:$REAL"
@@ -147,9 +156,19 @@ shift 3; exec "$@"'
     stub stat 'if [ "$1 $2" = "-c %u %a" ]; then m=$("$REAL/stat" -c %a "$3") || exit 1; echo "$FAKE_PW_OWNER $m"; exit 0; fi
 if [ $# -eq 3 ] && [ "$1 $2" = "-c %u" ]; then
     while IFS= read -r o; do case "$3/" in "$o"/*) echo 1000; exit 0 ;; esac; done < <(cat "$S/chowned" 2>/dev/null)
+    while read -r u p; do [ "$3" = "$p" ] && { echo "$u"; exit 0; }; done < <(cat "$S/owners" 2>/dev/null)
     echo "$FAKE_DIR_OWNER"; exit 0
 fi
 exec "$REAL/stat" "$@"'
+    # The script's data-dir ownership probe (find D -maxdepth 1 ! -uid U
+    # -print -quit), answered from the stat stub's view of ownership.
+    stub find 'if [ $# -eq 8 ] && [ "$2 $3 $4 $5 $7 $8" = "-maxdepth 1 ! -uid -print -quit" ]; then
+    "$REAL/find" "$1" -maxdepth 1 | while IFS= read -r e; do
+        [ "$(stat -c %u "$e")" = "$6" ] || { echo "$e"; break; }
+    done
+    exit 0
+fi
+exec "$REAL/find" "$@"'
     stub unzip 'echo "unzip $*" >> "$S/argv"
 d=""; prev=""; for a; do [ "$prev" = -d ] && d=$a; prev=$a; done
 [ -f "$S/zip_empty" ] && exit 0
@@ -157,7 +176,8 @@ mkdir -p "$d/installer" && echo "# fake installer" > "$d/install.py" && : > "$d/
     # As Malcolm 26.08's installers behave: the top-level install.py extracts
     # the tarball into malcolm/ (tree installer included) and aborts if
     # malcolm/ already exists; the tree's scripts/install.py configures in place.
-    stub python3 'echo "python3 $*" >> "$S/argv"; echo "$PWD" > "$S/python3.cwd"
+    stub python3 '[ "$1" = -c ] && exec "$REAL_PY" "$@"   # the script reading JSON
+echo "python3 $*" >> "$S/argv"; echo "$PWD" > "$S/python3.cwd"
 md="$MALCOLM_ROOT/malcolm"
 case $1 in
   "$MALCOLM_ROOT/install.py"|"$MALCOLM_ROOT/scripts/install.py")
@@ -674,9 +694,9 @@ good_ss() {
     echo "$output"; cat "$S/argv"
     [ "$status" -eq 0 ]
     grep -qxF 'getent passwd 1000' "$S/argv"
-    grep -q '^runuser -u ubuntu -- env HOME=/home/ubuntu USER=ubuntu LOGNAME=ubuntu ./scripts/auth_setup --auth-noninteractive ' "$S/argv"
+    grep -qF "runuser -u ubuntu -- env HOME=$HOMEU USER=ubuntu LOGNAME=ubuntu ./scripts/auth_setup --auth-noninteractive " "$S/argv"
     [ "$(calls runuser)" -eq 1 ]
-    [ "$(cat "$S/auth_setup.id")" = "ubuntu ubuntu /home/ubuntu" ]
+    [ "$(cat "$S/auth_setup.id")" = "ubuntu ubuntu $HOMEU" ]
     [ "$(cat "$S/auth_setup.cwd")" = "$MD" ]
     # The tree is chowned to PUID:PGID once, before auth_setup runs; the
     # default binds are relative (inside $MD), so nothing else is.
@@ -843,8 +863,8 @@ good_ss() {
     run md start
     echo "$output"; cat "$S/argv"
     [ "$status" -eq 0 ]
-    grep -qxF 'runuser -u ubuntu -- env HOME=/home/ubuntu USER=ubuntu LOGNAME=ubuntu ./scripts/start --quiet' "$S/argv"
-    [ "$(cat "$S/start.id")" = "ubuntu ubuntu /home/ubuntu" ]
+    grep -qxF "runuser -u ubuntu -- env HOME=$HOMEU USER=ubuntu LOGNAME=ubuntu ./scripts/start --quiet" "$S/argv"
+    [ "$(cat "$S/start.id")" = "ubuntu ubuntu $HOMEU" ]
     [ "$(cat "$S/start.cwd")" = "$MD" ]
     c=$(grep -nxF "chown -R -h 1000:1000 -- $MD" "$S/argv" | cut -d: -f1)
     b=$(grep -n '^start ' "$S/argv" | cut -d: -f1)
@@ -856,7 +876,7 @@ good_ss() {
     stub mystart 'echo "mystart $* as ${LOGNAME:-}" >> "$S/argv"'
     MALCOLM_START="mystart --logs false" run md start
     [ "$status" -eq 0 ]
-    grep -qxF 'runuser -u ubuntu -- env HOME=/home/ubuntu USER=ubuntu LOGNAME=ubuntu mystart --logs false' "$S/argv"
+    grep -qxF "runuser -u ubuntu -- env HOME=$HOMEU USER=ubuntu LOGNAME=ubuntu mystart --logs false" "$S/argv"
     grep -qxF 'mystart --logs false as ubuntu' "$S/argv"
 }
 
@@ -974,19 +994,57 @@ absolute_binds() {
     no_secret_leak
 }
 
-@test "data dirs no longer root-owned, or absent, are left alone" {
+@test "data dirs already the PUID's, with PUID-owned children, are left alone" {
     bundle_full; malcolm_tree; absolute_binds
     FAKE_DIR_OWNER=1000
     run md start
     [ "$status" -eq 0 ]
     [ "$(calls chown)" -eq 1 ]
     grep -qxF "chown -R -h 1000:1000 -- $MD" "$S/argv"
-    rm -f "$S/argv" "$S/chowned"; FAKE_DIR_OWNER=0; rm -r "$DATA"
-    printf '' > "$S/ps"
+}
+
+@test "a root-owned child of a PUID-owned pcap dir gets the pcap dir chowned -R" {
+    bundle_full; malcolm_tree; absolute_binds
+    FAKE_DIR_OWNER=1000
+    mkdir "$DATA/pcap/raw/processed"; echo "0 $DATA/pcap/raw/processed" >> "$S/owners"
+    run md start
+    echo "$output"; cat "$S/argv"
+    [ "$status" -eq 0 ]
+    grep -qxF "chown -R -h 1000:1000 -- $DATA/pcap/raw" "$S/argv"
+    ! grep -qxF "chown -R -h 1000:1000 -- $DATA/index" "$S/argv" || false
+    b=$(grep -n '^start ' "$S/argv" | cut -d: -f1)
+    c=$(grep -nxF "chown -R -h 1000:1000 -- $DATA/pcap/raw" "$S/argv" | cut -d: -f1)
+    [ "$c" -lt "$b" ]
+}
+
+@test "missing upload and index dirs are created, then chowned, before start" {
+    bundle_full; malcolm_tree; absolute_binds
+    rmdir "$DATA/pcap/raw/upload" "$DATA/index"
+    # Everything that existed is already the PUID's; what mkdir (root) makes is root's.
+    FAKE_DIR_OWNER=1000
+    printf '0 %s\n' "$DATA/pcap/raw/upload" "$DATA/index" >> "$S/owners"
+    fake_control start '[ -d "$MALCOLM_DATA_ROOT/index" ] && [ -d "$MALCOLM_DATA_ROOT/pcap/raw/upload" ] && echo present > "$S/dirs_at_start"'
+    run md start
+    echo "$output"; cat "$S/argv"
+    [ "$status" -eq 0 ]
+    [ -d "$DATA/pcap/raw/upload" ]; [ -d "$DATA/index" ]
+    [ "$(cat "$S/dirs_at_start")" = present ]
+    b=$(grep -n '^start ' "$S/argv" | cut -d: -f1)
+    for d in "$DATA/pcap/raw" "$DATA/index"; do
+        c=$(grep -nxF "chown -R -h 1000:1000 -- $d" "$S/argv" | cut -d: -f1)
+        [ -n "$c" ]; [ "$c" -lt "$b" ]
+    done
+}
+
+@test "a missing data dir whose parent is missing (storage not mounted) is refused, nothing created" {
+    bundle_full; malcolm_tree; absolute_binds
+    rm -r "$DATA"
     run md start
     echo "$output"
-    [ "$status" -eq 0 ]
-    [ "$(calls chown)" -eq 1 ]
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"is the storage mounted"* ]]
+    [ ! -e "$DATA" ]
+    [ "$(calls chown)" -eq 0 ]; [ "$(calls runuser)" -eq 0 ]
 }
 
 @test "a data bind source of / is refused before anything is chowned" {
@@ -996,8 +1054,179 @@ absolute_binds() {
     run md start
     echo "$output"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"REFUSE"*"is / — not chowning it"* ]]
+    [[ "$output" == *"REFUSE"*"is / — never chowning /"* ]]
     [ "$(calls chown)" -eq 0 ]; [ "$(calls runuser)" -eq 0 ]
+}
+
+# index_src SRC: a bound tree whose opensearch data bind source is SRC (the
+# upload and pcap binds stay in $MD), with a clean record.
+index_src() {
+    compose_with_upload "$MD/pcap/upload" "" "" "$1" > "$MD/docker-compose.yml"
+    md bind-loopback; rm -f "$S/argv" "$S/chowned"
+}
+
+# refuses_chown SRC PATTERN: start REFUSES with PATTERN for index source SRC,
+# chowning, creating and running nothing.
+refuses_chown() {
+    index_src "$1"
+    run md start
+    echo "[$1] $output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*$2* ]]
+    [[ "$output" == *"nothing changed"* ]]
+    [ "$(calls chown)" -eq 0 ]; [ "$(calls runuser)" -eq 0 ]; [ "$(calls start)" -eq 0 ]
+    [[ "$output" != *"mkdir "* ]]
+}
+
+@test "non-canonical data bind sources (//, /data/.., /data/../etc, a trailing /) are refused, nothing chowned" {
+    bundle_full; malcolm_tree
+    mkdir -p "$DATA/index"
+    refuses_chown // "is not canonical: it resolves to /"
+    refuses_chown /data/.. "is not canonical: it resolves to /"
+    refuses_chown /data/../etc "is not canonical: it resolves to /etc"
+    refuses_chown "$DATA/index/" "is not canonical"
+    refuses_chown "$DATA/x/../index" "is not canonical"
+}
+
+@test "/etc, /data, /data/pcap and their data-root forms are refused, nothing chowned" {
+    bundle_full; malcolm_tree
+    mkdir -p "$DATA/pcap"
+    refuses_chown /etc "never chowning /, a top-level dir"
+    refuses_chown /data "never chowning /, a top-level dir"
+    refuses_chown /home "never chowning /, a top-level dir"
+    refuses_chown /root "never chowning /, a top-level dir"
+    refuses_chown /data/pcap "neither under $MD nor under $DATA"
+    refuses_chown /usr/share "neither under $MD nor under $DATA"
+    refuses_chown "$DATA" "never chowning /, a top-level dir, $DATA or $DATA/pcap"
+    refuses_chown "$DATA/pcap" "never chowning /, a top-level dir, $DATA or $DATA/pcap"
+    # $MD itself is not strictly under $MD.
+    refuses_chown "$MD" "neither under $MD nor under $DATA"
+}
+
+@test "a symlinked data dir, or one under a symlinked parent, is refused, nothing chowned" {
+    bundle_full; malcolm_tree
+    mkdir -p "$DATA/real" "$BATS_TEST_TMPDIR/elsewhere/x"
+    ln -s "$DATA/real" "$DATA/index"
+    refuses_chown "$DATA/index" "is a symlink"
+    ln -s "$BATS_TEST_TMPDIR/elsewhere" "$DATA/link"
+    refuses_chown "$DATA/link/x" "is not canonical: it resolves to $BATS_TEST_TMPDIR/elsewhere/x"
+}
+
+# config_copy PCAPDIR INDEXDIR [USE_DEFAULT]: the imported-config copy that
+# configure keeps, with its sha256 in the configure stamp.
+config_copy() {
+    mkdir -p "$STAMP"
+    printf '{"configuration": {"pcapDir": "%s", "indexDir": "%s", "useDefaultStorageLocations": %s}}\n' \
+        "$1" "$2" "${3:-false}" > "$STAMP/malcolm-config.json"
+    sha256sum < "$STAMP/malcolm-config.json" | awk '{print $1}' > "$STAMP/configure.sha256"
+}
+
+@test "with the imported config's copy, exactly pcapDir, pcapDir/upload and indexDir are chowned" {
+    bundle_full; malcolm_tree; absolute_binds
+    config_copy "$DATA/pcap/raw" "$DATA/index"
+    run md start
+    echo "$output"; cat "$S/argv"
+    [ "$status" -eq 0 ]
+    grep -qxF "chown -R -h 1000:1000 -- $DATA/pcap/raw" "$S/argv"
+    grep -qxF "chown -R -h 1000:1000 -- $DATA/index" "$S/argv"
+}
+
+@test "with the imported config's copy, a /data dir the config does not name is refused" {
+    bundle_full; malcolm_tree
+    mkdir -p "$DATA/other"
+    config_copy "$DATA/pcap/raw" "$DATA/index"
+    refuses_chown "$DATA/other" "neither under $MD nor pcapDir, pcapDir/upload or indexDir"
+}
+
+@test "a config naming /data/pcap as pcapDir is still refused" {
+    bundle_full; malcolm_tree
+    mkdir -p "$DATA/pcap/upload" "$DATA/index"
+    config_copy "$DATA/pcap" "$DATA/index"
+    compose_with_upload "$DATA/pcap/upload" "" "" "$DATA/index" > "$MD/docker-compose.yml"
+    md bind-loopback; rm -f "$S/argv" "$S/chowned"
+    run md start
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"$DATA or $DATA/pcap"* ]]
+    [ "$(calls chown)" -eq 0 ]
+}
+
+@test "useDefaultStorageLocations true in the imported config allows only \$MD binds" {
+    bundle_full; malcolm_tree
+    mkdir -p "$DATA/index"
+    config_copy "$DATA/pcap/raw" "$DATA/index" true
+    refuses_chown "$DATA/index" "neither under $MD nor pcapDir"
+}
+
+@test "a config copy that no longer matches the configure stamp falls back to the /data rule" {
+    bundle_full; malcolm_tree; absolute_binds
+    config_copy "$DATA/elsewhere" "$DATA/elsewhere2"
+    echo 0000 > "$STAMP/configure.sha256"
+    run md start
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -qxF "chown -R -h 1000:1000 -- $DATA/index" "$S/argv"
+}
+
+@test "configure keeps a copy of the imported config beside its stamp, and adds it to an old stamp" {
+    bundle_full; md install "$BUNDLE"
+    run md configure "$CONF"
+    [ "$status" -eq 0 ]
+    cmp "$CONF" "$STAMP/malcolm-config.json"
+    [ "$(sha256sum < "$STAMP/malcolm-config.json" | awk '{print $1}')" = "$(cat "$STAMP/configure.sha256")" ]
+    rm "$STAMP/malcolm-config.json"
+    run md configure "$CONF"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already configured"* ]]
+    cmp "$CONF" "$STAMP/malcolm-config.json"
+}
+
+@test "PUID/PGID refusals point to processUserId/processGroupId in the imported config, not process.env" {
+    bound_tree
+    printf 'PUID=0\nPGID=0\n' > "$MD/config/process.env"
+    run md start
+    echo "$output"
+    [[ "$output" == *"REFUSE"*"set processUserId/processGroupId in the config JSON that configure imports (config/malcolm/malcolm-config.json) and re-run configure"* ]]
+    [[ "$output" != *"set PUID/PGID there"* ]]
+    FAKE_PASSWD='someone:x:1001:1001::/home/someone:/bin/bash'
+    printf 'PUID=1000\nPGID=1000\n' > "$MD/config/process.env"
+    run md start
+    echo "$output"
+    [[ "$output" == *"has no passwd entry — create that user, or set processUserId/processGroupId"* ]]
+}
+
+@test "a PGID that is not the PUID user's primary gid is refused" {
+    bound_tree
+    printf 'PUID=1000\nPGID=1001\n' > "$MD/config/process.env"
+    refuses_both "PGID 1001 (from $MD/config/process.env) is not the primary gid of user ubuntu ('1000' in passwd)"
+}
+
+@test "HOME is \$MD when the PUID user's home is root-owned or missing" {
+    bound_tree
+    # The planned malcolm system user: home /opt/malcolm, which root owns.
+    FAKE_PASSWD="ubuntu:x:1000:1000::$MALCOLM_ROOT:/usr/sbin/nologin"
+    run md start
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -qxF "runuser -u ubuntu -- env HOME=$MD USER=ubuntu LOGNAME=ubuntu ./scripts/start --quiet" "$S/argv"
+    [ "$(cat "$S/start.id")" = "ubuntu ubuntu $MD" ]
+    rm -f "$S/argv"; printf '' > "$S/ps"
+    FAKE_PASSWD="ubuntu:x:1000:1000::$BATS_TEST_TMPDIR/nohome:/usr/sbin/nologin"
+    run md start
+    [ "$status" -eq 0 ]
+    grep -qxF "runuser -u ubuntu -- env HOME=$MD USER=ubuntu LOGNAME=ubuntu ./scripts/start --quiet" "$S/argv"
+}
+
+@test "the repo's Malcolm config moves pcapDir and indexDir off the defaults" {
+    run "$REAL_PY" -c '
+import json, sys
+c = json.load(open(sys.argv[1]))["configuration"]
+assert c["useDefaultStorageLocations"] is False, c["useDefaultStorageLocations"]
+assert c["pcapDir"] == "/data/pcap/raw", c["pcapDir"]
+assert c["indexDir"] == "/data/index", c["indexDir"]
+' "$BATS_TEST_DIRNAME/../config/malcolm/malcolm-config.json"
+    echo "$output"
+    [ "$status" -eq 0 ]
 }
 
 @test "bind-loopback gives the edited compose file back its owner" {

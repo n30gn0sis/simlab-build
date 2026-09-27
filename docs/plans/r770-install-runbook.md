@@ -323,19 +323,45 @@ then `health`.
 refuses root — including a root *identity*: `getpass.getuser()` reads
 `LOGNAME`/`USER`, which `sudo` sets to root (the 26.08 proof run failed with
 `Exception: auth_setup should not be run as root`). `install.py` (configure)
-is fine as root. The user is the one whose `PUID`/`PGID` configure wrote into
-`malcolm/config/process.env` — the file the containers use — and it **must be
-in the `docker` group**. You still run the script with `sudo`; for `auth` and
-`start` it drops to that user itself (`runuser -u <user> -- env HOME=… USER=…
-LOGNAME=…`, in `malcolm/`). Before either, it chowns `/opt/malcolm/malcolm` to
-`PUID:PGID` (skipped when already owned — the installer chowns only `config/`)
-and `chown -R`s the host data dirs the compose binds name — the upload dir,
-`pcapDir` (pcap-monitor's `/pcap` source, `/data/pcap/raw` here) and
-`indexDir` (opensearch's data source, `/data/index`) — while they are still
-root-owned. It refuses, changing nothing, if `process.env` is missing, `PUID`
-or `PGID` is missing or not a number, `PUID` is 0, the uid has no passwd
-entry, or the user is not in `docker` (fix: `sudo usermod -aG docker <user>`).
-Check before `auth`:
+is fine as root. You still run the script with `sudo`; for `auth` and `start`
+it drops to that user itself (`runuser -u <user> -- env HOME=… USER=…
+LOGNAME=…`, in `malcolm/`).
+
+**Where PUID/PGID come from.** `processUserId`/`processGroupId` in
+`config/malcolm/malcolm-config.json`; `configure` writes them into
+`malcolm/config/process.env` (the file the containers use) on every run, so
+change them in the JSON and re-run `configure` — never edit `process.env`,
+which the next `configure` overwrites. The repo's JSON keeps the staging VM's
+values (uid/gid of its `ubuntu` user). **On the R770 the Malcolm user is a
+dedicated system user**, the planned `malcolm` account
+(`docs/superpowers/specs/2026-09-14-account-provisioning-design.md`; the
+rehearsal's uid must not be reused): create it and add it to `docker`, set
+`processUserId`/`processGroupId` in the JSON to its uid and primary gid, then
+`configure`. If its home is not its own to write (a system user's home such as
+`/opt/malcolm` is root's), the script sets `HOME` to `/opt/malcolm/malcolm`,
+which it has chowned to the user.
+
+The script refuses, changing nothing, if `process.env` is missing, `PUID` or
+`PGID` is missing or not a number, `PUID` is 0, the uid has no passwd entry,
+`PGID` is not that user's primary gid (`runuser` takes the group from passwd,
+so a mismatch gives files the wrong group), or the user is not in `docker`
+(fix: `sudo usermod -aG docker <user>`).
+
+**What it chowns.** Before `auth` and `start` it chowns `/opt/malcolm/malcolm`
+to `PUID:PGID` (skipped when already owned — the installer chowns only
+`config/`) and `chown -R`s the host data dirs the compose binds name — the
+upload dir, `pcapDir` (pcap-monitor's `/pcap` source) and `indexDir`
+(opensearch's data source) — when the dir or one of its direct children is not
+yet the PUID user's. A missing data dir is created first (left to docker it
+would be created root-owned); a missing *parent* is refused, since it means the
+storage is not mounted. Each bind source must be canonical as written
+(`realpath -m`, no `..`, `//` or trailing `/`), not a symlink, and either
+strictly under `/opt/malcolm/malcolm` or exactly `pcapDir`, `pcapDir/upload` or
+`indexDir` of the config `configure` last imported (it keeps a copy in
+`/opt/malcolm/.r770-deploy/`; with no copy, anything strictly under `/data`
+except `/data/pcap`). `/`, any top-level dir, `/data` and `/data/pcap` — the LV
+root holding `cases/` and `archived/` — are never chowned. Anything else
+refuses with nothing changed. Check before `auth`:
 
 ```bash
 grep -E '^P[UG]ID=' /opt/malcolm/malcolm/config/process.env
@@ -393,6 +419,14 @@ Remove `/root/analyst-pw` once `verify` (8.4) has passed:
 
 Bind PCAP to `/data/pcap/raw` and OpenSearch to `/data/index`. Left at
 defaults, both land on the Docker volume and fill `/var/lib/docker`.
+
+`config/malcolm/malcolm-config.json` does this with `pcapDir` and `indexDir`,
+which take effect **only with `useDefaultStorageLocations: false`** (true makes
+the installer ignore them; `tests/malcolm-deploy.bats` pins all three). Any
+storage dir left unset (`<MALCOLM_CONFIG_NONE>`) falls back to Malcolm's
+in-tree default — checked in 26.08's `installer/actions/shared.py`
+(`get_or_default`: the config value or `DEFAULT_*`) — so `zeekLogDir` stays
+`malcolm/zeek-logs`, which `verify` reads.
 
 ### 8.3 Size OpenSearch to this host, not to the installer's default
 

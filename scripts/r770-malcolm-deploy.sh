@@ -34,15 +34,31 @@
 # refuses root: getuid/geteuid 0, or getpass.getuser() == root -- and
 # getpass reads LOGNAME/USER first, which sudo sets to root. So auth_setup and
 # start run as the PUID user from $MD/config/process.env (the file the
-# containers use; the installer writes it): runuser -u USER -- env HOME USER
-# LOGNAME set to that user. It is refused if process.env is missing, PUID/PGID
-# are missing or not numbers, PUID is 0, the uid has no passwd entry, or the
-# user is not in the docker group. Before either verb the script chowns $MD
-# to PUID:PGID (skipped when every entry already is), and chowns -R the host
-# data dirs named by the compose binds -- the upload: service's upload dir,
-# pcap-monitor's /pcap source (pcapDir) and opensearch's data source
-# (indexDir) -- when they exist and are still root-owned. install.py
-# (configure) runs as root, as Malcolm allows.
+# containers use): runuser -u USER -- env HOME USER LOGNAME set to that user.
+# PUID/PGID come from processUserId/processGroupId in the config JSON that
+# configure imports; the installer rewrites process.env from them on every
+# configure, so that JSON -- never process.env -- is where to change them.
+# It is refused if process.env is missing, PUID/PGID are missing or not
+# numbers, PUID is 0, the uid has no passwd entry, PGID is not that user's
+# primary gid (runuser uses the passwd gid), or the user is not in the docker
+# group. HOME is the passwd home when the user owns it and can write it, else
+# $MD (a system user's home, e.g. /opt/malcolm, is often root's).
+#
+# Before either verb the script makes the tree and the host data dirs named by
+# the compose binds -- the upload: service's upload dir, pcap-monitor's /pcap
+# source (pcapDir) and opensearch's data source (indexDir) -- belong to
+# PUID:PGID. Each bind source must be canonical (realpath -m, as written, no
+# symlink) and allowlisted: strictly under $MD, or exactly pcapDir,
+# pcapDir/upload or indexDir as the config configure last imported names them
+# (its copy in $STAMP_DIR); with no copy, any path strictly under /data except
+# /data/pcap. /, any top-level dir, /data and /data/pcap (the LV root holding
+# cases/ and archived/) are never allowed. Anything else refuses with nothing
+# changed. A missing data dir is created (its parent must exist: a missing
+# parent means storage is not mounted) so docker does not create it
+# root-owned. $MD is chowned -R unless every entry already is PUID:PGID; a
+# data dir is chowned -R when it or a direct child is not the PUID's, so a
+# populated index is not walked on every start. install.py (configure) runs
+# as root, as Malcolm allows.
 #
 # `docker load` reports success even when the resulting tag set is incomplete,
 # which is why import-bundle.md step 3b requires verifying loaded tags against
@@ -71,12 +87,17 @@
 #   MALCOLM_TMPDIR          where verify writes its capture (default /tmp)
 #   VERIFY_TIMEOUT          verify's wait for Arkime/Zeek (default 300)
 #   VERIFY_CAPTURE_SECS     length of the loopback capture (default 20)
+#   MALCOLM_DATA_ROOT       the data root of the fixed allowlist rule (default /data)
 set -euo pipefail
 
 MALCOLM_ROOT="${MALCOLM_ROOT:-/opt/malcolm}"
 MD="$MALCOLM_ROOT/malcolm"
 COMPOSE_FILE="$MD/docker-compose.yml"
 STAMP_DIR="$MALCOLM_ROOT/.r770-deploy"
+# The config JSON configure last imported successfully (its sha256 is in
+# configure.sha256): where own_for_malcolm reads pcapDir and indexDir.
+CONFIG_COPY="$STAMP_DIR/malcolm-config.json"
+DATA_ROOT="${MALCOLM_DATA_ROOT:-/data}"
 POLL_SECS="${MALCOLM_POLL_SECS:-10}"
 # Malcolm 26.08's compose file (line 1459) has `    - 0.0.0.0:443:443`, no /tcp;
 # both spellings are accepted and the suffix is kept.
@@ -113,30 +134,47 @@ process_env_value() {
         tr -d "\r\"'" | sed -E 's/[[:space:]]+$//'
 }
 
+# Where PUID/PGID really come from: every refusal about them points here.
+FIX_IDS="set processUserId/processGroupId in the config JSON that configure imports (config/malcolm/malcolm-config.json) and re-run configure — the installer rewrites process.env from it"
+
 # The user Malcolm's containers and control.py run as. Sets M_USER M_UID M_GID
 # M_HOME, or refuses (nothing has changed yet when it does).
 malcolm_user() {
-    local puid pgid ent name uid home groups
+    local puid pgid ent name uid gid home groups hst
     [ -f "$PROCESS_ENV" ] ||
-        refuse "no $PROCESS_ENV — Malcolm's configure writes PUID/PGID there (run configure first)"
+        refuse "no $PROCESS_ENV — Malcolm's configure writes PUID/PGID there from processUserId/processGroupId in the imported config JSON (run configure first)"
     puid=$(process_env_value PUID) || refuse "cannot read $PROCESS_ENV"
     pgid=$(process_env_value PGID) || refuse "cannot read $PROCESS_ENV"
     { is_uint "$puid" && [ "$(grep -c . <<< "$puid")" -eq 1 ]; } ||
-        refuse "PUID in $PROCESS_ENV is missing, repeated or not a number ('${puid//$'\n'/ }')"
+        refuse "PUID in $PROCESS_ENV is missing, repeated or not a number ('${puid//$'\n'/ }') — $FIX_IDS"
     { is_uint "$pgid" && [ "$(grep -c . <<< "$pgid")" -eq 1 ]; } ||
-        refuse "PGID in $PROCESS_ENV is missing, repeated or not a number ('${pgid//$'\n'/ }')"
+        refuse "PGID in $PROCESS_ENV is missing, repeated or not a number ('${pgid//$'\n'/ }') — $FIX_IDS"
     [ "$puid" -ne 0 ] ||
-        refuse "PUID in $PROCESS_ENV is 0: Malcolm's control.py refuses to run as root — set PUID/PGID there to a non-root user in the docker group"
+        refuse "PUID in $PROCESS_ENV is 0: Malcolm's control.py refuses to run as root — $FIX_IDS, naming a non-root user in the docker group"
     ent=$(getent passwd "$puid") ||
-        refuse "PUID $puid (from $PROCESS_ENV) has no passwd entry — create that user or fix PUID/PGID"
-    IFS=: read -r name _ uid _ _ home _ <<< "$ent"
-    [ "$uid" = "$puid" ] || refuse "getent passwd $puid returned uid '$uid' — fix PUID in $PROCESS_ENV"
+        refuse "PUID $puid (from $PROCESS_ENV) has no passwd entry — create that user, or $FIX_IDS"
+    IFS=: read -r name _ uid gid _ home _ <<< "$ent"
+    [ "$uid" = "$puid" ] || refuse "getent passwd $puid returned uid '$uid' — $FIX_IDS"
     [[ $name =~ ^[A-Za-z0-9._][A-Za-z0-9._-]*$ ]] || refuse "PUID $puid maps to an unusable user name: $name"
+    # runuser takes the group from passwd, not from PGID: a mismatch would
+    # give everything auth_setup and start write the wrong group.
+    [ "$gid" = "$pgid" ] ||
+        refuse "PGID $pgid (from $PROCESS_ENV) is not the primary gid of user $name ('$gid' in passwd): runuser would run with gid $gid and files would get the wrong group — $FIX_IDS"
     [ -n "$home" ] || refuse "user $name (PUID $puid) has no home directory in passwd"
     groups=$(id -nG "$name") || refuse "cannot list the groups of $name"
     [[ " $groups " == *" docker "* ]] ||
         refuse "user $name (PUID $puid from $PROCESS_ENV) is not in the docker group — add them: usermod -aG docker $name"
     command -v runuser > /dev/null || refuse "runuser not found (util-linux)"
+    # A system user's home (the planned malcolm user's is /opt/malcolm) is
+    # often root's; tools that write under HOME would then fail. Use it only
+    # when the user owns it and can write it, else $MD, which own_for_malcolm
+    # makes theirs before anything runs as them.
+    hst=""
+    [ -d "$home" ] && hst=$(stat -c %u "$home" 2> /dev/null)-$(stat -c %A "$home" 2> /dev/null)
+    if [[ $hst != "$puid"-??w* ]]; then
+        echo "note    $name's home $home is missing or not theirs to write; HOME=$MD for Malcolm's tools"
+        home=$MD
+    fi
     M_USER=$name M_UID=$puid M_GID=$pgid M_HOME=$home
 }
 
@@ -167,29 +205,92 @@ bind_sources() {
     done
 }
 
+# The storage dirs the imported config names, one per line: pcapDir,
+# pcapDir/upload (the upload: service's source) and indexDir -- only the
+# absolute ones, and none when useDefaultStorageLocations is true (the
+# installer then ignores both). Read from $CONFIG_COPY, and only while its
+# sha256 is the one configure recorded. Returns 2 when there is no such copy
+# (the caller falls back to the fixed /data rule), 1 when it cannot be read.
+config_storage_dirs() {
+    [ -f "$CONFIG_COPY" ] && [ -f "$STAMP_DIR/configure.sha256" ] || return 2
+    [ "$(sha_of "$CONFIG_COPY")" = "$(cat "$STAMP_DIR/configure.sha256")" ] || return 2
+    python3 -c '
+import json, sys
+c = json.load(open(sys.argv[1]))
+c = c.get("configuration", c) if isinstance(c, dict) else None
+if not isinstance(c, dict):
+    sys.exit(1)
+if c.get("useDefaultStorageLocations") is True:
+    sys.exit(0)
+ok = lambda v: isinstance(v, str) and v.startswith("/") and "\n" not in v
+p, i = c.get("pcapDir"), c.get("indexDir")
+if ok(p):
+    print(p)
+    print(p.rstrip("/") + "/upload")
+if ok(i):
+    print(i)
+' "$CONFIG_COPY" || return 1
+}
+
+# Refuse (nothing has changed yet) unless bind source D may be chowned -R.
+# NAMED: config_storage_dirs output, or the word "fixed" for the /data rule.
+check_data_dir() {
+    local d=$1 named=$2 c
+    [ ! -L "$d" ] ||
+        refuse "Malcolm data dir $d (a bind source in $COMPOSE_FILE) is a symlink — not chowning through it; nothing changed"
+    c=$(realpath -m -- "$d") || refuse "cannot canonicalise Malcolm data dir $d; nothing changed"
+    [ "$c" = "$d" ] ||
+        refuse "Malcolm data dir $d (a bind source in $COMPOSE_FILE) is not canonical: it resolves to $c — not chowning it; nothing changed"
+    case $d in "$MD"/?*) return 0 ;; esac
+    # Never /, a top-level dir, the data root, or /data/pcap: the LV root that
+    # holds cases/ and archived/ besides pcapDir.
+    if [[ ! $d =~ ^/[^/]+/. ]] || [ "$d" = "$DATA_ROOT" ] || [ "$d" = "$DATA_ROOT/pcap" ]; then
+        refuse "a Malcolm bind source in $COMPOSE_FILE is $d — never chowning /, a top-level dir, $DATA_ROOT or $DATA_ROOT/pcap; nothing changed"
+    fi
+    if [ "$named" = fixed ]; then
+        case $d in "$DATA_ROOT"/?*) return 0 ;; esac
+        refuse "Malcolm data dir $d is neither under $MD nor under $DATA_ROOT (and no imported config copy $CONFIG_COPY names it) — not chowning it; nothing changed"
+    fi
+    grep -qxF -- "$d" <<< "$named" && return 0
+    refuse "Malcolm data dir $d is neither under $MD nor pcapDir, pcapDir/upload or indexDir of the imported config ($CONFIG_COPY) — not chowning it; nothing changed"
+}
+
 # Make the tree and the data dirs Malcolm's containers write to belong to
 # M_UID:M_GID, as in the rehearsal (a user-owned tree). The installer chowns
-# only config/; nginx/, scripts/, docker-compose.yml etc. stay root's. $MD is
-# skipped when every entry is already owned; a data dir is chowned -R only
-# while it is still root-owned (root created it), so a populated index is not
-# walked on every start. -h: symlinks (scripts/* -> control.py) are changed
+# only config/; nginx/, scripts/, docker-compose.yml etc. stay root's. See the
+# header for the allowlist. -h: symlinks (scripts/* -> control.py) are changed
 # themselves, never followed.
 own_for_malcolm() {
-    local owner="$M_UID:$M_GID" d dirs=""
+    local owner="$M_UID:$M_GID" d dirs="" named rc
     if [ -f "$COMPOSE_FILE" ]; then
-        # Sorted, so a parent comes before its children: once the parent is
-        # chowned -R, a child is no longer root's and is skipped.
+        # Sorted, so a parent comes before its children: it is created first,
+        # and once it is chowned -R a child is already the PUID's and skipped.
         dirs=$( { bind_sources upload "$UPLOAD_TARGET"
                   bind_sources pcap-monitor "$PCAP_TARGET"
                   bind_sources opensearch "$INDEX_TARGET"; } | LC_ALL=C sort -u) ||
             fail "cannot read the data-dir binds from $COMPOSE_FILE"
+    fi
+    if [ -n "$dirs" ]; then
+        rc=0; named=$(config_storage_dirs) || rc=$?
+        case $rc in
+            0) ;;
+            2) named=fixed ;;
+            *) refuse "cannot read pcapDir/indexDir from $CONFIG_COPY; nothing changed" ;;
+        esac
         while IFS= read -r d; do
             [ -n "$d" ] || continue
-            case $d in
-                /) refuse "a Malcolm bind source in $COMPOSE_FILE is / — not chowning it; nothing changed" ;;
-                /*) ;;
-                *) refuse "a Malcolm bind source resolved to a relative path ($d); nothing changed" ;;
-            esac
+            check_data_dir "$d" "$named"
+            # A missing dir is created below; a missing parent (one that is not
+            # itself a data dir created first) means storage is not mounted.
+            [ -e "$d" ] || [ -d "$(dirname "$d")" ] || grep -qxF -- "$(dirname "$d")" <<< "$dirs" ||
+                refuse "Malcolm data dir $d is missing and so is its parent $(dirname "$d") — is the storage mounted? nothing changed"
+        done <<< "$dirs"
+        # Create what is missing now, as root then chowned below: left to
+        # docker, a missing bind source is created root-owned.
+        while IFS= read -r d; do
+            if [ -z "$d" ] || [ -e "$d" ]; then continue; fi
+            echo "mkdir $d (a Malcolm data dir, missing)"
+            mkdir -- "$d" || fail "mkdir $d failed"
         done <<< "$dirs"
     fi
     if [ -n "$(find "$MD" \( ! -uid "$M_UID" -o ! -gid "$M_GID" \) -print -quit)" ]; then
@@ -198,11 +299,13 @@ own_for_malcolm() {
     fi
     while IFS= read -r d; do
         case $d in
-            ""|"$MD"|"$MD"/*) continue ;;   # empty, or covered by the $MD step
+            ""|"$MD"/*) continue ;;   # empty, or covered by the $MD step
         esac
         [ -d "$d" ] || continue
-        [ "$(stat -c %u "$d")" = 0 ] || continue
-        echo "chown -R $owner $d (a Malcolm data dir, root-owned)"
+        # The dir itself or a direct child (root-owned subdirs docker or an
+        # earlier root run left) not the PUID's: walk it. Else leave it.
+        [ -n "$(find "$d" -maxdepth 1 ! -uid "$M_UID" -print -quit)" ] || continue
+        echo "chown -R $owner $d (a Malcolm data dir, not all the PUID's)"
         chown -R -h "$owner" -- "$d" || fail "chown -R $owner $d failed"
     done <<< "$dirs"
 }
@@ -409,6 +512,10 @@ cmd_configure() {
     abs="$(cd "$(dirname "$json")" && pwd)/$(basename "$json")"
     want=$(sha_of "$abs") || fail "cannot hash $abs"
     if have_env_files && [ "$(cat "$STAMP_DIR/configure.sha256" 2>/dev/null || true)" = "$want" ]; then
+        # A stamp from before the copy was kept: keep it now (same sha256).
+        if [ ! -f "$CONFIG_COPY" ]; then
+            cp "$abs" "$CONFIG_COPY" || fail "cannot keep a copy of $abs in $CONFIG_COPY"
+        fi
         echo "already configured from this config (sha256 $want)"
         return 0
     fi
@@ -419,6 +526,9 @@ cmd_configure() {
         --import-malcolm-config-file "$abs") < /dev/null || fail "Malcolm's install.py --configure failed"
     have_env_files || fail "install.py exited 0 but wrote no $MD/config/*.env"
     mkdir -p "$STAMP_DIR" || fail "cannot create $STAMP_DIR"
+    # The copy own_for_malcolm reads pcapDir/indexDir from; it is trusted only
+    # while its sha256 matches the stamp, so write it first.
+    cp "$abs" "$CONFIG_COPY" || fail "cannot keep a copy of $abs in $CONFIG_COPY"
     printf '%s\n' "$want" > "$STAMP_DIR/configure.sha256" || fail "cannot write configure stamp"
     echo "PASS    configured (sha256 $want)"
     echo "NOTE    the installer rewrites docker-compose.yml: run bind-loopback again before start"
@@ -709,6 +819,12 @@ cmd_verify() {
             count=$(sed -n 's/.*"recordsFiltered":[[:space:]]*\([0-9][0-9]*\).*/\1/p' <<< "$resp" | head -1)
             [ -n "$count" ] && [ "$count" -gt 0 ] && arkime=$count
         fi
+        # $MD/zeek-logs is Malcolm's in-tree default. The R770 config leaves
+        # zeekLogDir unset (<MALCOLM_CONFIG_NONE>), and the 26.08 installer
+        # falls back to the in-tree default for any unset storage dir
+        # (installer/actions/shared.py get_or_default: config value or
+        # DEFAULT_*), so zeekLogDir stays ./zeek-logs. Setting zeekLogDir
+        # moves it, and this check must then read it from the compose file.
         if [ "$zeek" -eq 0 ] && [ -d "$MD/zeek-logs" ] &&
             [ -n "$(find "$MD/zeek-logs" -type f -newer "$marker" -print -quit 2> /dev/null)" ]; then
             zeek=1

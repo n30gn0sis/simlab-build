@@ -304,9 +304,11 @@ heaps to the host by itself; the imported config then sets them (see 8.3).
 `install` on a box that already has Malcolm only ever confirms it: if the
 bundled `malcolm-*-docker_install.zip` has the sha256 recorded at install time
 (`/opt/malcolm/.r770-deploy/install.sha256`) it reports "already installed" and
-exits 0; if the zip differs, or there is no stamp, it refuses and names both
-hashes. **An upgrade is a deliberate operator step**, not a side effect of
-re-running `install` against a newer bundle: stop Malcolm, move `/opt/malcolm`
+exits 0; if the zip differs it refuses and names both hashes. If there is a
+Malcolm tree but no stamp (an interrupted `install`, or one done before this
+script), it refuses too: inspect the tree, move `/opt/malcolm` aside, re-run.
+**An upgrade is a deliberate operator step**, not a side effect of re-running
+`install` against a newer bundle: stop Malcolm, move `/opt/malcolm`
 aside (keep it until the new stack verifies), then run `install`, `configure`,
 `auth`, `bind-loopback`, `start`, `health` and `verify` again.
 
@@ -320,8 +322,10 @@ Unattended form, hashes generated on the box:
 ```bash
 # /root/analyst-pw: owned by root, mode 600 (or 400), not a symlink, one line,
 # the analyst password and nothing else. Create it without the password ever
-# touching shell history or argv (type the password, then Enter):
-sudo install -m600 -o root /dev/null /root/analyst-pw && sudo sh -c 'read -rs p && printf %s "$p" > /root/analyst-pw'
+# touching shell history or argv (type the password at the prompt, then Enter).
+# bash, not sh: Ubuntu's sh is dash, whose `read` has no -s (no-echo) flag.
+sudo install -m600 -o root -g root /dev/null /root/analyst-pw && sudo bash -c 'umask 077; printf "analyst password: " >&2; read -rs p && echo >&2 && printf %s "$p" > /root/analyst-pw'
+sudo stat -c '%U %a %F' /root/analyst-pw   # expect: root 600 regular file
 # auth reads it once into a shell variable and only ever puts it on a pipe
 # (openssl passwd -stdin, htpasswd-in-docker) -- never in argv, env, or a log.
 sudo ./site/scripts/r770-malcolm-deploy.sh auth /data/staging/bundle-YYYYMMDD \

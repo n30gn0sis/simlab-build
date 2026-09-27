@@ -221,7 +221,9 @@ cmd_install() {
             echo "already installed: $(basename "$zip") (sha256 $sum) in $MALCOLM_ROOT"
             return 0
         fi
-        refuse "$MALCOLM_ROOT already holds a Malcolm install (installed: ${stamp:-unknown, no stamp in $STAMP_DIR}; bundled $(basename "$zip"): $sum) — upgrading is a deliberate operator step, see runbook Part 8.1; nothing changed"
+        [ -n "$stamp" ] ||
+            refuse "$MALCOLM_ROOT holds a Malcolm tree but no install stamp ($STAMP_DIR/install.sha256): it may be from an interrupted install or a pre-script install — inspect it, then move $MALCOLM_ROOT aside before re-running install (bundled $(basename "$zip"): $sum); nothing changed"
+        refuse "$MALCOLM_ROOT already holds a Malcolm install from a different zip (installed: $stamp; bundled $(basename "$zip"): $sum) — upgrading is a deliberate operator step, see runbook Part 8.1; nothing changed"
     fi
 
     mkdir -p "$MALCOLM_ROOT" "$STAMP_DIR" || fail "cannot create $MALCOLM_ROOT"

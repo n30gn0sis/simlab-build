@@ -161,8 +161,26 @@ esac
 exit 0'
 }
 
+UPLOAD_TARGET=/var/www/upload/server/php/chroot/files
+
+# One long-syntax bind mount entry: bind_entry SOURCE TARGET [ts]. With `ts`,
+# target: comes before source:.
+bind_entry() {
+    printf '%s\n' '    - type: bind' '      bind:' '        create_host_path: false'
+    if [ "${3:-}" = ts ]; then
+        printf '      target: %s\n      source: %s\n' "$2" "$1"
+    else
+        printf '      source: %s\n      target: %s\n' "$1" "$2"
+    fi
+}
+
 # A compose file whose upload: service bind-mounts $1 as the upload dir.
+#   compose_with_upload SRC [UPLOAD_VOLUMES] [PCAP_MONITOR_VOLUMES]
+# The optional arguments replace the upload: / pcap-monitor: volume entries
+# (build them with bind_entry). pcap-monitor comes BEFORE upload:.
 compose_with_upload() {
+    local uv=${2:-$(bind_entry "$1" "$UPLOAD_TARGET")}
+    local pv=${3:-$(bind_entry "$1" /pcap)}
     cat <<EOF
 services:
   nginx-proxy:
@@ -170,19 +188,11 @@ services:
 $OPEN
   pcap-monitor:
     volumes:
-    - type: bind
-      bind:
-        create_host_path: false
-      source: $1
-      target: /pcap
+$pv
   upload:
     image: x
     volumes:
-    - type: bind
-      bind:
-        create_host_path: false
-      source: $1
-      target: /var/www/upload/server/php/chroot/files
+$uv
   arkime:
     image: x
 EOF
@@ -281,7 +291,8 @@ good_ss() {
     run md install "$BUNDLE"
     echo "$output"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"REFUSE"*"installed: 0000000000000000000000000000000000000000000000000000000000000000"* ]]
+    [[ "$output" == *"REFUSE"*"different zip"*"installed: 0000000000000000000000000000000000000000000000000000000000000000"* ]]
+    [[ "$output" != *"no install stamp"* ]]
     [[ "$output" == *"bundled malcolm-0.0.0-fixture-docker_install.zip: $(sha256sum < "$BUNDLE/malcolm/malcolm-0.0.0-fixture-docker_install.zip" | awk '{print $1}')"* ]]
     [[ "$output" == *"upgrading is a deliberate operator step"* ]]
     [ "$(calls unzip)" -eq 0 ]
@@ -293,7 +304,10 @@ good_ss() {
     run md install "$BUNDLE"
     echo "$output"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"REFUSE"*"installed: unknown, no stamp"* ]]
+    [[ "$output" == *"REFUSE"*"no install stamp ($MALCOLM_ROOT/.r770-deploy/install.sha256)"* ]]
+    [[ "$output" == *"interrupted install or a pre-script install"* ]]
+    [[ "$output" == *"inspect it, then move $MALCOLM_ROOT aside before re-running install"* ]]
+    [[ "$output" != *"different zip"* ]]
     [ "$(calls unzip)" -eq 0 ]
 }
 
@@ -303,7 +317,7 @@ good_ss() {
     run md install "$BUNDLE"
     echo "$output"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"REFUSE"*"deliberate operator step"* ]]
+    [[ "$output" == *"REFUSE"*"different zip"*"deliberate operator step"* ]]
     [ "$(calls unzip)" -eq 1 ]
 }
 
@@ -839,7 +853,8 @@ good_ss() {
     [[ "$q" == *"&expression=port%3D%3D8443" ]]
     start=$(sed -n 's/.*[?&]startTime=\([0-9][0-9]*\)&.*/\1/p' <<< "$q")
     stop=$(sed -n 's/.*[?&]stopTime=\([0-9][0-9]*\)&.*/\1/p' <<< "$q")
-    [ -n "$start" ] && [ -n "$stop" ]
+    [ -n "$start" ]
+    [ -n "$stop" ]
     [ "$start" -ge $((before - 5)) ]; [ "$start" -le $((after - 5)) ]
     [ "$stop" -ge $((before + 60)) ]; [ "$stop" -le $((after + 60)) ]
 }
@@ -855,6 +870,85 @@ good_ss() {
     ls "$up"/r770-verify-*.pcap
     ! ls "$MD"/pcap/upload/*.pcap 2>/dev/null || false
     no_secret_leak
+}
+
+@test "verify finds the upload bind when target: comes before source:" {
+    malcolm_tree; healthy_ps; echo 1 > "$S/arkime"; touch "$S/zeek_writes"
+    up="$BATS_TEST_TMPDIR/data/pcap/raw/upload"; mkdir -p "$up"
+    compose_with_upload "$up" "$(bind_entry "$up" "$UPLOAD_TARGET" ts)" > "$MD/docker-compose.yml"
+    grep -B1 "source: $up" "$MD/docker-compose.yml" | grep -qF "target: $UPLOAD_TARGET"
+    run md verify --password-file "$PWFILE"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PASS    uploaded: $up/r770-verify-"* ]]
+    ls "$up"/r770-verify-*.pcap
+}
+
+@test "verify finds a quoted upload source" {
+    malcolm_tree; healthy_ps; echo 1 > "$S/arkime"; touch "$S/zeek_writes"
+    up="$BATS_TEST_TMPDIR/data/pcap/raw/upload"; mkdir -p "$up"
+    compose_with_upload "$up" "$(bind_entry "\"$up\"" "$UPLOAD_TARGET")" > "$MD/docker-compose.yml"
+    grep -qxF "      source: \"$up\"" "$MD/docker-compose.yml"
+    run md verify --password-file "$PWFILE"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PASS    uploaded: $up/r770-verify-"* ]]
+    ls "$up"/r770-verify-*.pcap
+}
+
+@test "verify refuses two upload binds with the upload target, before capturing" {
+    malcolm_tree; healthy_ps
+    a="$BATS_TEST_TMPDIR/a"; b="$BATS_TEST_TMPDIR/b"; mkdir -p "$a" "$b"
+    compose_with_upload "$a" "$(bind_entry "$a" "$UPLOAD_TARGET"; bind_entry "$b" "$UPLOAD_TARGET")" \
+        > "$MD/docker-compose.yml"
+    run md verify --password-file "$PWFILE"
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"$UPLOAD_TARGET"*"found 2"* ]]
+    [ "$(calls tcpdump)" -eq 0 ]; [ "$(calls curl)" -eq 0 ]
+    [ -z "$(ls -A "$a")" ]; [ -z "$(ls -A "$b")" ]
+}
+
+@test "verify ignores another service's bind to the upload target; the upload: service's source wins" {
+    malcolm_tree; healthy_ps; echo 1 > "$S/arkime"; touch "$S/zeek_writes"
+    up="$BATS_TEST_TMPDIR/data/pcap/raw/upload"; other="$BATS_TEST_TMPDIR/other"
+    mkdir -p "$up" "$other"
+    # pcap-monitor precedes upload: and binds a different source to the SAME target.
+    compose_with_upload "$up" "" "$(bind_entry "$other" "$UPLOAD_TARGET")" > "$MD/docker-compose.yml"
+    [ "$(grep -cxF "      target: $UPLOAD_TARGET" "$MD/docker-compose.yml")" -eq 2 ]
+    [ "$(grep -n "source: $other" "$MD/docker-compose.yml" | cut -d: -f1)" -lt \
+      "$(grep -n '^  upload:' "$MD/docker-compose.yml" | cut -d: -f1)" ]
+    run md verify --password-file "$PWFILE"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PASS    uploaded: $up/r770-verify-"* ]]
+    ls "$up"/r770-verify-*.pcap
+    [ -z "$(ls -A "$other")" ]
+}
+
+@test "verify's EXIT trap kills a still-running tcpdump when a later step fails" {
+    malcolm_tree; healthy_ps
+    # tcpdump records its pid (the one verify holds: the stub execs sleep in
+    # place) and stays up. sleep fails once that pid exists, so set -e aborts
+    # verify mid-capture, before its own kill -INT, leaving only the trap.
+    stub tcpdump 'echo "tcpdump $*" >> "$S/argv"; echo $$ > "$S/tcpdump.pid.tmp"; mv "$S/tcpdump.pid.tmp" "$S/tcpdump.pid"; exec "$REAL/sleep" 30'
+    stub sleep 'n=0; while [ ! -s "$S/tcpdump.pid" ] && [ "$n" -lt 100 ]; do "$REAL/sleep" 0.05; n=$((n+1)); done; exit 1'
+    run md verify --password-file "$PWFILE"
+    echo "$output"
+    pid=$(cat "$S/tcpdump.pid")
+    [ -n "$pid" ]
+    [ "$status" -ne 0 ]
+    [ "$(calls tcpdump)" -eq 1 ]
+    [[ "$output" != *"PASS    capture"* ]]
+    # Give the killed process a moment to be reaped (a zombie still answers kill -0).
+    for _ in $(seq 40); do kill -0 "$pid" 2>/dev/null || break; "$REAL/sleep" 0.05; done
+    alive=0; kill -0 "$pid" 2>/dev/null && alive=1
+    [ "$alive" -eq 1 ] && kill "$pid" 2>/dev/null   # never leave a stray process
+    run kill -0 "$pid"
+    [ "$status" -ne 0 ]
+    [ "$alive" -eq 0 ]
+    # The trap also removed the capture dir.
+    [ -z "$(ls -A "$MALCOLM_TMPDIR")" ]
 }
 
 @test "verify refuses a compose file with no upload bind mount, before capturing" {

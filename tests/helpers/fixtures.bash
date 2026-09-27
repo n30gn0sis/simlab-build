@@ -18,12 +18,10 @@ make_bundle() {
     echo "fake deb"             > "$d/apt/example_1.0_amd64.deb"
     # site/ — this repo's reviewed scripts/config/docs-analyst-wiki, as
     # r770-offline-fetch.sh's stage_site() copies them. Includes a stand-in
-    # for every script r770-bundle.sh's SITE_REQUIRED_SCRIPTS lists, so this
-    # "complete bundle" fixture satisfies check_site() with a plain pass, not
-    # a WARN -- except scripts/r770-lab-ca.sh, which genuinely does not exist
-    # in the repo yet (Task 2). That one WARN path is exercised separately in
-    # bundle-verify.bats, not by this general-purpose fixture that many other
-    # tests assert a clean PASS on.
+    # for every script r770-bundle.sh's SITE_REQUIRED_SCRIPTS lists (all five
+    # exist in the repo), so this "complete bundle" fixture satisfies
+    # check_site() with a plain pass, not a WARN. The missing-script WARN path
+    # is exercised separately in bundle-verify.bats by deleting one stand-in.
     printf '#!/usr/bin/env bash\necho hi\n' > "$d/site/scripts/hello.sh"
     chmod +x "$d/site/scripts/hello.sh"
     printf '#!/usr/bin/env bash\necho fixture-ca\n' > "$d/site/scripts/r770-lab-ca.sh"

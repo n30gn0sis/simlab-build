@@ -281,7 +281,7 @@ pair_bundle() {   # a bundle with all three list/payload pairs intact
     [[ "$output" == *"site/ is missing"* ]]
 }
 
-@test "a site/ present but missing scripts/r770-lab-ca.sh warns, not fails, since that script does not exist in the repo yet" {
+@test "a site/ present but missing scripts/r770-lab-ca.sh (a bundle cut before it shipped) warns, not fails" {
     rm "$BUNDLE/site/scripts/r770-lab-ca.sh"
     "$SCRIPT" manifest "$BUNDLE"
     run "$SCRIPT" verify "$BUNDLE"

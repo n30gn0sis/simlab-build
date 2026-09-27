@@ -195,13 +195,11 @@ check_manual() {  # <dir>
 # right severity because "missing" is sometimes a legitimate, dispositionable
 # state rather than corruption this script must always refuse:
 #   - no site/ at all: this bundle predates the site/ delivery path.
-#   - site/ present but missing a required script: as of this check's introduction,
-#     scripts/r770-lab-ca.sh does not exist in the repo yet, so every bundle cut
-#     before it lands would otherwise warn for a script nobody has written. Once
-#     the script ships and the fetch's site stage copies it in, this check passes
-#     normally. The other three below already exist and ship today, so a real
-#     bundle missing one of THEM is a genuine defect to disposition, not a
-#     not-yet-written placeholder.
+#   - site/ present but missing a required script: all five listed below exist
+#     in the repo and ship in site/ today, but a bundle cut before a given
+#     script landed (r770-lab-ca.sh and r770-portal.sh are the latest) will
+#     legitimately lack it. In a bundle cut from the current repo, a missing
+#     script is a genuine defect to disposition.
 SITE_REQUIRED_SCRIPTS=(scripts/r770-bundle.sh scripts/r770-malcolm-deploy.sh scripts/r770-airgap-sim.sh scripts/r770-lab-ca.sh scripts/r770-portal.sh)
 
 check_site() {  # <dir>

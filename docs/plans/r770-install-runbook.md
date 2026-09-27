@@ -426,27 +426,51 @@ analyst browsers. No ACME, no Let's Encrypt: both need the internet.
 
 ### 10.1 Portal
 
-Needs, in this order: `r770-lab-ca.sh apply` (the three files above) and
-Malcolm's `auth` (8.1a — its `nginx/htpasswd` becomes the portal's one analyst
-login). `apply` refuses, changing nothing, until both exist. `plan` (the
-default verb) is read-only and shows what `apply` would install.
+Needs, in this order: `r770-lab-ca.sh apply` (the three files above), the
+monitoring images loaded (Part 5 — `apply` builds the docs with the
+mkdocs-material image named in the bundle's `docker/monitoring-image-list.txt`,
+whose tag the fetch script's pin block owns) and Malcolm's `auth` (8.1a — its
+`nginx/htpasswd` becomes the portal's one analyst login). Until every one of
+those is in place, and every source file under `site/` is present, `apply`
+refuses before it writes anything — nothing under `/etc/nginx`, `/srv/www` or
+`/var/backups` is touched. `plan` (the default verb) is read-only and shows
+what `apply` would install.
 
 ```bash
 sudo ./site/scripts/r770-portal.sh plan
 sudo ./site/scripts/r770-portal.sh apply
-sudo ./site/scripts/r770-portal.sh verify --user analyst --password-file /root/analyst-pw
 ```
 
-`apply` backs up `/etc/nginx`, then installs `config/nginx/snippets/*` and only
-the `portal.lab`, `malcolm.lab` and `docs.lab` vhosts (enabled by symlink),
-copies Malcolm's `nginx/htpasswd` to `/etc/nginx/lab.htpasswd` (0640,
-group `www-data`) so all three names share one login, copies
-`config/portal/index.html` to `/srv/www/portal`, and builds `docs.lab` into
-`/srv/www/docs` from `site/config/docs/mkdocs.yml` and
-`site/docs/analyst-wiki/*.md` with the bundled mkdocs-material image under
-`docker run --network none`. It runs `nginx -t` **before** any reload; if the
-test fails it restores the backup and does not reload. It reloads nginx only
-if something changed, so re-running it is safe.
+`apply` works in two stages. **Outside nginx first:** it copies
+`config/portal/index.html` to `/srv/www/portal` and builds `docs.lab` from
+`site/config/docs/mkdocs.yml` and `site/docs/analyst-wiki/*.md` under
+`docker run --pull never --network none`, into `/srv/www/docs.new`, then swaps
+it into `/srv/www/docs`. The docs are rebuilt only when the source stamp
+(`/srv/www/docs/.r770-source.sha256`: mkdocs.yml, the wiki pages and the image
+ID) changes. A failed build stops here with nginx untouched and no backup.
+**Then nginx:** it works out what would change and, only if something would,
+backs up `/etc/nginx` to a `0600` tarball in the `0700` directory
+`/var/backups/r770-portal/` (the tarball holds `ssl/lab.key`), then installs
+`config/nginx/conf.d/*` (the one `$connection_upgrade` map),
+`config/nginx/snippets/*` (TLS, auth, security headers), and only the
+`00-default-reject.conf` catch-all plus the `portal.lab`, `malcolm.lab` and
+`docs.lab` vhosts (enabled by symlink), and installs Malcolm's `nginx/htpasswd`
+as `/etc/nginx/lab.htpasswd` in one step at `0640 root:www-data` so all three
+names share one login. `gns3.lab` and `monitoring.lab` are not installed.
+**Any** failure after the backup — an install step or `nginx -t` — restores the
+backup, prints `FAIL` and the backup's path, and does not reload. It reloads
+nginx only if its config changed, so re-running it is safe; if nothing changed
+but nginx is not running, it says so and exits 1 (`sudo systemctl start nginx`).
+
+The catch-all rejects the TLS handshake for any name that is not one of the
+three (a bare IP, an unknown name, IPv6), so browse by `.lab` name. Each `.lab`
+name on `:80` redirects to `https`; Ubuntu's own `default` site keeps `:80`
+otherwise.
+
+**The portal login is a snapshot** of Malcolm's `nginx/htpasswd` taken at
+`apply` time. After any later Malcolm `auth` run, re-run
+`sudo ./site/scripts/r770-portal.sh apply` so the portal, docs and Malcolm
+names keep one login.
 
 `verify` checks each name for 401 without credentials and, given
 `--user` and `--password-file` (together or not at all), 200 with them, over
@@ -455,10 +479,20 @@ goes to curl on stdin, never argv. Without credentials it WARNs and skips the
 200 checks. `--host <ip>` points the checks at another address (default
 `127.0.0.1`); without `--host` it also checks that only nginx listens on
 `:443`, which is what `bind-loopback` (8.4) set up. The user is the one
-Malcolm's `auth` created (`analyst` unless you overrode it). 8.4 removed
-`/root/analyst-pw`: recreate it for this check the way 8.1a does and remove it
-again afterwards (`sudo rm -f /root/analyst-pw`), or run `verify` with `--host`
-from an analyst workstation that trusts the lab CA.
+Malcolm's `auth` created (`analyst` unless you overrode it).
+
+8.4 removed `/root/analyst-pw`, so the on-box check recreates it first, the
+same way 8.1a does, and removes it again afterwards:
+
+```bash
+sudo install -m600 -o root -g root /dev/null /root/analyst-pw && sudo bash -c 'umask 077; printf "analyst password: " >&2; read -rs p && echo >&2 && printf %s "$p" > /root/analyst-pw'
+sudo ./site/scripts/r770-portal.sh verify --user analyst --password-file /root/analyst-pw
+sudo rm -f /root/analyst-pw
+```
+
+Or skip the password file on the box and run `verify --host <R770 address>
+--cacert <lab CA cert> --user analyst --password-file <file>` from an analyst
+workstation that trusts the lab CA.
 
 Publish a `.lab` name only where a route genuinely exists. Discovery found
 iDRAC on a different subnet from management; a name that resolves to something

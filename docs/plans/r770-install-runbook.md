@@ -498,6 +498,44 @@ Publish a `.lab` name only where a route genuinely exists. Discovery found
 iDRAC on a different subnet from management; a name that resolves to something
 unreachable is worse than no name.
 
+### 10.2 UFW  *(GATED)*
+
+A firewall change on a remote box, so it is gated (CLAUDE.md rule 3): run
+`plan`, show its output — current `ufw status verbose`, the discovered
+management path and the proposed ruleset — and get the operator's explicit
+confirmation before `apply`. The policy is deny incoming by default, allow SSH
+and `443/tcp` only on the management interface and only from its subnet. Nothing
+is guessed: the interface, subnet and SSH port come from the live SSH session
+(`$SSH_CONNECTION`), so run it as root from an SSH session, never a console.
+`plan` refuses if any of that is missing, or if the rules would not admit the
+current session.
+
+```bash
+sudo ./site/scripts/r770-ufw.sh plan
+sudo ./site/scripts/r770-ufw.sh apply            # --minutes N (1-60, default 10)
+```
+
+`apply` backs up `/etc/ufw` and `iptables-save` to `/var/backups/r770-ufw/`,
+adds and reads back the two allow rules, then arms a **dead-man switch** — a
+detached `ufw --force disable` after N minutes — before it sets deny-by-default
+and enables UFW. **Leave the current session open, open a NEW ssh session** and,
+within the window, run:
+
+```bash
+sudo ./site/scripts/r770-ufw.sh confirm
+sudo ./site/scripts/r770-ufw.sh verify
+```
+
+`confirm` refuses from the session that ran `apply`: only a new connection
+proves the firewall admits new SSH connections. If the new session cannot
+connect, do nothing — when the window closes, UFW turns itself off. `verify` is
+read-only: UFW active, default incoming deny, both allow rules and no others,
+no pending auto-revert, and no `docker-proxy` (or unidentified) listener off
+loopback.
+
+**Rollback:** `sudo ./site/scripts/r770-ufw.sh revert` restores `/etc/ufw` from
+the newest pre-apply backup and cancels any pending auto-revert.
+
 ---
 
 ## Part 11 — Docs mirror  *(Phase 13)*

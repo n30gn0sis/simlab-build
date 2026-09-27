@@ -144,7 +144,8 @@ stub_iptables() {
     run "$SCRIPT" unblock
     [ "$status" -eq 0 ]
     sleep 0.5
-    ! kill -0 "$pid" 2>/dev/null
+    run kill -0 "$pid"
+    [ "$status" -ne 0 ]
     [ ! -e "$AIRGAP_RUN_DIR/r770-airgap-sim.pid" ]
 }
 
@@ -156,7 +157,8 @@ stub_iptables() {
     second=$(cat "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
     [ "$first" != "$second" ]
     sleep 0.5
-    ! kill -0 "$first" 2>/dev/null
+    run kill -0 "$first"
+    [ "$status" -ne 0 ]
     kill -0 "$second"
     "$SCRIPT" unblock >/dev/null
 }

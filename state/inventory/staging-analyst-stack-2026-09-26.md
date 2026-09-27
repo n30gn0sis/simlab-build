@@ -58,9 +58,24 @@ Each fix went through a repo change, a commit and the test suite, then was pushe
    - Fix `05d7772`: `configure` uses the in-tree installer once the tree exists.
 4. ~~**Open, for the final review:** UFW allows only 22 and 443, so the `.lab` vhosts' `:80 → https` redirects can never be reached. Either allow 80 from the management subnet or drop the redirects.~~ Resolved in `bf76c6c`: redirects dropped, firewall stays 22/443.
 
-The review of fixes 1–2 raised hardening items for the recursive chown (canonicalise and allowlist the paths, create missing data dirs first) and for where PUID comes from. They are being fixed in the repo (fix round 5). Run 3 used paths inside that allowlist.
+The review of fixes 1–2 raised hardening items for the recursive chown (canonicalise and allowlist the paths, create missing data dirs first) and for where PUID comes from. They were fixed in the repo (`34b194c`, then the final-review wave `19364f2`…`3b05070`, which added the fstab mount check). Run 3 used paths inside that allowlist; the re-run below exercises the final code.
 
 ## After the run
 
 - Air gap lifted (`egress restored`, status `OPEN`) **after** the logs were collected.
 - VM 9771 stopped and snapshotted `analyst-stack-2026-09-26` with the token, left at 12 GiB. **Start it only when the host has room** (≥ 3 GiB free after its 12 GiB).
+
+## Re-run on the final code (`3b05070`), 2026-09-26
+
+Before the PR, the final branch HEAD was pushed to 9771 over SSH, `site/` was re-cut (`--only site,manifest`), and **`--strict` passed** on the bundle and on the `/data/staging` copy. 9771 had rebooted in between: UFW stayed active and SSH still worked, and Malcolm was not running, so `start` really ran. With the air gap on again, everything passed. Logs are in `staging-analyst-stack-2026-09-26/rerun-3b05070/`.
+
+| Step | Result |
+|---|---|
+| install / configure / auth / bind-loopback | idempotent: "already installed / configured / authenticated / bound" |
+| start → health | ownership handover as `ubuntu` (the new mount, PGID and allowlist checks passed); **27 services running and healthy**; `127.0.0.1:8443`; no docker-proxy off loopback |
+| portal apply + verify | the `:80` redirect blocks removed; `nginx -t`, reload; 401 then 200 for all three names |
+| malcolm verify | capture uploaded to `/data/pcap/raw/upload/`; Arkime **4 sessions**; Zeek logs; zeek healthy |
+| ufw verify | RESULT PASS. `:80` is now only Ubuntu's own `default` site, filtered by UFW (WARN) |
+| From outside | portal 401/200 ×3; Malcolm `/` 200, `/arkime/` 302, `/dashboards/` 302; bare-IP TLS rejected; 22 and 443 open, 8443/9200/5601/80/31337 closed |
+
+The air gap was lifted after collection. 9771 is stopped, with a new snapshot **`analyst-stack-3b05070`**. `bundle-20260926` on 9771 now carries `site/` from `3b05070`.

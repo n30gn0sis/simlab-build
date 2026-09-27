@@ -79,7 +79,7 @@ Without a refresh cadence these silently go stale — geo lookups and rules are 
 
 ### 1.7 Dell / firmware — NOT A BUNDLE ITEM since 2026-09-25 (handled on the R770 directly; kept for reference)
 
-BIOS + iDRAC firmware packages, Broadcom NIC firmware DUPs, optionally Dell System Update (DSU) offline repo for the R770. Store in `bundle/dell/` with the Dell-published checksums. Firmware is applied via iDRAC OOB — one of the few things that doesn't even need the host.
+BIOS, Broadcom NIC firmware DUPs, and other Dell firmware, if applied at all, are the operator's own action, outside this bundle and outside this repo's automation. No iDRAC or PERC work on the R770 (operator, 2026-09-24): nothing in `scripts/` or this plan applies, queries, or otherwise touches iDRAC or the PERC.
 
 ### 1.8 Trust anchors, keys, docs
 

@@ -20,7 +20,15 @@
 #                        re-enable is guarded by the same dead-man switch
 #                        (10 minutes) and needs `confirm` from a NEW session,
 #                        exactly as apply does; otherwise UFW is left disabled
-#                        and any pending switch is cancelled
+#                        and any pending switch is cancelled. The re-enable
+#                        checks the CURRENT session, not the restored rules: if
+#                        the backup's rules do not admit SSH, the new session
+#                        cannot connect, confirm never runs, and recovery relies
+#                        on the switch firing (fail-open: UFW disabled). A
+#                        backup from before /etc/default/ufw was captured
+#                        (d9581cb) can still revert to DISABLED, with a WARN
+#                        that /etc/default/ufw is left as is; revert to
+#                        ENABLED from it is refused
 #
 #   0  done, nothing to do, or every check passed
 #   1  refused (REFUSE: nothing changed), failed (FAIL: the output says what
@@ -42,11 +50,20 @@
 #   - confirm proves a NEW connection: it refuses unless its own client
 #     ip:port was NOT among the established sshd connections recorded when UFW
 #     was enabled AND is established now (`ss`). A session that was open before
-#     the enable rides on conntrack and proves nothing.
+#     the enable rides on conntrack and proves nothing. Open the new session
+#     with `ssh -o ControlMaster=no -o ControlPath=none ...`: a multiplexed
+#     ssh reuses the recorded TCP connection, and confirm refuses it. If the
+#     switch fires while confirm runs, confirm FAILs (re-run apply).
 #
 # The sleeper has limits, and plan/apply say so:
-#   - it is a process in the SSH session's scope. If logind is configured with
-#     KillUserProcesses=yes it dies with that session, so plan and apply REFUSE;
+#   - it is a process in the SSH session's scope. If logind has
+#     KillUserProcesses=yes it dies with that session, so plan and apply REFUSE.
+#     The live value comes from `busctl get-property org.freedesktop.login1
+#     ... KillUserProcesses`; only if busctl is missing or fails are the files
+#     parsed: logind.conf, then the *.conf drop-ins from /etc, /run,
+#     /usr/local/lib and /usr/lib systemd/logind.conf.d (a name in an earlier
+#     directory hides the same name in a later one), in file-name order, last
+#     setting wins. [Section] headers are not tracked;
 #   - a REBOOT inside the window loses it, while UFW stays enabled (ufw.conf
 #     has ENABLED=yes). Do not reboot until confirm has run.
 #
@@ -54,7 +71,8 @@
 # is published on this host — non-loopback listeners from `ss -ltnp`, and
 # Docker's nat DOCKER chain (DNAT rules published on any address other than
 # 127.0.0.1 bypass UFW, docker-proxy or not: userland-proxy:false leaves no
-# listener to see). A docker-proxy or unidentified non-loopback listener FAILs.
+# listener to see; IPv4 only — ports Docker publishes through ip6tables are NOT
+# checked). A docker-proxy or unidentified non-loopback listener FAILs.
 # Other host listeners beyond SSH/443 are a WARN: UFW's INPUT chain does filter
 # them, so they are reachable only if a rule admits them, but they are still
 # worth knowing about. Reachability from outside is NOT checked here — a box
@@ -71,8 +89,8 @@
 # Operator option: UFW_EXPECT_IFACE (see above).
 # Test overrides: UFW_RUN_DIR (default /run), UFW_BACKUP_DIR (default
 # /var/backups/r770-ufw), UFW_ETC_DIR (default /etc/ufw), UFW_DEFAULT_FILE
-# (default /etc/default/ufw), UFW_LOGIND_CONF (default
-# /etc/systemd/logind.conf; its .d/*.conf drop-ins are read too),
+# (default /etc/default/ufw), UFW_LOGIND_ROOT (default empty: prefixed to
+# every logind.conf path of the file fallback),
 # UFW_DRY_RUN=1 prints the ufw commands (and skips backup and sleeper) instead
 # of running them. UFW_SSH_CONNECTION replaces $SSH_CONNECTION ONLY when
 # UFW_TEST=1 (set-but-empty counts as empty); otherwise it is ignored.
@@ -83,7 +101,8 @@ RUN_DIR="${UFW_RUN_DIR:-/run}"
 BACKUP_DIR="${UFW_BACKUP_DIR:-/var/backups/r770-ufw}"
 ETC_DIR="${UFW_ETC_DIR:-/etc/ufw}"
 DEFAULT_FILE="${UFW_DEFAULT_FILE:-/etc/default/ufw}"
-LOGIND_CONF="${UFW_LOGIND_CONF:-/etc/systemd/logind.conf}"
+LOGIND_ROOT="${UFW_LOGIND_ROOT:-}"
+LOGIND_SRC=""
 EXPECT_IF="${UFW_EXPECT_IFACE:-}"
 if [ "${UFW_TEST:-0}" = 1 ]; then
     CONN="${UFW_SSH_CONNECTION-${SSH_CONNECTION:-}}"
@@ -209,15 +228,18 @@ sleeper_pending() {
 # leaves the FIRST sleeper alive and it fires later, disabling the current
 # firewall behind the operator's back (the airgap-sim lesson, 2026-09-12). The
 # sleeper is its own session, so killing the group takes the sleep and the shell.
+# Returns 0 only if it killed a live sleeper: 1 means there was none to kill
+# (never armed, or it already fired: it removes its pidfile, then disables).
 cancel_sleeper() {
-    local pid
+    local pid killed=1
     if [ -r "$PIDFILE" ]; then
         pid="$(cat "$PIDFILE")"
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+            if kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null; then killed=0; fi
         fi
     fi
     rm -f "$PIDFILE" "$TIMER" "$ESTFILE" "$SSHPORTFILE"
+    return "$killed"
 }
 
 arm_sleeper() {  # arm_sleeper MINUTES
@@ -243,10 +265,38 @@ arm_sleeper() {  # arm_sleeper MINUTES
     sleeper_pending
 }
 
-# Effective logind KillUserProcesses (last setting wins, drop-ins after the main file).
+# Effective logind KillUserProcesses. The live value (busctl) wins; the file
+# parse is the fallback when busctl is missing, fails, or answers oddly. Sets
+# LOGIND_SRC to where the answer came from.
+LOGIND_DROPIN_DIRS=(/etc /run /usr/local/lib /usr/lib)   # systemd's precedence, highest first
 logind_kills_sleeper() {
-    local f v="" line
-    for f in "$LOGIND_CONF" "$LOGIND_CONF.d"/*.conf; do
+    local out d f name names="" v="" line files=()
+    if out="$(busctl get-property org.freedesktop.login1 /org/freedesktop/login1 \
+            org.freedesktop.login1.Manager KillUserProcesses 2>/dev/null)"; then
+        LOGIND_SRC="busctl, the live logind value"
+        case "$out" in
+            "b true")  return 0 ;;
+            "b false") return 1 ;;
+        esac
+    fi
+    # Fallback: the main file, then every drop-in name found in any of the
+    # four directories — taken from the highest-precedence directory that has
+    # it — in file-name order. Last setting wins.
+    LOGIND_SRC="$LOGIND_ROOT/etc/systemd/logind.conf and logind.conf.d drop-ins (busctl unavailable)"
+    for d in "${LOGIND_DROPIN_DIRS[@]}"; do
+        for f in "$LOGIND_ROOT$d/systemd/logind.conf.d"/*.conf; do
+            [ -e "$f" ] && names+="${f##*/}"$'\n'
+        done
+    done
+    files=("$LOGIND_ROOT/etc/systemd/logind.conf")
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        for d in "${LOGIND_DROPIN_DIRS[@]}"; do
+            f="$LOGIND_ROOT$d/systemd/logind.conf.d/$name"
+            if [ -e "$f" ]; then files+=("$f"); break; fi
+        done
+    done < <(printf '%s' "$names" | sort -u)
+    for f in "${files[@]}"; do
         [ -r "$f" ] || continue
         line="$(sed -n 's/^[[:space:]]*KillUserProcesses[[:space:]]*=[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$f" | tail -1)"
         [ -z "$line" ] || v="$line"
@@ -266,7 +316,7 @@ established_peers() {
 switch_preflight() {
     local peers
     ! logind_kills_sleeper \
-        || die "logind has KillUserProcesses=yes ($LOGIND_CONF or $LOGIND_CONF.d/*.conf): the auto-revert sleeper would die with this SSH session, leaving no dead-man switch"
+        || die "logind has KillUserProcesses=yes (per $LOGIND_SRC): the auto-revert sleeper would die with this SSH session, leaving no dead-man switch"
     peers="$(established_peers "$SSH_PORT")" || die "ss could not list established connections on :$SSH_PORT: confirm could not prove a new session"
     has_line "$CLIENT_IP:$CLIENT_PORT" "$peers" \
         || die "this session ($CLIENT_IP:$CLIENT_PORT) is not an established connection on :$SSH_PORT per ss: SSH_CONNECTION cannot be trusted, and confirm could not prove a new session"
@@ -337,7 +387,7 @@ take_backup() {
 }
 
 cmd_apply() {
-    local minutes=10 status added dir
+    local minutes=10 status added dir armfail
     while [ $# -gt 0 ]; do
         case $1 in
             --minutes)
@@ -368,6 +418,13 @@ cmd_apply() {
 
     switch_preflight
 
+    # What an arm failure leaves behind depends on whether UFW was already on.
+    if grep -q '^Status: active' <<< "$status"; then
+        armfail="the two allow rules were added and are live (UFW was already active before apply); the default policy is unchanged and UFW's enabled state was not touched"
+    else
+        armfail="nothing changed beyond the two allow rules: the default policy is unchanged and UFW was NOT enabled"
+    fi
+
     echo "== CURRENT =="; printf '%s\n' "$status"
     echo "== PROPOSED =="; proposed | sed 's/^/  /'
     [ -z "$(extra_rules "$added")" ] || warn "existing non-management rules stay in place (run plan to list them)"
@@ -394,7 +451,7 @@ cmd_apply() {
         info "allow rules confirmed in 'ufw show added'"
 
         # Dead-man switch BEFORE the deny: if anything below cuts us off, it still fires.
-        switch_arm "$minutes" "nothing changed beyond the two allow rules: the default policy is unchanged and UFW was NOT enabled"
+        switch_arm "$minutes" "$armfail"
     fi
 
     run_ufw default deny incoming   || fail "ufw default deny incoming failed; auto-revert still armed"
@@ -420,8 +477,11 @@ cmd_confirm() {
     now="$(established_peers "$port")" || die "ss could not list established connections on :$port: cannot prove a new session"
     has_line "$CLIENT_IP:$CLIENT_PORT" "$now" \
         || die "this session ($CLIENT_IP:$CLIENT_PORT) is not an established connection on :$port per ss: confirm from a session opened AFTER apply"
-    cancel_sleeper
-    # The switch may have fired between the check above and the cancel.
+    # The switch was pending at the top. If there is no live sleeper to kill
+    # now, it fired in between: it removes its pidfile, then disables UFW.
+    cancel_sleeper \
+        || fail "the auto-revert fired during confirm; UFW is being disabled — re-run apply"
+    # Belt and braces: it may have fired after the kill check and before the kill.
     status="$(ufw status 2>&1)"
     grep -q '^Status: active' <<< "$status" \
         || fail "the switch fired; UFW is disabled — re-run apply (ufw status: $(head -1 <<< "$status"))"
@@ -438,16 +498,34 @@ restore_source() {
     return 1
 }
 
+ufw_active() { ufw status 2>/dev/null | grep -q '^Status: active'; }
+
+# The recorded revert is done only if nothing is pending and UFW is in the
+# state its backup had: a revert whose re-enable failed, or whose switch fired,
+# is not done, and revert must be able to run again.
+revert_done() {
+    local rec
+    [ -s "$LAST_REVERT" ] || return 1
+    ! sleeper_pending || return 1
+    rec="$(cat "$LAST_REVERT")"
+    [ -r "$rec/ufw.conf" ] || return 1
+    if grep -q '^ENABLED=yes' "$rec/ufw.conf"; then ufw_active; else ! ufw_active; fi
+}
+
 cmd_revert() {
     need_root
-    local src enable=no
-    if [ -s "$LAST_REVERT" ] && ! sleeper_pending; then
+    local src enable=no have_default=yes
+    if revert_done; then
         echo "already reverted (from $(cat "$LAST_REVERT")); no apply since"
         return 0
     fi
     src="$(restore_source)" || die "no pre-apply backup under $BACKUP_DIR: nothing to revert to"
-    { [ -s "$src/etc-ufw.tgz" ] && [ -r "$src/ufw.conf" ] && [ -r "$src/default-ufw" ]; } || die "backup $src is incomplete"
+    { [ -s "$src/etc-ufw.tgz" ] && [ -r "$src/ufw.conf" ]; } || die "backup $src is incomplete"
+    # Backups taken before default-ufw was captured (d9581cb) lack it.
+    [ -r "$src/default-ufw" ] || have_default=no
     if grep -q '^ENABLED=yes' "$src/ufw.conf"; then
+        [ "$have_default" = yes ] \
+            || die "backup $src has no default-ufw (taken before /etc/default/ufw was captured): re-enabling on its rules with today's default policy is not a revert — refused"
         # Re-enabling a restored ruleset is a firewall change like apply: it
         # needs the same discovery, the same switch and a confirm.
         enable=yes
@@ -456,20 +534,27 @@ cmd_revert() {
     fi
     info "restoring from $src"
     trap '' HUP
+    rm -f "$LAST_REVERT"
     ufw --force disable || fail "ufw --force disable failed; nothing restored"
     tar -C "$(dirname "$ETC_DIR")" -xzf "$src/etc-ufw.tgz" \
         || fail "restoring $ETC_DIR from $src failed; UFW is DISABLED"
-    cp "$src/default-ufw" "$DEFAULT_FILE" \
-        || fail "restoring $DEFAULT_FILE from $src failed; UFW is DISABLED"
-    echo "$src" > "$LAST_REVERT"
+    if [ "$have_default" = yes ]; then
+        cp "$src/default-ufw" "$DEFAULT_FILE" \
+            || fail "restoring $DEFAULT_FILE from $src failed; UFW is DISABLED"
+    else
+        warn "backup $src predates default-ufw capture: $DEFAULT_FILE was not captured and is left as is"
+    fi
     if [ "$enable" = yes ]; then
-        switch_arm "$REVERT_MINUTES" "restored $ETC_DIR and $DEFAULT_FILE, UFW left DISABLED"
-        ufw --force enable || fail "restored $ETC_DIR but ufw --force enable failed; auto-revert still armed"
+        switch_arm "$REVERT_MINUTES" "restored $ETC_DIR and $DEFAULT_FILE, UFW left DISABLED; revert can be run again"
+        ufw --force enable || fail "restored $ETC_DIR but ufw --force enable failed; auto-revert still armed; revert can be run again"
+        # Only now is the revert done (revert_done still re-checks UFW's state).
+        echo "$src" > "$LAST_REVERT"
         info "backup had ENABLED=yes: UFW re-enabled on the restored rules, under the dead-man switch"
         echo "reverted to $src"
         switch_finish "$REVERT_MINUTES"
     else
-        cancel_sleeper
+        cancel_sleeper || true
+        echo "$src" > "$LAST_REVERT"
         info "backup had UFW disabled: left disabled"
         echo "reverted to $src; auto-revert cancelled"
     fi

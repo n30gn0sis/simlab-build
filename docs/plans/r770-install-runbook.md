@@ -534,12 +534,21 @@ What the switch does and does not do:
   all), it does not restore the previous ruleset. Run `revert` afterwards to get
   the pre-apply state back;
 - it is a process in your SSH session's scope, so `plan` and `apply` refuse if
-  logind has `KillUserProcesses=yes` (the sleeper would die with the session);
+  logind has `KillUserProcesses=yes` (the sleeper would die with the session).
+  The live value is read with `busctl get-property org.freedesktop.login1
+  /org/freedesktop/login1 org.freedesktop.login1.Manager KillUserProcesses`;
+  only if busctl is missing or fails does the script parse `logind.conf` and
+  the `logind.conf.d/*.conf` drop-ins under `/etc`, `/run`, `/usr/local/lib`
+  and `/usr/lib` `systemd/` (same name: the earlier directory wins; then file-name
+  order, last setting wins);
 - a **reboot inside the window loses it** while UFW stays enabled
   (`ENABLED=yes`). Do not reboot until `confirm` has run.
 
 **Leave the current session open, open a NEW ssh session** and, within the
-window, run:
+window, run the commands below. Open it **without connection sharing** —
+`ssh -o ControlMaster=no -o ControlPath=none <host>` — or a multiplexed ssh
+(`ControlMaster`/`ControlPath` in `~/.ssh/config`) reuses the TCP connection
+`apply` recorded, and `confirm` refuses it:
 
 ```bash
 sudo --preserve-env=SSH_CONNECTION ./site/scripts/r770-ufw.sh confirm
@@ -552,8 +561,9 @@ its own client address and port were **not** among them and **are** established
 now. A terminal that was already open before `apply` rides on conntrack and
 proves nothing, so it is refused — "confirm from a session opened AFTER apply".
 If the new session cannot connect, do nothing — when the window closes, UFW
-turns itself off. If `confirm` reports that the switch already fired, UFW is
-disabled: re-run `apply`.
+turns itself off. If `confirm` reports that the switch already fired — or that
+it fired *during* `confirm` ("UFW is being disabled") — UFW is (or is about to
+be) disabled: re-run `apply`.
 
 `verify` is read-only and its scope is **UFW state, listeners and Docker
 publishing**: UFW active, default incoming deny, both allow rules and no
@@ -561,6 +571,8 @@ others, no pending auto-revert; no `docker-proxy` (or unidentified) listener
 off loopback; and no DNAT rule in the nat `DOCKER` chain that is not pinned to
 `-d 127.0.0.1/32` (that is how ports are published with `userland-proxy:false`,
 where there is no listener to see). Both of those bypass UFW, so they FAIL.
+The DNAT check is **IPv4 only**: ports Docker publishes through `ip6tables` are
+not checked.
 Other host listeners beyond SSH/443 are a **WARN**, not a FAIL: UFW's INPUT
 chain filters them, so they are unreachable unless a rule admits them, but they
 are worth knowing about. `verify` cannot see the box from outside its own
@@ -577,7 +589,16 @@ sudo --preserve-env=SSH_CONNECTION ./site/scripts/r770-ufw.sh revert
 backup. If that backup had UFW disabled, UFW is left disabled and any pending
 switch is cancelled. If it had UFW **enabled**, the re-enable is a firewall
 change like `apply`: it arms the same 10-minute dead-man switch and needs
-`confirm` from a NEW session, exactly as above.
+`confirm` from a NEW session, exactly as above. Its checks cover the *current*
+session, not the restored rules: if the backup's rules do not admit SSH, the new
+session cannot connect, `confirm` never runs, and recovery relies on the switch
+firing — **fail-open**, UFW disabled. If the re-enable fails, `revert` can be
+run again.
+
+A backup taken before `/etc/default/ufw` was captured (the d9581cb version of
+the script) has no `default-ufw`. `revert` to such a backup's **disabled** state
+still works, with a WARN that `/etc/default/ufw` was not captured and is left as
+is; `revert` to its **enabled** state is refused.
 
 ---
 

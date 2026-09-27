@@ -16,11 +16,17 @@
 #   $S/added                 `ufw show added` rule lines
 #   $S/allow_noop            present = `ufw allow` succeeds but records nothing
 #   $S/enable_rc             exit code for `ufw --force enable` (default 0)
+#   $S/default_at_enable     copy of $UFW_DEFAULT_FILE taken when enable runs
 #   $S/route, $S/route_fail  `ip route get` output override / make it fail
 #   $S/addr                  `ip -o -4 addr show dev <if>` output
 #   $S/ss                    `ss -H -ltnp` output
 #   $S/est                   `ss -Htn state established '( sport = :PORT )'` output
 #                            (starts with the apply session, 10.10.10.5:50001)
+#   $S/est_empty_when_active present = that query prints nothing once ufw is active
+#   $S/fire_on_est           present = that query first does what a firing
+#                            sleeper does before its disable: the sleeper is
+#                            gone and so is its pidfile (UFW still active)
+#   busctl                   absent unless a test calls stub_busctl
 #   $S/nat, $S/nat_nochain   `iptables -t nat -S DOCKER` output / "No chain"
 #   $S/sleep_fast            present = the sleeper's long sleep lasts 1.5 s
 #   $S/setsid_slow           present = the sleeper never writes its pidfile
@@ -40,12 +46,13 @@ setup() {
     export UFW_BACKUP_DIR="$BATS_TEST_TMPDIR/backups"
     export UFW_ETC_DIR="$BATS_TEST_TMPDIR/etc/ufw"
     export UFW_DEFAULT_FILE="$BATS_TEST_TMPDIR/etc/default/ufw"
-    export UFW_LOGIND_CONF="$BATS_TEST_TMPDIR/etc/systemd/logind.conf"
+    export UFW_LOGIND_ROOT="$BATS_TEST_TMPDIR"
+    LOGIND_CONF="$UFW_LOGIND_ROOT/etc/systemd/logind.conf"
     export UFW_TEST=1
     export UFW_SSH_CONNECTION="10.10.10.5 50001 10.10.10.31 22"
     export FAKE_UID=0
     unset UFW_DRY_RUN SSH_CONNECTION SUDO_USER UFW_EXPECT_IFACE
-    mkdir -p "$BIN" "$REAL" "$S" "$UFW_RUN_DIR" "$UFW_ETC_DIR" "$(dirname "$UFW_DEFAULT_FILE")" "$(dirname "$UFW_LOGIND_CONF")"
+    mkdir -p "$BIN" "$REAL" "$S" "$UFW_RUN_DIR" "$UFW_ETC_DIR" "$(dirname "$UFW_DEFAULT_FILE")" "$(dirname "$LOGIND_CONF")"
     for t in bash env awk sed grep tr cat cp mv mkdir ls date head tail rm sort find dirname basename wc touch cut; do
         p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$REAL/$t"
     done
@@ -87,7 +94,8 @@ case "$*" in
         echo "Rules updated" ;;
     "default deny incoming")  log "$@"; setpol INPUT DROP ;;
     "default allow outgoing") log "$@"; setpol OUTPUT ACCEPT ;;
-    "--force enable")  log "$@"; rc=$(cat "$S/enable_rc" 2>/dev/null || echo 0); [ "$rc" -eq 0 ] || exit "$rc"; touch "$S/active" ;;
+    "--force enable")  log "$@"; cp "$UFW_DEFAULT_FILE" "$S/default_at_enable"
+        rc=$(cat "$S/enable_rc" 2>/dev/null || echo 0); [ "$rc" -eq 0 ] || exit "$rc"; touch "$S/active" ;;
     "--force disable") log "$@"; rm -f "$S/active" ;;
     *) log "$@"; exit 1 ;;
 esac'
@@ -100,7 +108,13 @@ esac'
 esac'
     stub ss 'case "$*" in
     "-H -ltnp") cat "$S/ss" ;;
-    "-Htn state established ( sport = :"*" )") cat "$S/est" 2>/dev/null ;;
+    "-Htn state established ( sport = :"*" )")
+        if [ -f "$S/fire_on_est" ]; then
+            pid=$(cat "$UFW_RUN_DIR/r770-ufw.pid"); kill -- "-$pid" 2>/dev/null || kill "$pid"
+            rm -f "$UFW_RUN_DIR/r770-ufw.pid"
+        fi
+        if [ -f "$S/est_empty_when_active" ] && [ -f "$S/active" ]; then exit 0; fi
+        cat "$S/est" 2>/dev/null ;;
     *) exit 9 ;;
 esac'
     stub iptables 'case "$*" in
@@ -157,10 +171,19 @@ dead()       { ! kill -0 "$1" 2>/dev/null; }
 not_called() { ! grep -q -- "$1" "$S/calls"; }
 differs()    { ! cmp -s "$1" "$2"; }
 
-no_mutations() { [ ! -s "$S/calls" ] || { cat "$S/calls"; false; }; }
-
 # Mutating calls without the sleeper's asynchronous "sleep" line.
-calls() { grep -v '^sleep ' "$S/calls"; }
+calls() { grep -v '^sleep ' "$S/calls" 2>/dev/null; }
+
+# A sleeper armed before `: > "$S/calls"` may log its "sleep" line afterwards:
+# that is not a mutation by the verb under test.
+no_mutations() { [ -z "$(calls)" ] || { calls; false; }; }
+
+# busctl answering the live KillUserProcesses: stub_busctl "b true" | "b false" | fail
+stub_busctl() {
+    if [ "$1" = fail ]; then stub busctl 'echo "Failed to connect to bus" >&2; exit 1'; return; fi
+    stub busctl "[ \"\$*\" = 'get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager KillUserProcesses' ] || exit 1
+echo '$1'"
+}
 
 line_of() { calls | grep -nxF "$1" | head -1 | cut -d: -f1; }
 
@@ -283,7 +306,7 @@ applied_state() {
 # ── the switch's preconditions ───────────────────────────────────────────────
 
 @test "plan and apply refuse when logind KillUserProcesses=yes (the sleeper would die with the session)" {
-    printf '[Login]\nKillUserProcesses=yes\n' > "$UFW_LOGIND_CONF"
+    printf '[Login]\nKillUserProcesses=yes\n' > "$LOGIND_CONF"
     for verb in plan apply; do
         run ufw_sh $verb
         echo "$verb: $output"
@@ -295,16 +318,73 @@ applied_state() {
 }
 
 @test "logind: a drop-in's KillUserProcesses wins over the main file, both ways" {
-    mkdir -p "$UFW_LOGIND_CONF.d"
-    printf '[Login]\n#KillUserProcesses=no\n' > "$UFW_LOGIND_CONF"
-    printf '[Login]\nKillUserProcesses = yes\n' > "$UFW_LOGIND_CONF.d/50-kill.conf"
+    mkdir -p "$LOGIND_CONF.d"
+    printf '[Login]\n#KillUserProcesses=no\n' > "$LOGIND_CONF"
+    printf '[Login]\nKillUserProcesses = yes\n' > "$LOGIND_CONF.d/50-kill.conf"
     run ufw_sh plan
     [ "$status" -eq 1 ]
     [[ "$output" == *"KillUserProcesses=yes"* ]]
-    printf '[Login]\nKillUserProcesses=no\n' > "$UFW_LOGIND_CONF.d/90-keep.conf"
+    printf '[Login]\nKillUserProcesses=no\n' > "$LOGIND_CONF.d/90-keep.conf"
     run ufw_sh plan
     echo "$output"
     [ "$status" -eq 0 ]
+}
+
+@test "logind: busctl's live value wins over the files, both ways" {
+    printf '[Login]\nKillUserProcesses=no\n' > "$LOGIND_CONF"
+    stub_busctl "b true"
+    run ufw_sh plan
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REFUSE"*"KillUserProcesses=yes (per busctl, the live logind value)"* ]]
+    printf '[Login]\nKillUserProcesses=yes\n' > "$LOGIND_CONF"
+    stub_busctl "b false"
+    run ufw_sh plan
+    echo "$output"
+    [ "$status" -eq 0 ]
+    no_mutations
+}
+
+@test "logind: busctl failing or missing falls back to the files" {
+    printf '[Login]\nKillUserProcesses=yes\n' > "$LOGIND_CONF"
+    stub_busctl fail
+    run ufw_sh plan
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REFUSE"*"KillUserProcesses=yes (per $LOGIND_CONF and logind.conf.d drop-ins (busctl unavailable))"* ]]
+    rm -f "$BIN/busctl"
+    run ufw_sh plan
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"busctl unavailable"* ]]
+    printf '[Login]\nKillUserProcesses=no\n' > "$LOGIND_CONF"
+    run ufw_sh plan
+    [ "$status" -eq 0 ]
+}
+
+@test "logind fallback: /etc hides the same drop-in name in /usr/lib; a later name in /run or /usr/lib still wins" {
+    etc="$UFW_LOGIND_ROOT/etc/systemd/logind.conf.d"; run_d="$UFW_LOGIND_ROOT/run/systemd/logind.conf.d"
+    usr="$UFW_LOGIND_ROOT/usr/lib/systemd/logind.conf.d"
+    mkdir -p "$etc" "$run_d" "$usr"
+    printf '[Login]\nKillUserProcesses=yes\n' > "$usr/50-kill.conf"
+    printf '[Login]\nKillUserProcesses=no\n' > "$etc/50-kill.conf"      # same name: /etc wins
+    run ufw_sh plan
+    echo "$output"
+    [ "$status" -eq 0 ]
+    printf '[Login]\nKillUserProcesses=yes\n' > "$run_d/60-kill.conf"   # later name wins, whatever the dir
+    run ufw_sh plan
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"KillUserProcesses=yes"* ]]
+    printf '[Login]\nKillUserProcesses=no\n' > "$usr/70-keep.conf"
+    run ufw_sh plan
+    [ "$status" -eq 0 ]
+}
+
+@test "ss's [::ffff:a.b.c.d]:port form matches an IPv4 SSH_CONNECTION" {
+    echo "0      0      [::ffff:10.10.10.31]:22      [::ffff:10.10.10.5]:50001" > "$S/est"
+    run ufw_sh apply
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$UFW_RUN_DIR/r770-ufw.established")" = 10.10.10.5:50001 ]
 }
 
 @test "apply refuses when ss does not show this session as established (nothing to prove a new one against)" {
@@ -439,7 +519,7 @@ applied_state() {
     [[ "$output" == *"run 'r770-ufw.sh confirm' from a NEW ssh session within 10 minutes"* ]]
     [[ "$output" == *"or UFW turns itself off (fail-open"* ]]
     [[ "$output" == *"do NOT reboot before confirm"* ]]
-    for i in $(seq 50); do grep -q '^sleep 600$' "$S/calls" && break; "$REAL_SLEEP" 0.05; done
+    for _ in $(seq 50); do grep -q '^sleep 600$' "$S/calls" && break; "$REAL_SLEEP" 0.05; done
     grep -qx 'sleep 600' "$S/calls"
 }
 
@@ -462,7 +542,7 @@ applied_state() {
     touch "$S/sleep_fast"
     run ufw_sh apply --minutes 1
     [ "$status" -eq 0 ]
-    for i in $(seq 100); do grep -q -- '--force disable' "$S/calls" && break; "$REAL_SLEEP" 0.05; done
+    for _ in $(seq 100); do grep -q -- '--force disable' "$S/calls" && break; "$REAL_SLEEP" 0.05; done
     grep -qx 'sleep 60' "$S/calls"
     grep -qx 'ufw --force disable' "$S/calls"
     [ ! -f "$S/active" ]
@@ -513,6 +593,29 @@ applied_state() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"FAIL"*"enable failed; auto-revert still armed"* ]]
     kill -0 "$(cat "$UFW_RUN_DIR/r770-ufw.pid")"
+}
+
+@test "apply: ss listing nothing after the enable is a FAIL, and the switch stays armed" {
+    touch "$S/est_empty_when_active"
+    run ufw_sh apply
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL"*"UFW is enabled but ss could not record the established sessions"*"auto-revert is still armed"* ]]
+    [[ "$output" != *"within 10 minutes"* ]]
+    [ -f "$S/active" ]
+    kill -0 "$(cat "$UFW_RUN_DIR/r770-ufw.pid")"
+    [ ! -e "$UFW_RUN_DIR/r770-ufw.established" ]
+}
+
+@test "apply: an arm failure with UFW already active says the rules are live and the enable was not touched" {
+    touch "$S/active" "$S/setsid_slow"; echo "$R22" > "$S/added"
+    run ufw_sh apply
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL"*"sleeper did not start"*"allow rules were added and are live (UFW was already active before apply)"* ]]
+    [[ "$output" != *"UFW was NOT enabled"* ]]
+    not_called 'default deny'
+    not_called 'enable'
 }
 
 @test "UFW_DRY_RUN prints the ufw commands in order and changes nothing" {
@@ -606,6 +709,19 @@ applied_state() {
     [[ "$output" != *"UFW confirmed"* ]]
 }
 
+@test "confirm FAILs when the switch fires during confirm (pending at the check, gone at the cancel)" {
+    ufw_sh apply >/dev/null
+    pid=$(cat "$UFW_RUN_DIR/r770-ufw.pid")
+    est_add 10.10.10.5:50002
+    touch "$S/fire_on_est"            # fires after the pending check, before the cancel
+    UFW_SSH_CONNECTION="10.10.10.5 50002 10.10.10.31 22" run ufw_sh confirm
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL"*"the auto-revert fired during confirm; UFW is being disabled"*"re-run apply"* ]]
+    [[ "$output" != *"UFW confirmed"* ]]
+    dead "$pid"
+}
+
 # ── revert ───────────────────────────────────────────────────────────────────
 
 @test "revert restores the pre-apply backup, leaves ufw disabled per ENABLED=no, and cancels the sleeper" {
@@ -646,7 +762,10 @@ applied_state() {
 
 @test "revert to an ENABLED=yes backup re-enables under a new dead-man switch that needs confirm" {
     echo "ENABLED=yes" > "$UFW_ETC_DIR/ufw.conf"
+    set_def_in ACCEPT                 # so the pre-apply policy differs from apply's
     ufw_sh apply >/dev/null
+    grep -qx 'DEFAULT_INPUT_POLICY="DROP"' "$UFW_DEFAULT_FILE"
+    backup=$(ls -d "$UFW_BACKUP_DIR"/2*)
     first=$(cat "$UFW_RUN_DIR/r770-ufw.pid")
     : > "$S/calls"
     run ufw_sh revert
@@ -657,6 +776,9 @@ applied_state() {
     [ "$(calls | sed -n 3p)" = "setsid" ]
     [ "$(calls | sed -n 4p)" = "ufw --force enable" ]
     [ "$(calls | wc -l)" -eq 4 ]
+    # /etc/default/ufw was already the backup's when the enable ran
+    cmp "$S/default_at_enable" "$backup/default-ufw"
+    grep -qx 'DEFAULT_INPUT_POLICY="ACCEPT"' "$S/default_at_enable"
     second=$(cat "$UFW_RUN_DIR/r770-ufw.pid")
     [ "$first" != "$second" ]
     "$REAL_SLEEP" 0.5
@@ -685,6 +807,67 @@ applied_state() {
     not_called 'enable'
     [ ! -e "$UFW_RUN_DIR/r770-ufw.pid" ]
     [ -z "$(pgrep -f -- "r770-ufw-autorevert $UFW_RUN_DIR/")" ]
+}
+
+@test "revert to ENABLED=yes: a failed re-enable can be retried, and the retry proceeds" {
+    echo "ENABLED=yes" > "$UFW_ETC_DIR/ufw.conf"
+    ufw_sh apply >/dev/null
+    echo 1 > "$S/enable_rc"
+    run ufw_sh revert
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL"*"ufw --force enable failed; auto-revert still armed; revert can be run again"* ]]
+    # the switch then fires (as it would within 10 minutes): no sleeper, UFW off
+    pid=$(cat "$UFW_RUN_DIR/r770-ufw.pid"); kill -- "-$pid"; rm -f "$UFW_RUN_DIR/r770-ufw.pid"
+    [ ! -f "$S/active" ]
+    rm -f "$S/enable_rc"; : > "$S/calls"
+    run ufw_sh revert
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"already reverted"* ]]
+    [[ "$output" == *"reverted to "* ]]
+    [ "$(calls | sed -n 1p)" = "ufw --force disable" ]
+    grep -qx 'ufw --force enable' "$S/calls"
+    [ -f "$S/active" ]
+    kill -0 "$(cat "$UFW_RUN_DIR/r770-ufw.pid")"
+}
+
+# A backup as the d9581cb script took it: no default-ufw.
+prefix_backup() {  # prefix_backup ENABLED
+    local dir="$UFW_BACKUP_DIR/20260925T120000.000000000"
+    mkdir -p "$dir"
+    echo fake > "$dir/etc-ufw.tgz"
+    echo "ENABLED=$1" > "$dir/ufw.conf"
+    printf '*filter\nCOMMIT\n' > "$dir/iptables-save.txt"
+    echo taken_while_pending=no > "$dir/meta"
+    echo "$dir"
+}
+
+@test "revert from a pre-fix backup without default-ufw: to DISABLED works, with a WARN, and leaves /etc/default/ufw as is" {
+    dir=$(prefix_backup no)
+    touch "$S/active"; set_def_in REJECT
+    cp "$UFW_DEFAULT_FILE" "$BATS_TEST_TMPDIR/default-before"
+    run ufw_sh revert
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARN"*"$UFW_DEFAULT_FILE was not captured and is left as is"* ]]
+    [[ "$output" == *"reverted to $dir"* ]]
+    [ "$(calls | sed -n 1p)" = "ufw --force disable" ]
+    [ "$(calls | sed -n 2p)" = "tar -C $BATS_TEST_TMPDIR/etc -xzf $dir/etc-ufw.tgz" ]
+    [ "$(calls | wc -l)" -eq 2 ]
+    cmp "$UFW_DEFAULT_FILE" "$BATS_TEST_TMPDIR/default-before"
+    [ ! -f "$S/active" ]
+}
+
+@test "revert from a pre-fix backup without default-ufw: to ENABLED is refused, nothing changes" {
+    prefix_backup yes >/dev/null
+    touch "$S/active"
+    run ufw_sh revert
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REFUSE"*"has no default-ufw"*"refused"* ]]
+    no_mutations
+    [ -f "$S/active" ]
 }
 
 @test "revert is idempotent" {

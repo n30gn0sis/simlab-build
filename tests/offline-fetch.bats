@@ -452,6 +452,62 @@ setup_site_repo() {
     [ ! -e "$BUNDLE_DIR/site/scripts/hello.sh" ]
 }
 
+# git_logging_stub -- a git on PATH that records every safe.directory value it
+# is handed (one per line, in $BATS_TEST_TMPDIR/safe-dirs), then runs the real
+# git unchanged.
+git_logging_stub() {
+    local real; real="$(command -v git)"
+    stub git 'prev=""; for a; do case "$prev $a" in "-c safe.directory="*) printf "%s\n" "${a#safe.directory=}" >> "'"$BATS_TEST_TMPDIR"'/safe-dirs" ;; esac; prev=$a; done
+exec "'"$real"'" "$@"'
+}
+
+@test "a scripts/..-style or symlinked SITE_SRC_ROOT is normalised: git gets the canonical path as safe.directory" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    local canon; canon="$(cd "$SRC" && pwd -P)"
+    ln -s "$SRC" "$BATS_TEST_TMPDIR/site-link"
+    git_logging_stub
+    for root in "$SRC/scripts/.." "$BATS_TEST_TMPDIR/site-link"; do
+        rm -f "$BATS_TEST_TMPDIR/safe-dirs"
+        export SITE_SRC_ROOT="$root"
+        run "$SCRIPT" --only site
+        echo "[$root] $output"
+        [ "$status" -eq 0 ]
+        [ -s "$BATS_TEST_TMPDIR/safe-dirs" ]
+        # every git call names the canonical path, and only it
+        [ "$(sort -u "$BATS_TEST_TMPDIR/safe-dirs")" = "$canon" ]
+    done
+}
+
+@test "a SITE_SRC_ROOT that cannot be entered refuses before touching git" {
+    git_logging_stub
+    export SITE_SRC_ROOT="$BATS_TEST_TMPDIR/does-not-exist"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"SITE_SRC_ROOT ($BATS_TEST_TMPDIR/does-not-exist) is not a directory that can be entered"* ]]
+    [ ! -e "$BATS_TEST_TMPDIR/safe-dirs" ]
+    [ ! -d "$BUNDLE_DIR/site" ]
+}
+
+@test "a symlink inside SITE_ARCHIVE refuses, naming the path" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    local stage="$BATS_TEST_TMPDIR/archive-src"
+    mkdir -p "$stage"
+    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki | tar xf - -C "$stage"
+    ln -s /etc/passwd "$stage/scripts/evil-link"
+    ARCHIVE="$BATS_TEST_TMPDIR/site.tar"
+    tar cf "$ARCHIVE" -C "$stage" scripts config docs
+    unset SITE_SRC_ROOT
+    export SITE_ARCHIVE="$ARCHIVE" SITE_COMMIT=0123456789abcdef
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"scripts/evil-link is a symlink in SITE_ARCHIVE"* ]]
+    [ ! -e "$BUNDLE_DIR/site" ]
+}
+
 @test "--list shows the new site stage as always refreshed" {
     run "$SCRIPT" --list
     echo "$output"

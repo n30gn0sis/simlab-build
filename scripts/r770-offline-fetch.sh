@@ -164,7 +164,14 @@ site_validate_source() {  # EITHER a git work tree OR SITE_ARCHIVE+SITE_COMMIT
         }
         SITE_MODE="archive"
     else
-        SITE_SRC_ROOT="${SITE_SRC_ROOT:-$SCRIPT_DIR/..}"
+        # Canonical (cd && pwd -P): git matches safe.directory against the
+        # repo's real path, so a "scripts/.." or symlinked spelling would not
+        # match it and git would still refuse with "dubious ownership".
+        local raw="${SITE_SRC_ROOT:-$SCRIPT_DIR/..}"
+        SITE_SRC_ROOT="$(cd -- "$raw" 2>/dev/null && pwd -P)" || {
+            echo "FATAL: SITE_SRC_ROOT ($raw) is not a directory that can be entered -- refusing. (Or set SITE_ARCHIVE + SITE_COMMIT instead.)" >&2
+            exit 1
+        }
         [ -f "$SITE_SRC_ROOT/scripts/r770-offline-fetch.sh" ] || {
             echo "FATAL: SITE_SRC_ROOT ($SITE_SRC_ROOT) doesn't look like this repo -- scripts/r770-offline-fetch.sh not found there. Refusing to guess what belongs in site/. (Or set SITE_ARCHIVE + SITE_COMMIT instead -- see a packed builder's cmd_pack.)" >&2
             exit 1
@@ -950,7 +957,7 @@ if [ "$SITE_MODE" = "archive" ]; then
         mkdir -p "$(dirname "$dest")"
         cp -p "$tmp/$rel" "$dest"
         n=$((n + 1))
-    done < <(cd "$tmp" && find . -type f -print0)
+    done < <(cd "$tmp" && find . \( -type f -o -type l \) -print0)
     rm -rf "$tmp"
 else
     commit="$(sitegit "$SITE_SRC_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"

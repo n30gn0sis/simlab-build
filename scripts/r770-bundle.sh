@@ -213,7 +213,7 @@ check_site() {  # <dir>
     done
     if [ "${#missing[@]}" -gt 0 ]; then
         printf '      site/%s\n' "${missing[@]}"
-        warn "site/ is missing expected script(s) above (not yet shipped in this repo -- see comment above)"
+        warn "site/ is missing expected script(s) above (a bundle cut before they shipped, or a defect — see comment above)"
     else
         pass "site/ has the expected deploy script(s)"
     fi

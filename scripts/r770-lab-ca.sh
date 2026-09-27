@@ -13,8 +13,9 @@
 #   apply                  create the CA if absent (never touch an existing
 #                           one), issue the cert if absent, install into
 #                           LABCA_SSL_DIR.
-#   apply --reissue-cert   also rebuild the cert (old cert/key/req moved
-#                           aside, timestamped) — the CA is still kept.
+#   apply --reissue-cert   also rebuild the cert: easyrsa revokes the old
+#                           one, then build-server-full issues a new one
+#                           (index.txt: R then V) — the CA is still kept.
 #   verify                 chain, SANs, expiry and key mode; PASS/FAIL per
 #                           check.
 #   export-ca              print the installed CA certificate to stdout.

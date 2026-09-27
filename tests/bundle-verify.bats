@@ -290,6 +290,7 @@ pair_bundle() {   # a bundle with all three list/payload pairs intact
     [[ "$output" == *"RESULT: PASS WITH WARNINGS"* ]]
     [[ "$output" == *"site/scripts/r770-lab-ca.sh"* ]]
     [[ "$output" == *"is missing expected script(s)"* ]]
+    [[ "$output" == *"(a bundle cut before they shipped, or a defect — see comment above)"* ]]
 }
 
 @test "a site/ present but missing scripts/r770-bundle.sh warns -- SITE_REQUIRED_SCRIPTS has teeth beyond lab-ca.sh" {

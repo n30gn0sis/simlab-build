@@ -202,7 +202,7 @@ check_manual() {  # <dir>
 #     normally. The other three below already exist and ship today, so a real
 #     bundle missing one of THEM is a genuine defect to disposition, not a
 #     not-yet-written placeholder.
-SITE_REQUIRED_SCRIPTS=(scripts/r770-bundle.sh scripts/r770-malcolm-deploy.sh scripts/r770-airgap-sim.sh scripts/r770-lab-ca.sh)
+SITE_REQUIRED_SCRIPTS=(scripts/r770-bundle.sh scripts/r770-malcolm-deploy.sh scripts/r770-airgap-sim.sh scripts/r770-lab-ca.sh scripts/r770-portal.sh)
 
 check_site() {  # <dir>
     local dir="$1" s missing=()

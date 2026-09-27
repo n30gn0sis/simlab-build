@@ -34,6 +34,8 @@ make_bundle() {
     chmod +x "$d/site/scripts/r770-malcolm-deploy.sh"
     printf '#!/usr/bin/env bash\necho fixture-airgap-sim\n' > "$d/site/scripts/r770-airgap-sim.sh"
     chmod +x "$d/site/scripts/r770-airgap-sim.sh"
+    printf '#!/usr/bin/env bash\necho fixture-portal\n' > "$d/site/scripts/r770-portal.sh"
+    chmod +x "$d/site/scripts/r770-portal.sh"
     echo "server { }" > "$d/site/config/nginx.conf"
     echo "# wiki"      > "$d/site/docs/analyst-wiki/index.md"
     echo "fake malcolm images"  > "$d/malcolm/malcolm-images-0.0.0-fixture.tar.gz"

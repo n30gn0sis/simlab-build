@@ -10,7 +10,7 @@ installs shellcheck in web sessions; on the staging VM,
 
 ## What is covered
 
-Sixteen suites. `./tests/run.sh` runs them all; the table below is the whole gate.
+Seventeen suites. `./tests/run.sh` runs them all; the table below is the whole gate.
 
 | Suite | Covers |
 |---|---|
@@ -30,6 +30,7 @@ Sixteen suites. `./tests/run.sh` runs them all; the table below is the whole gat
 | `owners.bats` | the ownership registry in `OWNERS.md` is true: pins, bundle sizes, the staging-host OS and the free-extent capacity figure appear only where `OWNERS.md` says they may, and permitted restatements match their owner |
 | `references.bats` | every repo path named in `.claude/`, in `BUILD-STATE.md`, or anywhere under `state/` exists; every script a slash command invokes is executable; and every `PRD.md §N` cited by `CLAUDE.md`, `OWNERS.md` or `.claude/` is a real heading, so a PRD restructure cannot silently orphan a rule. `work/plans/` is exempt: a plan names artifacts it intends to create |
 | `lab-ca.bats` | `r770-lab-ca.sh plan/apply/verify/export-ca` — the internal CA and the five-name `.lab` certificate are created once and never regenerated if they already exist; `plan` and `apply` both refuse a partial or lost PKI (missing `ca.crt`/`private/ca.key`, or an installed `ca.crt` with no `pki/` behind it) rather than silently minting a new CA; `--reissue-cert` revokes then rebuilds the cert (index.txt ends R then V) and dies cleanly if the post-revoke build fails; `verify` and `export-ca` are proven read-only (before/after snapshot) and the installed files land at `/etc/nginx/ssl/{lab.crt,lab.key,ca.crt}` |
+| `portal.bats` | `r770-portal.sh plan/apply/verify` against stubbed nginx, systemctl, docker, curl and ss — `plan` is read-only; `apply` refuses (changing nothing) without root, the `/etc/nginx/ssl/{lab.crt,lab.key,ca.crt}` from `r770-lab-ca.sh`, or Malcolm's `nginx/htpasswd`; it backs up the nginx dir, installs the snippets and only the `portal`/`malcolm`/`docs` vhosts, copies Malcolm's htpasswd as the one analyst login, builds `docs.lab` with `--network none`, runs `nginx -t` before any reload and restores the backup without reloading if it fails, and reloads only when something changed (a second `apply` is a no-op); `verify` wants 401 without and 200 with credentials per name (password fed to curl on stdin, never argv) and, on the box, only nginx on :443 |
 
 ## Accepted legacy shellcheck exclusions
 

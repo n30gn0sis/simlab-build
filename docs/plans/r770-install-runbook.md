@@ -418,10 +418,47 @@ risk of the air gap and belongs in the cycle log, not in a surprise.
 
 ## Part 10 — Portal and monitoring  *(Phases 13, 14)*
 
-Nginx, Prometheus, Grafana, alertmanager, cAdvisor and the docs site all come
-from the monitoring images loaded in Part 5. Internal CA only — issue portal,
-Malcolm and GNS3 certificates from it and distribute the CA certificate to
+Prometheus, Grafana, alertmanager, cAdvisor and the MkDocs build image all come
+from the monitoring images loaded in Part 5. Internal CA only — the `.lab`
+certificate comes from it (`r770-lab-ca.sh apply`, which installs
+`/etc/nginx/ssl/{lab.crt,lab.key,ca.crt}`); distribute the CA certificate to
 analyst browsers. No ACME, no Let's Encrypt: both need the internet.
+
+### 10.1 Portal
+
+Needs, in this order: `r770-lab-ca.sh apply` (the three files above) and
+Malcolm's `auth` (8.1a — its `nginx/htpasswd` becomes the portal's one analyst
+login). `apply` refuses, changing nothing, until both exist. `plan` (the
+default verb) is read-only and shows what `apply` would install.
+
+```bash
+sudo ./site/scripts/r770-portal.sh plan
+sudo ./site/scripts/r770-portal.sh apply
+sudo ./site/scripts/r770-portal.sh verify --user analyst --password-file /root/analyst-pw
+```
+
+`apply` backs up `/etc/nginx`, then installs `config/nginx/snippets/*` and only
+the `portal.lab`, `malcolm.lab` and `docs.lab` vhosts (enabled by symlink),
+copies Malcolm's `nginx/htpasswd` to `/etc/nginx/lab.htpasswd` (0640,
+group `www-data`) so all three names share one login, copies
+`config/portal/index.html` to `/srv/www/portal`, and builds `docs.lab` into
+`/srv/www/docs` from `site/config/docs/mkdocs.yml` and
+`site/docs/analyst-wiki/*.md` with the bundled mkdocs-material image under
+`docker run --network none`. It runs `nginx -t` **before** any reload; if the
+test fails it restores the backup and does not reload. It reloads nginx only
+if something changed, so re-running it is safe.
+
+`verify` checks each name for 401 without credentials and, given
+`--user` and `--password-file` (together or not at all), 200 with them, over
+TLS checked against `--cacert` (default `/etc/nginx/ssl/ca.crt`). The password
+goes to curl on stdin, never argv. Without credentials it WARNs and skips the
+200 checks. `--host <ip>` points the checks at another address (default
+`127.0.0.1`); without `--host` it also checks that only nginx listens on
+`:443`, which is what `bind-loopback` (8.4) set up. The user is the one
+Malcolm's `auth` created (`analyst` unless you overrode it). 8.4 removed
+`/root/analyst-pw`: recreate it for this check the way 8.1a does and remove it
+again afterwards (`sudo rm -f /root/analyst-pw`), or run `verify` with `--host`
+from an analyst workstation that trusts the lab CA.
 
 Publish a `.lab` name only where a route genuinely exists. Discovery found
 iDRAC on a different subnet from management; a name that resolves to something

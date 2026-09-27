@@ -147,7 +147,7 @@ Expected: exactly those six values. `git diff --no-index` against the rehearsal 
 
 ### Task 6: Prepare VM 9771 (controller; root once)
 
-- [ ] **Step 1: Host check.** Using a root ticket, read-only, get the host's used and total memory and every running guest. Proceed only if host free memory minus 12 GiB is at least 3 GiB, with 9771 stopped. Otherwise stop and tell the operator which guest to stop.
+- [ ] **Step 1: Host check.** (Operator 2026-09-26: stop 9770 with the token first; root@pam once, for this check and Step 3 only.) Using a root ticket, read-only, get the host's used and total memory and every running guest. Proceed only if host free memory minus 12 GiB is at least 3 GiB, with 9771 stopped. Otherwise stop and tell the operator which guest to stop.
 - [ ] **Step 2: Snapshot (token).** `r770-staging-vm.sh` has no snapshot verb, so `POST /nodes/proxmox/qemu/9771/snapshot` with `snapname=installed-2026-09-26`, `vmstate=0`, using the token config-on-stdin form. Poll the task to OK.
 - [ ] **Step 3: Memory (root).** `PUT /nodes/proxmox/qemu/9771/config` with `memory=12288`. Read the config back and confirm `memory: 12288`, `balloon: 0`.
 - [ ] **Step 4:** `STAGING_VMID=9771 ./scripts/r770-staging-vm.sh start && … wait-ssh 300`. Then `free -g` on the VM shows about 11–12.
@@ -178,7 +178,7 @@ sudo $X/r770-malcolm-deploy.sh health --timeout 900
 If any step fails, stop there and debug with superpowers:systematic-debugging. Any fix goes back through a repo change and review, never a hand edit on the VM.
 - [ ] **Step 5:** `sudo $X/r770-portal.sh apply && sudo $X/r770-portal.sh verify --user analyst --password-file /root/analyst-pw`.
 - [ ] **Step 6:** `sudo $X/r770-malcolm-deploy.sh verify --password-file /root/analyst-pw` (PCAP indexed by Arkime, Zeek logs present, zeek container healthy).
-- [ ] **Step 7: UFW.** `sudo $X/r770-ufw.sh plan`, then `sudo $X/r770-ufw.sh apply --minutes 10`, then **from a NEW ssh session** `sudo $X/r770-ufw.sh confirm`, then `sudo $X/r770-ufw.sh verify`.
+- [ ] **Step 7: UFW.** Every call is `sudo --preserve-env=SSH_CONNECTION $X/r770-ufw.sh …`. Run `plan`, then `apply --minutes 10`, then **from a NEW ssh session** (`ssh -o ControlMaster=no -o ControlPath=none …`) run `confirm`, then `verify`. (Amended 2026-09-26 after the Task 5 review: sudo strips SSH_CONNECTION, and a multiplexed session is not a new connection.)
 
 ### Task 9: Verify from outside, record, snapshot (controller)
 

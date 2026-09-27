@@ -11,21 +11,29 @@
 #   configure <config-json>    Malcolm's install.py --non-interactive --configure,
 #                              importing <config-json>
 #   auth <bundle-dir> --password-file FILE [--user NAME] [--force]
-#                              Malcolm's auth_setup, unattended, fed HASHES only
+#                              Malcolm's auth_setup, unattended, fed HASHES only.
+#                              --force re-runs EVERY --auth-generate-* flag: on an
+#                              initialized stack that regenerates the internal
+#                              postgres/netbox/valkey/opensearch/keycloak
+#                              credentials too. It is not a password-change path.
 #   bind-loopback              nginx-proxy 0.0.0.0:443:443[/tcp] -> 127.0.0.1:8443:443[/tcp]
 #   start                      Malcolm's own ./scripts/start --quiet (refused before bind-loopback)
 #   health [--timeout SECS]    every service running+healthy; only 127.0.0.1:8443 published
 #   verify --password-file FILE [--user NAME]
-#                              loopback PCAP -> upload; Arkime sessions, Zeek logs,
-#                              zeek container healthy
+#                              loopback PCAP -> Malcolm's upload dir (read from the
+#                              upload: service's bind mount in docker-compose.yml);
+#                              Arkime sessions, Zeek logs, zeek container healthy
 #
 # `docker load` reports success even when the resulting tag set is incomplete,
 # which is why import-bundle.md step 3b requires verifying loaded tags against
 # the bundle's own image-list files.
 #
-# The analyst password is read from a mode-600 file into a shell variable and
-# only ever leaves it on a pipe (stdin of openssl, htpasswd-in-docker, curl -K -).
-# It is never in argv, the environment, a log, or the output.
+# The analyst password is read from a root-owned, mode 600 or 400, non-symlink
+# file into a shell variable and only ever leaves it on a pipe (stdin of
+# openssl, htpasswd-in-docker, curl -K -). It is never in argv, the environment,
+# a log, or the output. Its HASHES do go to auth_setup in argv -- Malcolm's only
+# unattended interface -- so the MD5-crypt hash is briefly visible to local
+# users in the process list while auth_setup runs (htpasswd gets bcrypt).
 #
 #   0  done, already done, or every check PASSed
 #   1  refused (REFUSE: nothing changed), or failed (FAIL: see the output)
@@ -55,6 +63,9 @@ OPEN_RE='^    - 0\.0\.0\.0:443:443(/tcp)?$'
 LOOP_RE='^    - 127\.0\.0\.1:8443:443(/tcp)?$'
 PORTAL_URL='https://127.0.0.1:8443'
 VERIFY_TMP=""
+VERIFY_PID=""
+# Malcolm's upload service: the container path its PHP uploader writes to.
+UPLOAD_TARGET='/var/www/upload/server/php/chroot/files'
 
 die()    { echo "r770-malcolm-deploy: $*" >&2; exit 1; }
 refuse() { die "REFUSE  $*"; }   # pre-mutation checks only
@@ -92,13 +103,24 @@ sha_of() { sha256sum < "$1" | awk '{print $1}'; }
 
 have_env_files() { compgen -G "$MD/config/*.env" > /dev/null; }
 
-# Password file: a regular file, mode 600, first line non-empty. Sets PW.
+valid_user() {
+    [[ $1 =~ ^[A-Za-z0-9._-]+$ ]] || refuse "invalid user name: $1"
+}
+
+# Password file: not a symlink, a regular file owned by root (uid 0), mode 600
+# or 400, first line non-empty. Sets PW.
 # Uses `read` (a builtin), so the secret never appears in any argv.
 read_password_file() {
-    local f=$1 mode
+    local f=$1 st owner mode
+    [ ! -L "$f" ] || refuse "password file $f is a symlink — give the real file"
     [ -f "$f" ] || refuse "password file not found: $f"
-    mode=$(stat -c %a "$f") || refuse "cannot stat $f"
-    [ "$mode" = 600 ] || refuse "password file $f is mode $mode, must be 600"
+    st=$(stat -c '%u %a' "$f") || refuse "cannot stat $f"
+    read -r owner mode <<< "$st"
+    [ "$owner" = 0 ] || refuse "password file $f is owned by uid $owner, must be owned by root (uid 0)"
+    case $mode in
+        600|400) ;;
+        *) refuse "password file $f is mode $mode, must be 600 or 400" ;;
+    esac
     PW=""
     IFS= read -r PW < "$f" || true
     PW=${PW%$'\r'}
@@ -114,7 +136,8 @@ curl_quote() {
 
 # `<name> <state> <health>` for every container, including exited ones.
 compose_ps() {
-    (cd "$MD" && "${COMPOSE[@]}" ps --all --format '{{.Name}} {{.State}} {{.Health}}')
+    # timeout: a hung daemon must not outlast health's or verify's deadline.
+    (cd "$MD" && timeout 30 "${COMPOSE[@]}" ps --all --format '{{.Name}} {{.State}} {{.Health}}')
 }
 
 # From compose_ps output: the services that are not running+healthy. A service
@@ -182,21 +205,23 @@ cmd_install() {
     [ -d "$dir/malcolm" ] || refuse "not a bundle directory (no malcolm/): $dir"
     require_root
 
-    if [ -f "$COMPOSE_FILE" ]; then
-        echo "already installed: $COMPOSE_FILE exists"
-        return 0
-    fi
-
-    local zips n zip sum
+    local zips n zip sum stamp
     zips=$(find "$dir/malcolm" -maxdepth 1 -name 'malcolm-*-docker_install.zip' | sort)
     n=$(grep -c . <<< "$zips" || true)
     [ "$n" -eq 1 ] || refuse "expected exactly one malcolm-*-docker_install.zip in $dir/malcolm, found $n"
     zip=$zips
     sum=$(sha_of "$zip") || fail "cannot hash $zip"
 
-    if find_installer > /dev/null && [ "$(cat "$STAMP_DIR/install.sha256" 2>/dev/null || true)" = "$sum" ]; then
-        echo "already installed: $(basename "$zip") unpacked in $MALCOLM_ROOT (not yet configured)"
-        return 0
+    # An existing install (unpacked or configured) is only ever confirmed, never
+    # overwritten: unpacking a different zip over it is an upgrade, and an
+    # upgrade is a deliberate operator step (runbook Part 8.1).
+    if [ -f "$COMPOSE_FILE" ] || find_installer > /dev/null; then
+        stamp=$(cat "$STAMP_DIR/install.sha256" 2>/dev/null || true)
+        if [ -n "$stamp" ] && [ "$stamp" = "$sum" ]; then
+            echo "already installed: $(basename "$zip") (sha256 $sum) in $MALCOLM_ROOT"
+            return 0
+        fi
+        refuse "$MALCOLM_ROOT already holds a Malcolm install (installed: ${stamp:-unknown, no stamp in $STAMP_DIR}; bundled $(basename "$zip"): $sum) — upgrading is a deliberate operator step, see runbook Part 8.1; nothing changed"
     fi
 
     mkdir -p "$MALCOLM_ROOT" "$STAMP_DIR" || fail "cannot create $MALCOLM_ROOT"
@@ -259,7 +284,7 @@ cmd_auth() {
     if [ -z "$dir" ] || [ -z "$pwfile" ]; then
         die "usage: auth <bundle-dir> --password-file FILE [--user NAME] [--force]"
     fi
-    [[ $user =~ ^[A-Za-z0-9._-]+$ ]] || refuse "invalid user name: $user"
+    valid_user "$user"
     [ -d "$dir" ] || refuse "not a directory: $dir"
     require_root
     [ -x "$MD/scripts/auth_setup" ] || refuse "not installed: no $MD/scripts/auth_setup"
@@ -361,7 +386,8 @@ cmd_start() {
 # ── health ───────────────────────────────────────────────────────────────────
 
 # Listening sockets: 127.0.0.1:8443 must be there; nothing docker-proxy on
-# the wildcard 443. Needs -p (root) to tell docker-proxy from the portal nginx.
+# the wildcard 443, and no docker-proxy on any non-loopback address on any
+# port. Needs -p (root) to tell docker-proxy from the portal nginx.
 check_ports() {
     local ss_out bad=0 line
     ss_out=$(ss -H -ltnp) || { echo "FAIL    ss -H -ltnp failed"; return 1; }
@@ -378,7 +404,14 @@ check_ports() {
             *)              echo "FAIL    wildcard 443 listener with no owner shown (run as root): $line"; bad=1 ;;
         esac
     done < <(awk '$4 ~ /^(0\.0\.0\.0|\[::\]|\*):443$/' <<< "$ss_out")
-    [ "$bad" -eq 0 ] && echo "PASS    no docker-proxy on 0.0.0.0:443 or [::]:443"
+    # Every other docker-proxy listener must be on loopback (wildcard 443 was
+    # reported above).
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        echo "FAIL    docker-proxy published on a non-loopback address: $line"; bad=1
+    done < <(awk '/"docker-proxy"/ && $4 !~ /^(127\.0\.0\.1|\[::1\]):[0-9]+$/ &&
+                  $4 !~ /^(0\.0\.0\.0|\[::\]|\*):443$/' <<< "$ss_out")
+    [ "$bad" -eq 0 ] && echo "PASS    no docker-proxy on 0.0.0.0:443 or [::]:443, none off loopback"
     return "$bad"
 }
 
@@ -415,6 +448,44 @@ cmd_health() {
 
 # ── verify ───────────────────────────────────────────────────────────────────
 
+# Malcolm's upload directory on the host: the source of the bind mount whose
+# target is $UPLOAD_TARGET, inside the `  upload:` service of the compose file.
+# pcapDir moves it (the R770 config puts it under /data/pcap/raw), so it is
+# read from the file Malcolm actually runs, never assumed. A relative source
+# resolves against $MD, the compose file's directory. Refuses (exit 1 from
+# this subshell; the caller exits) if there is not exactly one, or it is not
+# a directory.
+upload_dir() {
+    local srcs n src
+    srcs=$(awk -v want="$UPLOAD_TARGET" '
+        function val(v) {
+            sub(/^[^:]*:[ \t]*/, "", v); sub(/[ \t]+$/, "", v)
+            gsub(/^["\047]|["\047]$/, "", v)
+            return v
+        }
+        /^[ \t]*(#|$)/ { next }
+        /^[^ ]/         { inup = 0; next }
+        /^  [^ ]/       { inup = ($0 ~ /^  upload:[ \t]*$/); src = ""; tgt = ""; next }
+        !inup           { next }
+        /^[ \t]*- /     { src = ""; tgt = "" }
+        { line = $0; sub(/^[ \t]*(- )?[ \t]*/, "", line) }
+        line ~ /^source:/ { src = val(line) }
+        line ~ /^target:/ { tgt = val(line) }
+        src != "" && tgt == want { print src; src = ""; tgt = "" }
+    ' "$COMPOSE_FILE") || refuse "cannot read $COMPOSE_FILE"
+    n=$(grep -c . <<< "$srcs" || true)
+    [ "$n" -eq 1 ] ||
+        refuse "expected one bind mount with target $UPLOAD_TARGET in the upload: service of $COMPOSE_FILE, found $n — cannot tell where Malcolm takes uploads"
+    src=$srcs
+    case $src in
+        /*) ;;
+        *)  src="$MD/${src#./}" ;;
+    esac
+    [ -d "$src" ] ||
+        refuse "upload directory $src (from the upload: service in $COMPOSE_FILE) does not exist — is Malcolm installed and started?"
+    printf '%s\n' "$src"
+}
+
 cmd_verify() {
     local pwfile="" user=analyst
     while [ $# -gt 0 ]; do
@@ -425,13 +496,15 @@ cmd_verify() {
         esac
     done
     [ -n "$pwfile" ] || die "usage: verify --password-file FILE [--user NAME]"
+    valid_user "$user"
     local timeout=${VERIFY_TIMEOUT:-300} secs=${VERIFY_CAPTURE_SECS:-20}
     is_uint "$timeout" || die "VERIFY_TIMEOUT must be a whole number"
     is_uint "$secs" || die "VERIFY_CAPTURE_SECS must be a whole number"
     is_uint "$POLL_SECS" || die "MALCOLM_POLL_SECS must be a whole number"
     require_root
     require_compose_file
-    [ -d "$MD/pcap/upload" ] || refuse "no $MD/pcap/upload — is Malcolm installed and started?"
+    local updir
+    updir=$(upload_dir) || exit 1
     compose_cmd
     local PW
     read_password_file "$pwfile"
@@ -439,23 +512,28 @@ cmd_verify() {
     cred=$(curl_quote "$user:$PW")
     PW=""
 
-    local tmp pcap marker pid i fails=0
+    local tmp pcap marker i t0 fails=0
     tmp=$(mktemp -d "${MALCOLM_TMPDIR:-/tmp}/r770-malcolm-verify.XXXXXX") || fail "mktemp failed"
     VERIFY_TMP=$tmp
-    trap 'rm -rf "$VERIFY_TMP"' EXIT
+    # Globals, not locals: the trap runs after this function has returned.
+    trap '[ -z "$VERIFY_PID" ] || kill "$VERIFY_PID" 2> /dev/null; rm -rf "$VERIFY_TMP"' EXIT
     pcap="$tmp/r770-verify-$(date +%Y%m%dT%H%M%S).pcap"
     marker="$tmp/marker"
 
     echo "capturing loopback 8443 for ${secs}s while probing $PORTAL_URL/"
+    # Arkime's query window opens just before the capture, so an earlier run's
+    # sessions can never satisfy this one.
+    t0=$(( $(date +%s) - 5 ))
     tcpdump -i lo -U -Z root -w "$pcap" tcp port 8443 > "$tmp/tcpdump.log" 2>&1 &
-    pid=$!
+    VERIFY_PID=$!
     for i in 1 2 3 4 5; do
         sleep $((secs / 5))
         curl -sk -o /dev/null --max-time 5 "$PORTAL_URL/" || true
         echo "  probe $i"
     done
-    kill -INT "$pid" 2> /dev/null || true
-    wait "$pid" || true
+    kill -INT "$VERIFY_PID" 2> /dev/null || true
+    wait "$VERIFY_PID" || true
+    VERIFY_PID=""
 
     local size
     size=$(wc -c < "$pcap" 2> /dev/null || echo 0)
@@ -468,12 +546,12 @@ cmd_verify() {
 
     local name dest
     name=$(basename "$pcap")
-    dest="$MD/pcap/upload/$name"
+    dest="$updir/$name"
     : > "$marker"
     # Copy under a hidden name, then rename, so Malcolm never sees a partial file.
-    if ! { cp "$pcap" "$MD/pcap/upload/.$name.part" && chmod 0644 "$MD/pcap/upload/.$name.part" &&
-           mv "$MD/pcap/upload/.$name.part" "$dest"; }; then
-        fail "cannot place $name in $MD/pcap/upload"
+    if ! { cp "$pcap" "$updir/.$name.part" && chmod 0644 "$updir/.$name.part" &&
+           mv "$updir/.$name.part" "$dest"; }; then
+        fail "cannot place $name in $updir"
     fi
     echo "PASS    uploaded: $dest"
 
@@ -482,7 +560,7 @@ cmd_verify() {
         if [ "$arkime" -eq 0 ]; then
             resp=$(printf 'user = "%s"\n' "$cred" |
                 curl -sk --max-time 20 -K - \
-                    "$PORTAL_URL/arkime/api/sessions?date=1&expression=port%3D%3D8443" 2> /dev/null || true)
+                    "$PORTAL_URL/arkime/api/sessions?startTime=$t0&stopTime=$(( $(date +%s) + 60 ))&expression=port%3D%3D8443" 2> /dev/null || true)
             count=$(sed -n 's/.*"recordsFiltered":[[:space:]]*\([0-9][0-9]*\).*/\1/p' <<< "$resp" | head -1)
             [ -n "$count" ] && [ "$count" -gt 0 ] && arkime=$count
         fi
@@ -497,7 +575,7 @@ cmd_verify() {
     cred=""
 
     if [ "$arkime" -gt 0 ]; then
-        echo "PASS    arkime: $arkime session(s) on port 8443 in the last hour"
+        echo "PASS    arkime: $arkime session(s) on port 8443 since the capture started"
     else
         echo "FAIL    arkime: no sessions for the capture within ${timeout}s"; fails=$((fails + 1))
     fi
@@ -531,5 +609,5 @@ case "${1:-}" in
     start)         shift; cmd_start "$@" ;;
     health)        shift; cmd_health "$@" ;;
     verify)        shift; cmd_verify "$@" ;;
-    *)             die "usage: r770-malcolm-deploy.sh load|assert-tags|install <bundle-dir> | configure <json> | auth <bundle-dir> --password-file F | bind-loopback | start | health | verify --password-file F" ;;
+    *)             die "usage: r770-malcolm-deploy.sh load|assert-tags|install <bundle-dir> | configure <json> | auth <bundle-dir> --password-file F [--user N] [--force: regenerates ALL internal creds] | bind-loopback | start | health | verify --password-file F [--user N]" ;;
 esac

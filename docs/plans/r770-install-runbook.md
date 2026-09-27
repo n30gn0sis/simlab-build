@@ -299,8 +299,16 @@ sudo ./site/scripts/r770-malcolm-deploy.sh configure \
 ```
 
 The installer extracts Malcolm to `/opt/malcolm/malcolm` and sizes the JVM
-heaps to the host by itself (staging: OpenSearch 4g on an 8 GiB VM); check
-`config/opensearch.env` before trusting the default on 128 GB.
+heaps to the host by itself; the imported config then sets them (see 8.3).
+
+`install` on a box that already has Malcolm only ever confirms it: if the
+bundled `malcolm-*-docker_install.zip` has the sha256 recorded at install time
+(`/opt/malcolm/.r770-deploy/install.sha256`) it reports "already installed" and
+exits 0; if the zip differs, or there is no stamp, it refuses and names both
+hashes. **An upgrade is a deliberate operator step**, not a side effect of
+re-running `install` against a newer bundle: stop Malcolm, move `/opt/malcolm`
+aside (keep it until the new stack verifies), then run `install`, `configure`,
+`auth`, `bind-loopback`, `start`, `health` and `verify` again.
 
 ### 8.1a Generate the auth material — not optional
 
@@ -310,15 +318,30 @@ certs, the OpenSearch keystore and `arkime/etc/wise.ini` all come from
 Unattended form, hashes generated on the box:
 
 ```bash
-# /root/analyst-pw: mode 600, one line, the analyst password and nothing else.
+# /root/analyst-pw: owned by root, mode 600 (or 400), not a symlink, one line,
+# the analyst password and nothing else. Create it without the password ever
+# touching shell history or argv (type the password, then Enter):
+sudo install -m600 -o root /dev/null /root/analyst-pw && sudo sh -c 'read -rs p && printf %s "$p" > /root/analyst-pw'
 # auth reads it once into a shell variable and only ever puts it on a pipe
 # (openssl passwd -stdin, htpasswd-in-docker) -- never in argv, env, or a log.
 sudo ./site/scripts/r770-malcolm-deploy.sh auth /data/staging/bundle-YYYYMMDD \
     --password-file /root/analyst-pw
 ```
 
-Exporting the configuration makes it a replayable artifact rather than a
-sequence of answers nobody wrote down.
+The *password* is pipe-fed. Its *hashes* go to `auth_setup` in argv, because
+flags are Malcolm's only unattended interface: while `auth_setup` runs, the
+MD5-crypt hash (`--auth-admin-password-openssl`) is briefly visible to local
+users in the process list. The htpasswd entry uses bcrypt. Run it on a box with
+no other interactive users.
+
+`auth` is a no-op once `nginx/htpasswd` exists. `--force` re-runs it with
+**every** `--auth-generate-*` flag, so on an initialized stack it also
+regenerates the internal postgres, netbox, valkey, opensearch and keycloak
+credentials. It is not a password-change path; do not use it to rotate the
+analyst password on a running stack.
+
+Remove `/root/analyst-pw` once `verify` (8.4) has passed:
+`sudo rm -f /root/analyst-pw`.
 
 ### 8.2 Pin the heavy data to the right volumes
 
@@ -328,8 +351,10 @@ defaults, both land on the Docker volume and fill `/var/lib/docker`.
 ### 8.3 Size OpenSearch to this host, not to the installer's default
 
 The installer's default heap is sized for a much smaller box than the R770 and
-a much larger one than a rehearsal VM. Set it from the steady-state budget in
-the buildout plan §8, and record the value you chose.
+a much larger one than a rehearsal VM. What `configure` imports today is the
+rehearsed `osMemory: 4g` carried in `config/malcolm/malcolm-config.json`. To
+change it, edit that file from the steady-state budget in the buildout plan §8,
+re-run `configure`, and record the value you chose.
 
 ### 8.4 Bring it up
 
@@ -338,9 +363,10 @@ re-apply after every installer run — the installer regenerates the file, and a
 `docker-compose.override.yml` is ignored because `control.py` passes `-f`):
 
 ```bash
-# Verified on this box's compose file: the published-port line is
-# `    - 0.0.0.0:443:443`, with no `/tcp` suffix (both spellings are accepted;
-# a bare sed for the `/tcp` form silently no-ops on this file).
+# Checked against the compose file of the bundled 26.08 installer (not yet on
+# the R770): the published-port line is `    - 0.0.0.0:443:443`, with no
+# `/tcp` suffix (both spellings are accepted; a bare sed for the `/tcp` form
+# silently no-ops on this file).
 sudo ./site/scripts/r770-malcolm-deploy.sh bind-loopback
 # start runs Malcolm's own ./scripts/start --quiet, not raw 'docker compose up':
 # control.py creates the keystore and touches files compose needs first, and
@@ -348,7 +374,14 @@ sudo ./site/scripts/r770-malcolm-deploy.sh bind-loopback
 sudo ./site/scripts/r770-malcolm-deploy.sh start
 sudo ./site/scripts/r770-malcolm-deploy.sh health   # 27 services; arkime and logstash are last to go healthy
 sudo ./site/scripts/r770-malcolm-deploy.sh verify --password-file /root/analyst-pw
+sudo rm -f /root/analyst-pw   # after auth and verify have both passed
 ```
+
+`verify` uploads its capture to the directory Malcolm actually mounts for the
+`upload` service, read from `malcolm/docker-compose.yml` (with this config's
+`pcapDir` that is under `/data/pcap/raw`, not `malcolm/pcap/upload`), and
+refuses if the compose file names none. Its Arkime check only counts sessions
+from a window that opens just before its own capture.
 
 **Integration decided by measurement (2026-09-12, staging).** Malcolm sits
 behind the portal: `config/nginx/malcolm.lab.conf` proxies `malcolm.lab` to

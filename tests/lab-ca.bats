@@ -33,7 +33,7 @@ setup() {
     # A fixed list of real, read-only-ish tools. `install`/`mkdir`/`chmod`/`mv`
     # never need real root here because they only touch paths this test user
     # owns under $BATS_TEST_TMPDIR, and none of them chown.
-    for t in bash env cat sed awk grep tr cp mv mkdir chmod rm date stat cmp install find; do
+    for t in bash env cat sed awk grep tr cp mv mkdir chmod rm date stat cmp install find dirname basename; do
         p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$REAL/$t"
     done
     TEST_PATH="$BIN:$REAL"

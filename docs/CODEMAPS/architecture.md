@@ -1,4 +1,4 @@
-<!-- Generated: 2026-09-14 | Files scanned: 92 | Token estimate: ~650 -->
+<!-- Generated: 2026-09-26 | Files scanned: 92 | Token estimate: ~650 -->
 # Architecture — R770 Sim Lab Build
 
 Two machines, two roles. Nothing crosses between them except the bundle on ext4 media.
@@ -6,7 +6,7 @@ Two machines, two roles. Nothing crosses between them except the bundle on ext4 
 ```
 internet ──▶ STAGING  (Ubuntu VM + Docker CE, or RHEL 8 + rootful podman)
               scripts/r770-staging-preflight.sh   may THIS host build a bundle?
-              scripts/r770-offline-fetch.sh       10 stages → bundle-YYYYMMDD/
+              scripts/r770-offline-fetch.sh       11 stages (+ 0 preflight) → bundle-YYYYMMDD/, site/ included
               scripts/r770-bundle.sh              MANIFEST.sha256 write + verify
               scripts/r770-build-bundle.sh        one command wrapping the three above
                       │  transfer media (ext4), verifier travels inside the bundle
@@ -14,7 +14,12 @@ internet ──▶ STAGING  (Ubuntu VM + Docker CE, or RHEL 8 + rootful podman)
              R770     (Ubuntu 24.04, no internet, reached over ssh)
               scripts/r770-precheck.sh            Phase 1 discovery, read-only
               <bundle>/r770-bundle.sh verify --strict   gate before anything installs
-              scripts/r770-malcolm-deploy.sh      load images, prove every tag landed
+              scripts/r770-phase3-run.sh          Phase 3 storage, via r770-storage-apply.sh
+              the rest from <bundle>/site/scripts/:
+              r770-malcolm-deploy.sh              load, install, configure, auth, bind-loopback, start, health, verify
+              r770-lab-ca.sh                      internal CA + the one .lab certificate
+              r770-portal.sh                      nginx portal: portal/malcolm/docs.lab behind one login
+              r770-ufw.sh                         GATED firewall: 22 + 443 on the mgmt interface only
               docs/plans/r770-install-runbook.md  Phases 2–16, operator-driven
 ```
 

@@ -25,7 +25,7 @@ Read this before planning a window. The install is **not** a single sitting.
 | 6 VM base images | 7 | Part 3 |
 | 7 GNS3 | 8 | Parts 4–6 |
 | 8 Malcolm | 10 | Parts 4–5 |
-| 9–11 Enrichment, portal, docs | 13, 14 | Part 8 |
+| 9–11 Enrichment, portal, docs | 13, 14 | Part 8; lab CA (10.0) |
 
 There is **no iDRAC gate** — the operator dropped it on 2026-09-24 (no iDRAC or
 PERC work on the R770; see `PRD.md` §6). Phase 5 (management networking) is no
@@ -315,7 +315,7 @@ run rewrites `malcolm/docker-compose.yml`, which puts nginx-proxy back on
 `start` (which refuses until `bind-loopback` has run again). On a stack that is
 already running, `start` only reports "already running" and does not apply the
 new config: restart it with Malcolm's own `restart`, as the PUID user (8.1):
-`cd /opt/malcolm/malcolm && sudo -u <puid-user> -H ./scripts/restart --quiet`,
+`cd /opt/malcolm/malcolm && sudo -u <puid-user> env HOME=/opt/malcolm/malcolm ./scripts/restart --quiet`,
 then `health`.
 
 **Malcolm's own tools run as the PUID user, never as root.** `auth_setup`,
@@ -352,9 +352,14 @@ to `PUID:PGID` (skipped when already owned — the installer chowns only
 `config/`) and `chown -R`s the host data dirs the compose binds name — the
 upload dir, `pcapDir` (pcap-monitor's `/pcap` source) and `indexDir`
 (opensearch's data source) — when the dir or one of its direct children is not
-yet the PUID user's. A missing data dir is created first (left to docker it
-would be created root-owned); a missing *parent* is refused, since it means the
-storage is not mounted. Each bind source must be canonical as written
+yet `PUID:PGID`. A data dir on a filesystem that `/etc/fstab` names but that is
+not mounted is refused first, changing nothing: the longest `findmnt --fstab`
+target that is the dir or an ancestor of it must pass `mountpoint -q`, because
+an unmounted LV mountpoint is an empty root-owned dir that would otherwise take
+the mkdir and chown on the root filesystem (a dir with no fstab entry over it
+but `/` — the staging VM — is not checked further). A missing data dir is then
+created (left to docker it would be created root-owned); a missing *parent* is
+refused. Each bind source must be canonical as written
 (`realpath -m`, no `..`, `//` or trailing `/`), not a symlink, and either
 strictly under `/opt/malcolm/malcolm` or exactly `pcapDir`, `pcapDir/upload` or
 `indexDir` of the config `configure` last imported (it keeps a copy in
@@ -503,9 +508,25 @@ certificate comes from it (`r770-lab-ca.sh apply`, which installs
 `/etc/nginx/ssl/{lab.crt,lab.key,ca.crt}`); distribute the CA certificate to
 analyst browsers. No ACME, no Let's Encrypt: both need the internet.
 
+### 10.0 Internal CA
+
+The one internal CA and its `.lab` server certificate, before anything that
+serves TLS. `plan` (the default) is read-only; `apply` creates the CA only if
+there is none — it never replaces an existing one — issues the certificate if
+absent and installs `/etc/nginx/ssl/{lab.crt,lab.key,ca.crt}`; `verify` checks
+chain, SANs, expiry and key mode.
+
+```bash
+sudo ./site/scripts/r770-lab-ca.sh plan && sudo ./site/scripts/r770-lab-ca.sh apply && sudo ./site/scripts/r770-lab-ca.sh verify
+sudo ./site/scripts/r770-lab-ca.sh export-ca > lab-ca.crt
+```
+
+Hand `lab-ca.crt` to analysts to install as a trusted root in their browsers
+(and to pass as `--cacert` to an off-box `r770-portal.sh verify`, 10.1).
+
 ### 10.1 Portal
 
-Needs, in this order: `r770-lab-ca.sh apply` (the three files above), the
+Needs, in this order: `r770-lab-ca.sh apply` (10.0 — the three files above), the
 monitoring images loaded (Part 5 — `apply` builds the docs with the
 mkdocs-material image named in the bundle's `docker/monitoring-image-list.txt`,
 whose tag the fetch script's pin block owns) and Malcolm's `auth` (8.1a — its
@@ -542,9 +563,9 @@ nginx only if its config changed, so re-running it is safe; if nothing changed
 but nginx is not running, it says so and exits 1 (`sudo systemctl start nginx`).
 
 The catch-all rejects the TLS handshake for any name that is not one of the
-three (a bare IP, an unknown name, IPv6), so browse by `.lab` name. Each `.lab`
-name on `:80` redirects to `https`; Ubuntu's own `default` site keeps `:80`
-otherwise.
+three (a bare IP, an unknown name, IPv6), so browse by `.lab` name, over
+`https`. No `.lab` vhost listens on `:80` — the firewall (10.2) admits only 22
+and 443, so a redirect there would be unreachable.
 
 **The portal login is a snapshot** of Malcolm's `nginx/htpasswd` taken at
 `apply` time. After any later Malcolm `auth` run, re-run

@@ -42,7 +42,7 @@ Every verb checks its preconditions and reports "already done" instead of repeat
 
 ## `scripts/r770-portal.sh plan | apply | verify`
 
-- Install `config/nginx/snippets/*` and only the `portal`, `malcolm` and `docs` vhosts.
+- Install `config/nginx/conf.d/*` (the one `$connection_upgrade` map), `config/nginx/snippets/*`, the `00-default-reject.conf` catch-all and only the `portal`, `malcolm` and `docs` vhosts. No `.lab` vhost listens on `:80`: the firewall admits 22 and 443 only.
 - Copy `config/portal/index.html` to `/srv/www/portal`.
 - Build `docs.lab` offline with the bundled `squidfunk/mkdocs-material` image from `config/docs/mkdocs.yml` and `docs/analyst-wiki/`, into `/srv/www/docs`.
 - `/etc/nginx/lab.htpasswd` comes from Malcolm's `nginx/htpasswd`, so there's one analyst login. This needs Malcolm `auth` first.
@@ -56,10 +56,11 @@ Every verb checks its preconditions and reports "already done" instead of repeat
 - **Before applying:** save `/etc/ufw` and `iptables-save` as the rollback, and print current vs proposed (the CLAUDE.md rule-3 gate).
 - **Dead-man switch:** `apply` enables UFW and schedules an automatic `ufw disable` after 10 minutes (the detached-sleeper pattern from `scripts/r770-airgap-sim.sh`). **`confirm`, run from a new SSH session, cancels it.** A lockout undoes itself.
 - `revert` restores the saved state.
-- `verify`:
-  - SSH and 443 are reachable from the management side;
-  - 8443 and an unused high port are refused from outside;
-  - nothing except nginx on 443 and sshd on 22 listens on a non-loopback address. This is the check that catches ports Docker publishes past UFW.
+- `verify` (as built):
+  - UFW is active, default incoming is deny, the SSH and 443 rules are present and there are no other allow rules; a still-pending auto-revert WARNs;
+  - a `docker-proxy` non-loopback listener, a Docker DNAT rule not restricted to `127.0.0.1`, or a non-loopback listener with no identifiable process FAILs — these are the ports Docker publishes past UFW;
+  - any other non-loopback host listener WARNs (UFW's INPUT chain filters it).
+  - Reachability from outside (SSH and 443 open; 8443 and an unused high port refused) cannot be seen from the box itself; the proof run checks it from a second host.
 
 ## Proof run on VM 9771
 

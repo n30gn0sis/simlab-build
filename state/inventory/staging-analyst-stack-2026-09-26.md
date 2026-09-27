@@ -56,7 +56,7 @@ Each fix went through a repo change, a commit and the test suite, then was pushe
 3. **`configure` could only run once** (run 2: `/opt/malcolm/malcolm already exists, please specify a different installation path`).
    - The top-level installer always extracts the tarball. The tree's own `malcolm/scripts/install.py` reconfigures in place (a dry run confirmed it).
    - Fix `05d7772`: `configure` uses the in-tree installer once the tree exists.
-4. **Open, for the final review:** UFW allows only 22 and 443, so the `.lab` vhosts' `:80 → https` redirects can never be reached. Either allow 80 from the management subnet or drop the redirects.
+4. ~~**Open, for the final review:** UFW allows only 22 and 443, so the `.lab` vhosts' `:80 → https` redirects can never be reached. Either allow 80 from the management subnet or drop the redirects.~~ Resolved in `bf76c6c`: redirects dropped, firewall stays 22/443.
 
 The review of fixes 1–2 raised hardening items for the recursive chown (canonicalise and allowlist the paths, create missing data dirs first) and for where PUID comes from. They are being fixed in the repo (fix round 5). Run 3 used paths inside that allowlist.
 

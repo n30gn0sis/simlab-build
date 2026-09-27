@@ -85,6 +85,9 @@ fail() { printf 'FAIL    %s\n' "$*"; exit 1; }  # a mutating command itself fail
 
 on_exit() {
     local rc=$?
+    # A second Ctrl-C must not cut a restore short between rm -rf and untar;
+    # ignored signals are inherited by the tar child as well.
+    trap '' INT TERM HUP
     [ -z "$TMP_BUILD" ] || rm -rf "$TMP_BUILD"
     if [ -n "$RESTORE_FROM" ]; then
         local backup=$RESTORE_FROM

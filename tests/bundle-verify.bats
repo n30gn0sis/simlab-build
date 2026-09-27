@@ -243,3 +243,72 @@ pair_bundle() {   # a bundle with all three list/payload pairs intact
     echo "$output"
     [ "$status" -eq 0 ]
 }
+
+# ── site/ — the reviewed scripts/config/docs-analyst-wiki delivered with the bundle ──
+
+@test "a fixture bundle with site/ passes" {
+    run "$SCRIPT" verify "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"RESULT: PASS"* ]]
+    [[ "$output" == *"site/ has the expected deploy script(s)"* ]]
+}
+
+@test "a modified site/ file fails verify because the manifest covers it" {
+    echo "tampered" > "$BUNDLE/site/scripts/hello.sh"
+    run "$SCRIPT" verify "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"checksum verification failed"* ]]
+}
+
+@test "a site/ file added after the manifest fails as unmanifested, same as any other file" {
+    echo "new" > "$BUNDLE/site/scripts/sneaky.sh"
+    run "$SCRIPT" verify "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not in MANIFEST.sha256"* ]]
+    [[ "$output" == *"site/scripts/sneaky.sh"* ]]
+}
+
+@test "a bundle with no site/ at all warns (predates the site/ delivery path) but does not fail" {
+    rm -rf "$BUNDLE/site"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"RESULT: PASS WITH WARNINGS"* ]]
+    [[ "$output" == *"site/ is missing"* ]]
+}
+
+@test "a site/ present but missing scripts/r770-lab-ca.sh (a bundle cut before it shipped) warns, not fails" {
+    rm "$BUNDLE/site/scripts/r770-lab-ca.sh"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"RESULT: PASS WITH WARNINGS"* ]]
+    [[ "$output" == *"site/scripts/r770-lab-ca.sh"* ]]
+    [[ "$output" == *"is missing expected script(s)"* ]]
+    [[ "$output" == *"(a bundle cut before they shipped, or a defect — see comment above)"* ]]
+}
+
+@test "a site/ present but missing scripts/r770-bundle.sh warns -- SITE_REQUIRED_SCRIPTS has teeth beyond lab-ca.sh" {
+    rm "$BUNDLE/site/scripts/r770-bundle.sh"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"RESULT: PASS WITH WARNINGS"* ]]
+    [[ "$output" == *"site/scripts/r770-bundle.sh"* ]]
+    [[ "$output" == *"is missing expected script(s)"* ]]
+}
+
+@test "--strict promotes a missing site/ to failure like any other warning" {
+    rm -rf "$BUNDLE/site"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE" --strict
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"RESULT: FAIL (--strict)"* ]]
+}

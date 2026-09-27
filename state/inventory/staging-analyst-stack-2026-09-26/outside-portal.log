@@ -1,0 +1,6 @@
+PASS    portal.lab -> 401 without credentials
+PASS    portal.lab -> 200 with credentials
+PASS    malcolm.lab -> 401 without credentials
+PASS    malcolm.lab -> 200 with credentials
+PASS    docs.lab -> 401 without credentials
+PASS    docs.lab -> 200 with credentials

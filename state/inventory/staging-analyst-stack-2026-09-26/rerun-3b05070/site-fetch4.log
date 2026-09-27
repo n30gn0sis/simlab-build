@@ -1,0 +1,28 @@
+NOTE: resuming previous run in /home/ubuntu/simlab-build/bundle-20260926 — completed items will be skipped (FORCE=1 to redo everything)
+>> Staging container runtime: docker (Docker version 29.8.1, build 4a63305)
+>> No proxy configured (direct egress assumed)
+==== skip: preflight ====
+==== skip: apt ====
+==== skip: iso ====
+==== skip: malcolm ====
+==== skip: monitoring ====
+==== skip: gns3 ====
+==== skip: appliances ====
+==== skip: enrichment ====
+==== skip: docs ====
+==== skip: manual ====
+==== [10/11] site/ (this repo's scripts, config, docs/analyst-wiki) ====
+>> site/: 39 files from 3b05070 copied
+==== [11/11] Manifest ====
+wrote /home/ubuntu/simlab-build/bundle-20260926/MANIFEST.sha256 — 1637 file(s), 15G on disk
+
+Bundle complete: /home/ubuntu/simlab-build/bundle-20260926
+15G	/home/ubuntu/simlab-build/bundle-20260926
+If this run was interrupted, just rerun it — completed items are skipped
+(same-day runs resume automatically; otherwise BUNDLE_DIR=/home/ubuntu/simlab-build/bundle-20260926; FORCE=1 redoes all).
+Review /home/ubuntu/simlab-build/bundle-20260926/BUNDLE_NOTES.md, complete the MANUAL items (dell/, gns3/appliances/), then
+regenerate the manifest after adding manual files:
+  ./scripts/r770-bundle.sh manifest /home/ubuntu/simlab-build/bundle-20260926
+then gate it before the media leaves staging:
+  ./scripts/r770-bundle.sh verify /home/ubuntu/simlab-build/bundle-20260926 --strict
+Then transfer per the supply plan (ext4 drive; verify MANIFEST.sha256 on the R770).

@@ -2,11 +2,44 @@
 # Test the GENERATED RULES, not their application. Applying real firewall
 # rules from a test suite is how a machine locks itself out.
 
+#
+# Tests that run the real (non-dry) code path do so with PATH = a stub dir plus
+# a fixed list of real tools ($STUB_PATH), so the real iptables, ip6tables and
+# nft can never be reached -- not by the script, and not by a sleeper that
+# outlives its test (bats deletes the stub dir; a plain "$stub:$PATH" would
+# then fall through to the real iptables when the sleeper fires "unblock").
+# teardown kills every sleeper recorded under this test's AIRGAP_RUN_DIR.
+
 setup() {
     SCRIPT="$BATS_TEST_DIRNAME/../scripts/r770-airgap-sim.sh"
     export AIRGAP_DRY_RUN=1
     export AIRGAP_LAN=192.168.4.0/22
+    export AIRGAP_RUN_DIR="$BATS_TEST_TMPDIR/run"; mkdir -p "$AIRGAP_RUN_DIR"
+    stub="$BATS_TEST_TMPDIR/bin"; REAL="$BATS_TEST_TMPDIR/real"; mkdir -p "$stub" "$REAL"
+    # What r770-airgap-sim.sh and its sleeper call, besides iptables.
+    for t in bash cat rm date dirname basename setsid sleep; do
+        p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$REAL/$t"
+    done
+    STUB_PATH="$stub:$REAL"
 }
+
+# Kill every sleeper this test armed, including any a failing test leaked.
+# Without pgrep a leaked sleeper could not be found: that is an error, not a
+# silent skip.
+reap_sleepers() {
+    local pid pids
+    if [ -r "$AIRGAP_RUN_DIR/r770-airgap-sim.pid" ]; then
+        pid=$(cat "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
+        [ -z "$pid" ] || kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    fi
+    command -v pgrep >/dev/null || { echo "teardown: pgrep not found; cannot reap sleepers under $AIRGAP_RUN_DIR" >&2; return 1; }
+    pids=$(pgrep -f -- "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
+    for pid in $pids; do
+        kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    done
+}
+
+teardown() { reap_sleepers; }
 
 @test "block always exempts the management LAN" {
     run "$SCRIPT" block
@@ -89,10 +122,9 @@ setup() {
 
 @test "status refuses to report OPEN when iptables cannot be queried" {
     unset AIRGAP_DRY_RUN
-    stub="$BATS_TEST_TMPDIR/bin"; mkdir -p "$stub"
     printf '#!/bin/sh\necho "iptables v1.8: Permission denied (you must be root)" >&2\nexit 4\n' > "$stub/iptables"
     chmod +x "$stub/iptables"
-    PATH="$stub:$PATH" run "$SCRIPT" status
+    PATH="$STUB_PATH" run "$SCRIPT" status
     echo "$output"
     [ "$status" -ne 0 ]
     [[ "$output" != *"OPEN"* ]]
@@ -101,10 +133,9 @@ setup() {
 
 @test "status still reports OPEN when iptables answers 'rule absent'" {
     unset AIRGAP_DRY_RUN
-    stub="$BATS_TEST_TMPDIR/bin"; mkdir -p "$stub"
     printf '#!/bin/sh\nexit 1\n' > "$stub/iptables"
     chmod +x "$stub/iptables"
-    PATH="$stub:$PATH" run "$SCRIPT" status
+    PATH="$STUB_PATH" run "$SCRIPT" status
     [ "$status" -eq 0 ]
     [[ "$output" == "OPEN" ]]
 }
@@ -118,45 +149,72 @@ setup() {
 # everything, with the run dir relocated so nothing touches /run.
 
 stub_iptables() {
-    stub="$BATS_TEST_TMPDIR/bin"; mkdir -p "$stub"
     # -D must eventually fail (unblock loops "delete until absent"); all else succeeds
     printf '#!/bin/sh\ncase "$1" in -D) exit 1;; esac\nexit 0\n' > "$stub/iptables"; chmod +x "$stub/iptables"
-    PATH="$stub:$PATH"; export PATH
     unset AIRGAP_DRY_RUN
-    export AIRGAP_RUN_DIR="$BATS_TEST_TMPDIR/run"; mkdir -p "$AIRGAP_RUN_DIR"
+}
+
+# The script, and any sleeper it detaches, see only the stubs and $REAL.
+sim() { PATH="$STUB_PATH" "$SCRIPT" "$@"; }
+
+@test "the stubbed PATH reaches the iptables stub and never a real iptables, ip6tables or nft" {
+    stub_iptables
+    [ "$(PATH="$STUB_PATH" command -v iptables)" = "$stub/iptables" ]
+    run env PATH="$STUB_PATH" "$REAL/bash" -c 'command -v ip6tables || command -v nft || command -v iptables-legacy || command -v iptables-nft'
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [ -z "$output" ]
+}
+
+@test "teardown's reaper kills a pending sleeper, and fails loudly when pgrep is missing" {
+    stub_iptables
+    sim block --minutes 1 >/dev/null
+    pid=$(cat "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
+    kill -0 "$pid"
+    rm -f "$AIRGAP_RUN_DIR/r770-airgap-sim.pid"   # found by pgrep, not the pidfile
+    reap_sleepers
+    sleep 0.3
+    run kill -0 "$pid"
+    [ "$status" -ne 0 ]
+    run "$REAL/bash" -c "PATH=/nonexistent; AIRGAP_RUN_DIR='$AIRGAP_RUN_DIR'; $(declare -f reap_sleepers); reap_sleepers"
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"pgrep not found"* ]]
 }
 
 @test "block records the auto-revert sleeper's PID" {
     stub_iptables
-    run "$SCRIPT" block --minutes 1
+    run sim block --minutes 1
     [ "$status" -eq 0 ]
     [ -s "$AIRGAP_RUN_DIR/r770-airgap-sim.pid" ]
     pid=$(cat "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
     kill -0 "$pid"
-    "$SCRIPT" unblock >/dev/null
+    sim unblock >/dev/null
 }
 
 @test "unblock kills the pending auto-revert sleeper" {
     stub_iptables
-    "$SCRIPT" block --minutes 1 >/dev/null
+    sim block --minutes 1 >/dev/null
     pid=$(cat "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
     kill -0 "$pid"
-    run "$SCRIPT" unblock
+    run sim unblock
     [ "$status" -eq 0 ]
     sleep 0.5
-    ! kill -0 "$pid" 2>/dev/null
+    run kill -0 "$pid"
+    [ "$status" -ne 0 ]
     [ ! -e "$AIRGAP_RUN_DIR/r770-airgap-sim.pid" ]
 }
 
 @test "a second block cancels the first block's sleeper before scheduling its own" {
     stub_iptables
-    "$SCRIPT" block --minutes 1 >/dev/null
+    sim block --minutes 1 >/dev/null
     first=$(cat "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
-    "$SCRIPT" block --minutes 2 >/dev/null
+    sim block --minutes 2 >/dev/null
     second=$(cat "$AIRGAP_RUN_DIR/r770-airgap-sim.pid")
     [ "$first" != "$second" ]
     sleep 0.5
-    ! kill -0 "$first" 2>/dev/null
+    run kill -0 "$first"
+    [ "$status" -ne 0 ]
     kill -0 "$second"
-    "$SCRIPT" unblock >/dev/null
+    sim unblock >/dev/null
 }

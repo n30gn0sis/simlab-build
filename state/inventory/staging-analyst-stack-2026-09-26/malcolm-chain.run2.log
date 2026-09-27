@@ -1,0 +1,16 @@
+already installed: malcolm-26.08.0-docker_install.zip (sha256 77b022638fa169afa21144326605e64185616d73973fff23fff327f302dd3a01) in /opt/malcolm
+configuring Malcolm from /data/staging/bundle-20260926/site/config/malcolm/malcolm-config.json
+[2026-09-27 01:36:22] (START) [Determining Presentation Format]
+[2026-09-27 01:36:22] (SUCCESS) [Determining Presentation Format]: Using MODE_SILENT
+[2026-09-27 01:36:22] (START) [Initializing Internal Malcolm Configs]
+[2026-09-27 01:36:22] (WARNING) Configuration directory '/opt/malcolm/config' not found. EnvMapper will be empty.
+[2026-09-27 01:36:22] (WARNING) Failed to set default "False" for "suricataDisableSids": ""
+[2026-09-27 01:36:22] (SUCCESS) [Initializing Internal Malcolm Configs]
+[2026-09-27 01:36:22] (START) [Initializing User Interface]
+[2026-09-27 01:36:22] (SUCCESS) [Initializing User Interface]: UI initialized
+[2026-09-27 01:36:22] (START) [Spawning Platform-specific Installer]
+[2026-09-27 01:36:22] (SUCCESS) [Spawning Platform-specific Installer]: Detected linux
+[2026-09-27 01:36:22] (ERROR) /opt/malcolm/malcolm already exists, please specify a different installation path
+[2026-09-27 01:36:22] (ERROR) Failed to process Malcolm tarball. Aborting.
+r770-malcolm-deploy: FAIL    Malcolm's install.py --configure failed
+CHAIN rc=1

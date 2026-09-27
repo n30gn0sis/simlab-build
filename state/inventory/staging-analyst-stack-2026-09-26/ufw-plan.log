@@ -1,0 +1,12 @@
+DISCOVERED  interface=eth0 subnet=192.168.4.0/22 ssh_port=22 (client 192.168.4.59:39300 -> 192.168.4.26:22)
+== CURRENT (ufw status verbose) ==
+Status: inactive
+== PROPOSED ==
+  ufw default deny incoming
+  ufw default allow outgoing
+  ufw allow in on eth0 from 192.168.4.0/22 to any port 22 proto tcp
+  ufw allow in on eth0 from 192.168.4.0/22 to any port 443 proto tcp
+INFO    apply backs up /etc/ufw, /etc/default/ufw and iptables-save to /var/backups/r770-ufw/<timestamp> first, and arms a dead-man switch that only 'confirm' from a NEW ssh session cancels
+INFO    the switch runs 'ufw --force disable' after N minutes (default 10): it fails OPEN (no firewall), it does not restore the old rules — run revert for that
+INFO    a reboot inside the window loses the switch while UFW stays enabled: do not reboot before confirm
+INFO    plan changed nothing

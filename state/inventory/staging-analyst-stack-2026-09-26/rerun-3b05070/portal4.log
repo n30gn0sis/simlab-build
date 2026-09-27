@@ -1,0 +1,26 @@
+already installed  /srv/www/portal/index.html
+already installed  /srv/www/docs
+already installed  /etc/nginx/conf.d/lab-connection-upgrade.conf
+already installed  /etc/nginx/snippets/lab-auth.conf
+already installed  /etc/nginx/snippets/lab-headers.conf
+already installed  /etc/nginx/snippets/lab-tls.conf
+already installed  /etc/nginx/sites-enabled/00-default-reject.conf
+already installed  /etc/nginx/sites-enabled/portal.lab.conf
+already installed  /etc/nginx/sites-enabled/malcolm.lab.conf
+already installed  /etc/nginx/sites-enabled/docs.lab.conf
+already installed  /etc/nginx/lab.htpasswd
+BACKUP  /var/backups/r770-portal/nginx-20260927T023805-rxJkmu.tar.gz
+INSTALL             /etc/nginx/sites-available/00-default-reject.conf
+INSTALL             /etc/nginx/sites-available/portal.lab.conf
+INSTALL             /etc/nginx/sites-available/malcolm.lab.conf
+INSTALL             /etc/nginx/sites-available/docs.lab.conf
+PASS    nginx -t
+DONE    nginx reloaded
+PASS    portal.lab -> 401 without credentials
+PASS    portal.lab -> 200 with credentials
+PASS    malcolm.lab -> 401 without credentials
+PASS    malcolm.lab -> 200 with credentials
+PASS    docs.lab -> 401 without credentials
+PASS    docs.lab -> 200 with credentials
+PASS    only nginx listens on :443
+PORTAL rc=0

@@ -1,0 +1,70 @@
+already installed: malcolm-26.08.0-docker_install.zip (sha256 77b022638fa169afa21144326605e64185616d73973fff23fff327f302dd3a01) in /opt/malcolm
+configuring Malcolm from /data/staging/bundle-20260926/site/config/malcolm/malcolm-config.json with scripts/install.py (in /opt/malcolm/malcolm)
+[2026-09-27 01:44:55] (START) [Determining Presentation Format]
+[2026-09-27 01:44:55] (SUCCESS) [Determining Presentation Format]: Using MODE_SILENT
+[2026-09-27 01:44:55] (START) [Initializing Internal Malcolm Configs]
+[2026-09-27 01:44:55] (WARNING) Failed to set default "False" for "suricataDisableSids": ""
+[2026-09-27 01:44:55] (SUCCESS) [Initializing Internal Malcolm Configs]
+[2026-09-27 01:44:55] (START) [Initializing User Interface]
+[2026-09-27 01:44:55] (SUCCESS) [Initializing User Interface]: UI initialized
+[2026-09-27 01:44:55] (START) [Spawning Platform-specific Installer]
+[2026-09-27 01:44:55] (SUCCESS) [Spawning Platform-specific Installer]: Detected linux
+[2026-09-27 01:44:55] (WARNING) Failed to set default "False" for "suricataDisableSids": ""
+[2026-09-27 01:44:55] (info) Successfully loaded settings from: /data/staging/bundle-20260926/site/config/malcolm/malcolm-config.json
+[2026-09-27 01:44:55] (WARNING) Found 129 configuration items missing from settings file, using defaults
+[2026-09-27 01:44:55] (info) Skipping load of existing .env files.
+[2026-09-27 01:44:55] (info) Configuration will be saved to /opt/malcolm/malcolm/config
+[2026-09-27 01:44:55] (info) Wrote environment file: upload-common.env
+[2026-09-27 01:44:55] (info) Wrote environment file: dashboards.env
+[2026-09-27 01:44:55] (info) Wrote environment file: arkime-live.env
+[2026-09-27 01:44:55] (info) Wrote environment file: pipeline.env
+[2026-09-27 01:44:55] (info) Wrote environment file: zeek.env
+[2026-09-27 01:44:55] (info) Wrote environment file: lookup-common.env
+[2026-09-27 01:44:55] (info) Wrote environment file: logstash.env
+[2026-09-27 01:44:55] (info) Wrote environment file: zeek-live.env
+[2026-09-27 01:44:55] (info) Wrote environment file: process.env
+[2026-09-27 01:44:55] (info) Wrote environment file: nginx.env
+[2026-09-27 01:44:55] (info) Wrote environment file: filebeat.env
+[2026-09-27 01:44:55] (info) Wrote environment file: filescan-secret.env
+[2026-09-27 01:44:55] (info) Wrote environment file: arkime-secret.env
+[2026-09-27 01:44:55] (info) Wrote environment file: arkime.env
+[2026-09-27 01:44:55] (info) Wrote environment file: pcap-capture.env
+[2026-09-27 01:44:55] (info) Wrote environment file: filescan.env
+[2026-09-27 01:44:55] (info) Wrote environment file: suricata-offline.env
+[2026-09-27 01:44:55] (info) Wrote environment file: netbox-common.env
+[2026-09-27 01:44:55] (info) Wrote environment file: suricata-live.env
+[2026-09-27 01:44:55] (info) Wrote environment file: opensearch.env
+[2026-09-27 01:44:55] (info) Wrote environment file: beats-common.env
+[2026-09-27 01:44:55] (info) Wrote environment file: arkime-offline.env
+[2026-09-27 01:44:55] (info) Wrote environment file: dashboards-helper.env
+[2026-09-27 01:44:55] (info) Wrote environment file: zeek-offline.env
+[2026-09-27 01:44:55] (info) Wrote environment file: suricata.env
+[2026-09-27 01:44:55] (info) Setting ownership of /opt/malcolm/malcolm/config directory to 1000:1000...
+[2026-09-27 01:44:55] (info) Dry run/config-only: would install system dependencies
+[2026-09-27 01:44:55] (info) Dry run/config-only: would install Docker if missing
+[2026-09-27 01:44:55] (info) Dry run/config-only: would install Docker Compose
+[2026-09-27 01:44:55] (info) Updating 1 compose file(s) for orchestration (docker-compose.yml)...
+[2026-09-27 01:44:55] (info) Updated compose file: /opt/malcolm/malcolm/docker-compose.yml
+[2026-09-27 01:44:55] (info) Dry run/config-only: would apply Linux system tweaks
+[2026-09-27 01:44:55] (info) Dry run/config-only: would perform docker operations (start/load)
+[2026-09-27 01:44:55] (SKIP) [INSTALLER]: Configuration-only: installation steps skipped
+PASS    configured (sha256 259faba4576b8bd833c9faf4bebb8eed9b76a44baf76857a131dddffe6bd254c)
+NOTE    the installer rewrites docker-compose.yml: run bind-loopback again before start
+chown -R 1000:1000 /opt/malcolm/malcolm (Malcolm's PUID/PGID, user ubuntu)
+chown -R 1000:1000 /data/index (a Malcolm data dir, root-owned)
+chown -R 1000:1000 /data/pcap/raw (a Malcolm data dir, root-owned)
+running Malcolm's auth_setup as ubuntu for user analyst (hashes only)
+
+PASS    auth: htpasswd written for analyst
+backup: /opt/malcolm/malcolm/docker-compose.yml.bak-20260927T014517
+PASS    nginx-proxy rebound: 0.0.0.0:443:443 -> 127.0.0.1:8443:443 (rollback: cp -p /opt/malcolm/malcolm/docker-compose.yml.bak-20260927T014517 /opt/malcolm/malcolm/docker-compose.yml)
+starting Malcolm with its own start script, as ubuntu
+
+Starting Malcolm
+
+
+PASS    start script returned 0 (now run: health)
+PASS    all 27 services running and healthy
+PASS    127.0.0.1:8443 is listening
+PASS    no docker-proxy on 0.0.0.0:443 or [::]:443, none off loopback
+CHAIN rc=0

@@ -205,6 +205,15 @@ fi
 note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
 
 # ── --list / --dry-run answer here, before any runtime is needed ─────────────
+# node_list_matches — the GNS3 docker-node archive's image-list.txt names exactly
+# GNS3_NODE_IMAGES, in order. The archive's filename carries no versions, so a
+# cached one (seeded from a previous bundle, or left by a same-day resume) is
+# reused only when its list proves it holds what the pins now name; otherwise
+# a newly pinned image (strongSwan, 2026-09-25) never reaches the bundle.
+node_list_matches() {
+    local f="$B/gns3/docker-nodes/image-list.txt"
+    [ -s "$f" ] && [ "$(cat "$f")" = "$(printf '%s\n' "${GNS3_NODE_IMAGES[@]}")" ]
+}
 stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker for --list; not proof
     case "$1" in
         preflight)  return 1 ;;
@@ -213,7 +222,7 @@ stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker fo
         malcolm)    ls "$B/malcolm"/malcolm-images-*.tar.gz >/dev/null 2>&1 ;;
         monitoring) [ -s "$B/docker/monitoring-images.tar.gz" ] ;;
         gns3)       [ -f "$B/.stamps/05-wheelhouse.done" ] && [ -s "$B/images/noble-server-cloudimg-amd64.img" ] ;;
-        appliances) [ -s "$B/gns3/docker-nodes/gns3-node-images.tar.gz" ] ;;
+        appliances) [ -s "$B/gns3/docker-nodes/gns3-node-images.tar.gz" ] && node_list_matches ;;
         enrichment) [ -s "$B/enrichment/oui.txt" ] ;;
         docs)       [ "$(ls "$B/.stamps"/08-docs-*.done 2>/dev/null | wc -l)" -ge 3 ] ;;
         manual)     [ -s "$B/dell/README.txt" ] ;;
@@ -742,9 +751,14 @@ fi
 
 # 6f. GNS3 docker-node images (containers used as nodes inside topologies)
 seed "$B/gns3/docker-nodes/gns3-node-images.tar.gz"
-if have "$B/gns3/docker-nodes/gns3-node-images.tar.gz"; then
-    note "GNS3 docker-node images: tarball already present — pulls/save skipped"
+seed "$B/gns3/docker-nodes/image-list.txt"
+if have "$B/gns3/docker-nodes/gns3-node-images.tar.gz" && node_list_matches; then
+    note "GNS3 docker-node images: tarball already present and its image-list.txt matches GNS3_NODE_IMAGES — pulls/save skipped"
 else
+    if [ -e "$B/gns3/docker-nodes/gns3-node-images.tar.gz" ]; then
+        note "GNS3 docker-node images: the cached tarball's image-list.txt does not match GNS3_NODE_IMAGES (missing or different) — rebuilding it"
+        rm -f "$B/gns3/docker-nodes/gns3-node-images.tar.gz" "$B/gns3/docker-nodes/image-list.txt"
+    fi
     NODE_PULLED=()
     for img in "${GNS3_NODE_IMAGES[@]}"; do
         if "$CTR" pull "$img"; then NODE_PULLED+=("$img"); else note "WARN: pull failed for $img — check the tag (FRR tags: quay.io/repository/frrouting/frr?tab=tags)"; fi

@@ -205,7 +205,7 @@
     "traefikOpenSearchHost": "<MALCOLM_CONFIG_NONE>",
     "traefikResolver": "<MALCOLM_CONFIG_NONE>",
     "tweakIface": false,
-    "useDefaultStorageLocations": true,
+    "useDefaultStorageLocations": false,
     "zeekICSBestGuess": true,
     "zeekIntelCronExpression": "0 0 * * *",
     "zeekIntelFeedSince": "24 hours ago",

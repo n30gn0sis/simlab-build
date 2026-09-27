@@ -298,8 +298,25 @@ sudo ./site/scripts/r770-malcolm-deploy.sh configure \
     /data/staging/bundle-YYYYMMDD/site/config/malcolm/malcolm-config.json
 ```
 
-The installer extracts Malcolm to `/opt/malcolm/malcolm` and sizes the JVM
-heaps to the host by itself; the imported config then sets them (see 8.3).
+The first `configure` runs the zip's top-level `/opt/malcolm/install.py` from
+`/opt/malcolm`: it extracts Malcolm to `/opt/malcolm/malcolm`, then configures.
+That installer can do this only **once** — with `malcolm/` present it aborts
+(`/opt/malcolm/malcolm already exists, please specify a different installation
+path`, seen on the 26.08 proof run). So once the tree exists, `configure` runs
+the tree's own `malcolm/scripts/install.py` (`scripts/configure` is a symlink to
+it) from `/opt/malcolm/malcolm` instead, with the same flags and still as root:
+Malcolm's supported reconfigure path, no tarball step. The installer sizes the
+JVM heaps to the host by itself; the imported config then sets them (see 8.3).
+
+**Changing the config later** (edit `malcolm-config.json`; `configure` re-runs
+only when its sha256 differs from the last successful run): every installer
+run rewrites `malcolm/docker-compose.yml`, which puts nginx-proxy back on
+`0.0.0.0:443` — so it is always `configure`, then `bind-loopback`, then
+`start` (which refuses until `bind-loopback` has run again). On a stack that is
+already running, `start` only reports "already running" and does not apply the
+new config: restart it with Malcolm's own `restart`, as the PUID user (8.1):
+`cd /opt/malcolm/malcolm && sudo -u <puid-user> -H ./scripts/restart --quiet`,
+then `health`.
 
 **Malcolm's own tools run as the PUID user, never as root.** `auth_setup`,
 `start` and the rest of `malcolm/scripts/` are symlinks to `control.py`, which
@@ -383,7 +400,8 @@ The installer's default heap is sized for a much smaller box than the R770 and
 a much larger one than a rehearsal VM. What `configure` imports today is the
 rehearsed `osMemory: 4g` carried in `config/malcolm/malcolm-config.json`. To
 change it, edit that file from the steady-state budget in the buildout plan §8,
-re-run `configure`, and record the value you chose.
+re-run `configure`, then `bind-loopback` and a restart (8.1, "Changing the
+config later"), and record the value you chose.
 
 ### 8.4 Bring it up
 

@@ -154,7 +154,21 @@ exec "$REAL/stat" "$@"'
 d=""; prev=""; for a; do [ "$prev" = -d ] && d=$a; prev=$a; done
 [ -f "$S/zip_empty" ] && exit 0
 mkdir -p "$d/installer" && echo "# fake installer" > "$d/install.py" && : > "$d/malcolm_20260901_000000.tar.gz"'
+    # As Malcolm 26.08's installers behave: the top-level install.py extracts
+    # the tarball into malcolm/ (tree installer included) and aborts if
+    # malcolm/ already exists; the tree's scripts/install.py configures in place.
     stub python3 'echo "python3 $*" >> "$S/argv"; echo "$PWD" > "$S/python3.cwd"
+md="$MALCOLM_ROOT/malcolm"
+case $1 in
+  "$MALCOLM_ROOT/install.py"|"$MALCOLM_ROOT/scripts/install.py")
+    if [ -e "$md" ]; then
+        echo "(ERROR) $md already exists, please specify a different installation path" >&2
+        echo "(ERROR) Failed to process Malcolm tarball. Aborting." >&2; exit 1
+    fi
+    mkdir -p "$md/scripts" && echo "# fake tree installer" > "$md/scripts/install.py" ;;
+  scripts/install.py) [ "$PWD" = "$md" ] || { echo "python3: cannot open scripts/install.py" >&2; exit 2; } ;;
+  *) echo "python3 stub: unexpected installer $1" >&2; exit 64 ;;
+esac
 [ -f "$S/installer_noenv" ] && exit 0
 mkdir -p "$MALCOLM_ROOT/malcolm/config"
 echo "OPENSEARCH_JAVA_OPTS=-Xmx4g" > "$MALCOLM_ROOT/malcolm/config/opensearch.env"
@@ -257,6 +271,7 @@ bundle_full() {
 malcolm_tree() {
     mkdir -p "$MALCOLM_ROOT/scripts" "$MD/config" "$MD/scripts" "$MD/nginx" "$MD/pcap/upload" "$MD/zeek-logs"
     echo "# fake installer" > "$MALCOLM_ROOT/install.py"
+    echo "# fake tree installer" > "$MD/scripts/install.py"
     echo "X=1" > "$MD/config/opensearch.env"
     printf 'PUID=1000\nPGID=1000\n' > "$MD/config/process.env"
     cp "$S/compose.fixture" "$MD/docker-compose.yml"
@@ -440,12 +455,80 @@ good_ss() {
 }
 
 @test "configure falls back to scripts/install.py when there is no top-level install.py" {
-    malcolm_tree
-    mv "$MALCOLM_ROOT/install.py" "$MALCOLM_ROOT/scripts/install.py"
-    rm "$MD"/config/*.env
+    mkdir -p "$MALCOLM_ROOT/scripts"
+    echo "# fake installer" > "$MALCOLM_ROOT/scripts/install.py"
     run md configure "$CONF"
+    echo "$output"
     [ "$status" -eq 0 ]
     grep -q "^python3 $MALCOLM_ROOT/scripts/install.py --non-interactive" "$S/argv"
+    [ "$(cat "$S/python3.cwd")" = "$MALCOLM_ROOT" ]
+}
+
+@test "configure on a fresh root uses the top-level installer, in MALCOLM_ROOT" {
+    bundle_full; md install "$BUNDLE"
+    [ ! -e "$MD" ]
+    run md configure "$CONF"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(calls python3)" -eq 1 ]
+    grep -qxF "python3 $MALCOLM_ROOT/install.py --non-interactive --configure --skip-splash --import-malcolm-config-file $CONF" "$S/argv"
+    [ "$(cat "$S/python3.cwd")" = "$MALCOLM_ROOT" ]
+    [ -f "$MD/scripts/install.py" ]
+}
+
+@test "configure with an extracted tree uses the tree's scripts/install.py in \$MD, never the top-level one" {
+    malcolm_tree
+    rm "$MD"/config/*.env
+    run md configure "$CONF"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(calls python3)" -eq 1 ]
+    grep -qxF "python3 scripts/install.py --non-interactive --configure --skip-splash --import-malcolm-config-file $CONF" "$S/argv"
+    ! grep -q "^python3 $MALCOLM_ROOT/install.py" "$S/argv" || false
+    [ "$(cat "$S/python3.cwd")" = "$MD" ]
+    [ "$(calls runuser)" -eq 0 ]
+    [[ "$output" == *"run bind-loopback again"* ]]
+}
+
+@test "a reconfigure after a config change uses the in-tree installer and succeeds" {
+    bundle_full; md install "$BUNDLE"; md configure "$CONF"
+    grep -qxF "python3 $MALCOLM_ROOT/install.py --non-interactive --configure --skip-splash --import-malcolm-config-file $CONF" "$S/argv"
+    echo '{"configuration": {"autoSuricata": false, "osMemory": "8g"}}' > "$CONF"
+    run md configure "$CONF"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"already exists"* ]]
+    [ "$(calls python3)" -eq 2 ]
+    [ "$(grep -c "^python3 $MALCOLM_ROOT/install.py " "$S/argv")" -eq 1 ]
+    [ "$(tail -1 "$S/argv")" = "python3 scripts/install.py --non-interactive --configure --skip-splash --import-malcolm-config-file $CONF" ]
+    [ "$(cat "$S/python3.cwd")" = "$MD" ]
+    [ "$(cat "$MALCOLM_ROOT/.r770-deploy/configure.sha256")" = "$(sha256sum < "$CONF" | awk '{print $1}')" ]
+}
+
+@test "after a reconfigure rewrites the compose file, start refuses until bind-loopback runs again" {
+    bundle_full; md install "$BUNDLE"; md configure "$CONF"; md bind-loopback
+    grep -qxF "$LOOP" "$MD/docker-compose.yml"
+    echo '{"configuration": {"autoSuricata": false, "osMemory": "8g"}}' > "$CONF"
+    md configure "$CONF"
+    grep -qxF "$OPEN" "$MD/docker-compose.yml"
+    run md start
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"bind-loopback"* ]]
+    [ "$(calls runuser)" -eq 0 ]
+    md bind-loopback
+    grep -qxF "$LOOP" "$MD/docker-compose.yml"
+}
+
+@test "install never runs an installer, and refuses over an extracted tree with no top-level install.py" {
+    bundle_full; malcolm_tree
+    rm "$MALCOLM_ROOT/install.py" "$MD/docker-compose.yml"
+    run md install "$BUNDLE"
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"no install stamp"* ]]
+    [ "$(calls unzip)" -eq 0 ]
+    [ "$(calls python3)" -eq 0 ]
 }
 
 @test "configure FAILS when the installer exits 0 but writes no .env files" {

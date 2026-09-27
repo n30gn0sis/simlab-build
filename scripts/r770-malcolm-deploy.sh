@@ -9,7 +9,11 @@
 #   assert-tags <bundle-dir>   the tag check alone
 #   install <bundle-dir>       unzip the bundle's Malcolm installer into MALCOLM_ROOT
 #   configure <config-json>    Malcolm's install.py --non-interactive --configure,
-#                              importing <config-json>
+#                              importing <config-json>: the top-level install.py
+#                              (in MALCOLM_ROOT) the first time, which extracts
+#                              the tree; once malcolm/scripts/install.py exists,
+#                              that one (in malcolm/) -- the top-level one aborts
+#                              on an existing tree. Then bind-loopback again.
 #   auth <bundle-dir> --password-file FILE [--user NAME] [--force]
 #                              Malcolm's auth_setup, unattended, fed HASHES only.
 #                              --force re-runs EVERY --auth-generate-* flag: on an
@@ -222,6 +226,10 @@ require_compose_file() {
 # install.py location: Malcolm 26.08's docker_install zip has install.py (with
 # installer/, malcolm_*.py and malcolm_<ts>.tar.gz) at its TOP level, no
 # scripts/ dir. scripts/install.py (the runbook's path) is only a fallback.
+# This top-level installer extracts the tarball into $MD, so it can configure
+# only ONCE: with $MD present it aborts ("$MD already exists, please specify a
+# different installation path"). Once the tree exists, configure uses the
+# tree's own installer instead (tree_installer).
 find_installer() {
     local c
     for c in "$MALCOLM_ROOT/install.py" "$MALCOLM_ROOT/scripts/install.py"; do
@@ -229,6 +237,11 @@ find_installer() {
     done
     return 1
 }
+
+# The extracted tree's own installer ($MD/scripts/configure is a symlink to
+# it): Malcolm's supported reconfigure path, run from $MD. No tarball step.
+TREE_INSTALLER_REL=scripts/install.py
+tree_installer() { [ -f "$MD/$TREE_INSTALLER_REL" ]; }
 
 sha_of() { sha256sum < "$1" | awk '{print $1}'; }
 
@@ -346,7 +359,8 @@ cmd_install() {
     # An existing install (unpacked or configured) is only ever confirmed, never
     # overwritten: unpacking a different zip over it is an upgrade, and an
     # upgrade is a deliberate operator step (runbook Part 8.1).
-    if [ -f "$COMPOSE_FILE" ] || find_installer > /dev/null; then
+    # install never runs an installer; it only unzips, and never over a tree.
+    if [ -d "$MD" ] || [ -f "$COMPOSE_FILE" ] || find_installer > /dev/null; then
         stamp=$(cat "$STAMP_DIR/install.sha256" 2>/dev/null || true)
         if [ -n "$stamp" ] && [ "$stamp" = "$sum" ]; then
             echo "already installed: $(basename "$zip") (sha256 $sum) in $MALCOLM_ROOT"
@@ -379,8 +393,17 @@ cmd_configure() {
     [ -n "$json" ] || die "usage: configure <config-json>"
     [ -s "$json" ] || refuse "config file missing or empty: $json"
     require_root
-    local installer
-    installer=$(find_installer) || refuse "not installed: no install.py under $MALCOLM_ROOT (run install first)"
+    # Pick the installer by state: the extracted tree's own scripts/install.py,
+    # run from $MD, once $MD holds it (a reconfigure -- the top-level one would
+    # abort on the existing $MD); else the top-level one, run from
+    # $MALCOLM_ROOT, which extracts the tree first. Same flags either way.
+    local installer cwd
+    if tree_installer; then
+        installer=$TREE_INSTALLER_REL cwd=$MD
+    else
+        installer=$(find_installer) || refuse "not installed: no install.py under $MALCOLM_ROOT (run install first)"
+        cwd=$MALCOLM_ROOT
+    fi
 
     local abs want
     abs="$(cd "$(dirname "$json")" && pwd)/$(basename "$json")"
@@ -390,9 +413,9 @@ cmd_configure() {
         return 0
     fi
 
-    echo "configuring Malcolm from $abs"
+    echo "configuring Malcolm from $abs with $installer (in $cwd)"
     # --defaults is NOT passed: it conflicts with --import-malcolm-config-file.
-    (cd "$MALCOLM_ROOT" && python3 "$installer" --non-interactive --configure --skip-splash \
+    (cd "$cwd" && python3 "$installer" --non-interactive --configure --skip-splash \
         --import-malcolm-config-file "$abs") < /dev/null || fail "Malcolm's install.py --configure failed"
     have_env_files || fail "install.py exited 0 but wrote no $MD/config/*.env"
     mkdir -p "$STAMP_DIR" || fail "cannot create $STAMP_DIR"

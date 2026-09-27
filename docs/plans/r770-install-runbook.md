@@ -25,7 +25,7 @@ Read this before planning a window. The install is **not** a single sitting.
 | 6 VM base images | 7 | Part 3 |
 | 7 GNS3 | 8 | Parts 4–6 |
 | 8 Malcolm | 10 | Parts 4–5 |
-| 9–11 Enrichment, portal, docs | 13, 14 | Part 8 |
+| 9–11 Enrichment, portal, docs | 13, 14 | Part 8; lab CA (10.0) |
 
 There is **no iDRAC gate** — the operator dropped it on 2026-09-24 (no iDRAC or
 PERC work on the R770; see `PRD.md` §6). Phase 5 (management networking) is no
@@ -101,6 +101,9 @@ sudo umount /mnt/bundle
 
 Verifying after the copy catches a truncated or bit-flipped transfer. It costs
 minutes; discovering it during a Malcolm deploy costs a bundle cycle.
+
+The deploy scripts, configs and analyst wiki travel inside the bundle's
+`site/` and are run from `/data/staging/bundle-YYYYMMDD/site/scripts/`.
 
 ---
 
@@ -285,19 +288,101 @@ them against what you actually hold.
 ### 8.1 Unpack and configure
 
 ```bash
-sudo mkdir -p /opt/malcolm
-sudo unzip /data/staging/bundle-YYYYMMDD/malcolm/*.zip -d /opt/malcolm
-cd /opt/malcolm
-# Malcolm's own installer, shipped inside its zip -- not a script from this repo.
-# Needs root, needs python3-ruamel.yaml + python3-dotenv (in apt/ since
-# 2026-09-12), and needs --non-interactive or it opens a TUI menu and waits.
-sudo python3 /opt/malcolm/scripts/install.py --non-interactive --defaults --configure \
-    --skip-splash --export-malcolm-config-file /opt/malcolm/malcolm-config.json
+cd /data/staging/bundle-YYYYMMDD
+# install: unzips the bundle's malcolm-*-docker_install.zip into MALCOLM_ROOT
+# (default /opt/malcolm). configure: Malcolm's own install.py --non-interactive
+# --configure, importing the R770 config below -- not a script from this repo.
+# Needs root, needs python3-ruamel.yaml + python3-dotenv (in apt/ since 2026-09-12).
+sudo ./site/scripts/r770-malcolm-deploy.sh install /data/staging/bundle-YYYYMMDD
+sudo ./site/scripts/r770-malcolm-deploy.sh configure \
+    /data/staging/bundle-YYYYMMDD/site/config/malcolm/malcolm-config.json
 ```
 
-The installer extracts Malcolm to `/opt/malcolm/malcolm` and sizes the JVM
-heaps to the host by itself (staging: OpenSearch 4g on an 8 GiB VM); check
-`config/opensearch.env` before trusting the default on 128 GB.
+The first `configure` runs the zip's top-level `/opt/malcolm/install.py` from
+`/opt/malcolm`: it extracts Malcolm to `/opt/malcolm/malcolm`, then configures.
+That installer can do this only **once** — with `malcolm/` present it aborts
+(`/opt/malcolm/malcolm already exists, please specify a different installation
+path`, seen on the 26.08 proof run). So once the tree exists, `configure` runs
+the tree's own `malcolm/scripts/install.py` (`scripts/configure` is a symlink to
+it) from `/opt/malcolm/malcolm` instead, with the same flags and still as root:
+Malcolm's supported reconfigure path, no tarball step. The installer sizes the
+JVM heaps to the host by itself; the imported config then sets them (see 8.3).
+
+**Changing the config later** (edit `malcolm-config.json`; `configure` re-runs
+only when its sha256 differs from the last successful run): every installer
+run rewrites `malcolm/docker-compose.yml`, which puts nginx-proxy back on
+`0.0.0.0:443` — so it is always `configure`, then `bind-loopback`, then
+`start` (which refuses until `bind-loopback` has run again). On a stack that is
+already running, `start` only reports "already running" and does not apply the
+new config: restart it with Malcolm's own `restart`, as the PUID user (8.1):
+`cd /opt/malcolm/malcolm && sudo -u <puid-user> env HOME=/opt/malcolm/malcolm ./scripts/restart --quiet`,
+then `health`.
+
+**Malcolm's own tools run as the PUID user, never as root.** `auth_setup`,
+`start` and the rest of `malcolm/scripts/` are symlinks to `control.py`, which
+refuses root — including a root *identity*: `getpass.getuser()` reads
+`LOGNAME`/`USER`, which `sudo` sets to root (the 26.08 proof run failed with
+`Exception: auth_setup should not be run as root`). `install.py` (configure)
+is fine as root. You still run the script with `sudo`; for `auth` and `start`
+it drops to that user itself (`runuser -u <user> -- env HOME=… USER=…
+LOGNAME=…`, in `malcolm/`).
+
+**Where PUID/PGID come from.** `processUserId`/`processGroupId` in
+`config/malcolm/malcolm-config.json`; `configure` writes them into
+`malcolm/config/process.env` (the file the containers use) on every run, so
+change them in the JSON and re-run `configure` — never edit `process.env`,
+which the next `configure` overwrites. The repo's JSON keeps the staging VM's
+values (uid/gid of its `ubuntu` user). **On the R770 the Malcolm user is a
+dedicated system user**, the planned `malcolm` account
+(`docs/superpowers/specs/2026-09-14-account-provisioning-design.md`; the
+rehearsal's uid must not be reused): create it and add it to `docker`, set
+`processUserId`/`processGroupId` in the JSON to its uid and primary gid, then
+`configure`. If its home is not its own to write (a system user's home such as
+`/opt/malcolm` is root's), the script sets `HOME` to `/opt/malcolm/malcolm`,
+which it has chowned to the user.
+
+The script refuses, changing nothing, if `process.env` is missing, `PUID` or
+`PGID` is missing or not a number, `PUID` is 0, the uid has no passwd entry,
+`PGID` is not that user's primary gid (`runuser` takes the group from passwd,
+so a mismatch gives files the wrong group), or the user is not in `docker`
+(fix: `sudo usermod -aG docker <user>`).
+
+**What it chowns.** Before `auth` and `start` it chowns `/opt/malcolm/malcolm`
+to `PUID:PGID` (skipped when already owned — the installer chowns only
+`config/`) and `chown -R`s the host data dirs the compose binds name — the
+upload dir, `pcapDir` (pcap-monitor's `/pcap` source) and `indexDir`
+(opensearch's data source) — when the dir or one of its direct children is not
+yet `PUID:PGID`. A data dir on a filesystem that `/etc/fstab` names but that is
+not mounted is refused first, changing nothing: the longest `findmnt --fstab`
+target that is the dir or an ancestor of it must pass `mountpoint -q`, because
+an unmounted LV mountpoint is an empty root-owned dir that would otherwise take
+the mkdir and chown on the root filesystem (a dir with no fstab entry over it
+but `/` — the staging VM — is not checked further). A missing data dir is then
+created (left to docker it would be created root-owned); a missing *parent* is
+refused. Each bind source must be canonical as written
+(`realpath -m`, no `..`, `//` or trailing `/`), not a symlink, and either
+strictly under `/opt/malcolm/malcolm` or exactly `pcapDir`, `pcapDir/upload` or
+`indexDir` of the config `configure` last imported (it keeps a copy in
+`/opt/malcolm/.r770-deploy/`; with no copy, anything strictly under `/data`
+except `/data/pcap`). `/`, any top-level dir, `/data` and `/data/pcap` — the LV
+root holding `cases/` and `archived/` — are never chowned. Anything else
+refuses with nothing changed. Check before `auth`:
+
+```bash
+grep -E '^P[UG]ID=' /opt/malcolm/malcolm/config/process.env
+id -nG "$(getent passwd "$(sed -n 's/^PUID=//p' /opt/malcolm/malcolm/config/process.env)" | cut -d: -f1)"   # must list docker
+```
+
+`install` on a box that already has Malcolm only ever confirms it: if the
+bundled `malcolm-*-docker_install.zip` has the sha256 recorded at install time
+(`/opt/malcolm/.r770-deploy/install.sha256`) it reports "already installed" and
+exits 0; if the zip differs it refuses and names both hashes. If there is a
+Malcolm tree but no stamp (an interrupted `install`, or one done before this
+script), it refuses too: inspect the tree, move `/opt/malcolm` aside, re-run.
+**An upgrade is a deliberate operator step**, not a side effect of re-running
+`install` against a newer bundle: stop Malcolm, move `/opt/malcolm`
+aside (keep it until the new stack verifies), then run `install`, `configure`,
+`auth`, `bind-loopback`, `start`, `health` and `verify` again.
 
 ### 8.1a Generate the auth material — not optional
 
@@ -307,32 +392,55 @@ certs, the OpenSearch keystore and `arkime/etc/wise.ini` all come from
 Unattended form, hashes generated on the box:
 
 ```bash
-cd /opt/malcolm/malcolm
-H_SSL=$(openssl passwd -1 "$ADMIN_PW")
-H_HT=$(docker run --rm --entrypoint sh ghcr.io/idaholab/malcolm/nginx-proxy:<tag> \
-         -c "htpasswd -bnBC 10 '' '$ADMIN_PW'" | tr -d ':\n')
-./scripts/auth_setup --auth-noninteractive --auth-method basic \
-    --auth-admin-username analyst \
-    --auth-admin-password-openssl "$H_SSL" --auth-admin-password-htpasswd "$H_HT" \
-    --auth-generate-webcerts --auth-generate-fwcerts \
-    --auth-generate-netbox-passwords --auth-generate-valkey-password \
-    --auth-generate-postgres-password --auth-generate-opensearch-internal-creds \
-    --auth-generate-keycloak-db-password
+# /root/analyst-pw: owned by root, mode 600 (or 400), not a symlink, one line,
+# the analyst password and nothing else. Create it without the password ever
+# touching shell history or argv (type the password at the prompt, then Enter).
+# bash, not sh: Ubuntu's sh is dash, whose `read` has no -s (no-echo) flag.
+sudo install -m600 -o root -g root /dev/null /root/analyst-pw && sudo bash -c 'umask 077; printf "analyst password: " >&2; read -rs p && echo >&2 && printf %s "$p" > /root/analyst-pw'
+sudo stat -c '%U %a %F' /root/analyst-pw   # expect: root 600 regular file
+# auth reads it once into a shell variable and only ever puts it on a pipe
+# (openssl passwd -stdin, htpasswd-in-docker) -- never in argv, env, or a log.
+sudo ./site/scripts/r770-malcolm-deploy.sh auth /data/staging/bundle-YYYYMMDD \
+    --password-file /root/analyst-pw
 ```
 
-Exporting the configuration makes it a replayable artifact rather than a
-sequence of answers nobody wrote down.
+The *password* is pipe-fed. Its *hashes* go to `auth_setup` in argv, because
+flags are Malcolm's only unattended interface: while `auth_setup` runs, the
+MD5-crypt hash (`--auth-admin-password-openssl`) is briefly visible to local
+users in the process list. The htpasswd entry uses bcrypt. Run it on a box with
+no other interactive users.
+
+`auth_setup` runs as the PUID user (8.1), so the files it writes are that
+user's. `auth` is a no-op once `nginx/htpasswd` exists. `--force` re-runs it with
+**every** `--auth-generate-*` flag, so on an initialized stack it also
+regenerates the internal postgres, netbox, valkey, opensearch and keycloak
+credentials. It is not a password-change path; do not use it to rotate the
+analyst password on a running stack.
+
+Remove `/root/analyst-pw` once `verify` (8.4) has passed:
+`sudo rm -f /root/analyst-pw`.
 
 ### 8.2 Pin the heavy data to the right volumes
 
 Bind PCAP to `/data/pcap/raw` and OpenSearch to `/data/index`. Left at
 defaults, both land on the Docker volume and fill `/var/lib/docker`.
 
+`config/malcolm/malcolm-config.json` does this with `pcapDir` and `indexDir`,
+which take effect **only with `useDefaultStorageLocations: false`** (true makes
+the installer ignore them; `tests/malcolm-deploy.bats` pins all three). Any
+storage dir left unset (`<MALCOLM_CONFIG_NONE>`) falls back to Malcolm's
+in-tree default — checked in 26.08's `installer/actions/shared.py`
+(`get_or_default`: the config value or `DEFAULT_*`) — so `zeekLogDir` stays
+`malcolm/zeek-logs`, which `verify` reads.
+
 ### 8.3 Size OpenSearch to this host, not to the installer's default
 
 The installer's default heap is sized for a much smaller box than the R770 and
-a much larger one than a rehearsal VM. Set it from the steady-state budget in
-the buildout plan §8, and record the value you chose.
+a much larger one than a rehearsal VM. What `configure` imports today is the
+rehearsed `osMemory: 4g` carried in `config/malcolm/malcolm-config.json`. To
+change it, edit that file from the steady-state budget in the buildout plan §8,
+re-run `configure`, then `bind-loopback` and a restart (8.1, "Changing the
+config later"), and record the value you chose.
 
 ### 8.4 Bring it up
 
@@ -341,13 +449,27 @@ re-apply after every installer run — the installer regenerates the file, and a
 `docker-compose.override.yml` is ignored because `control.py` passes `-f`):
 
 ```bash
-cd /opt/malcolm/malcolm
-sed -i 's|^    - 0.0.0.0:443:443/tcp$|    - 127.0.0.1:8443:443/tcp|' docker-compose.yml
-./scripts/start        # NOT raw 'docker compose up': control.py creates the
-                       # keystore and touches files compose needs first
-docker compose ps      # 27 services; arkime and logstash are the last to go healthy
-ss -ltnp | grep -E ':(443|8443) '    # expect 127.0.0.1:8443 and nothing on 0.0.0.0:443
+# Checked against the compose file of the bundled 26.08 installer (not yet on
+# the R770): the published-port line is `    - 0.0.0.0:443:443`, with no
+# `/tcp` suffix (both spellings are accepted; a bare sed for the `/tcp` form
+# silently no-ops on this file).
+sudo ./site/scripts/r770-malcolm-deploy.sh bind-loopback
+# bind-loopback edits the compose file as root and gives it back its owner.
+# start runs Malcolm's own ./scripts/start --quiet, not raw 'docker compose up':
+# control.py creates the keystore and touches files compose needs first, and
+# without --quiet it tails logs forever instead of returning. It runs as the
+# PUID user from config/process.env (8.1), after the tree and data-dir chown.
+sudo ./site/scripts/r770-malcolm-deploy.sh start
+sudo ./site/scripts/r770-malcolm-deploy.sh health   # 27 services; arkime and logstash are last to go healthy
+sudo ./site/scripts/r770-malcolm-deploy.sh verify --password-file /root/analyst-pw
+sudo rm -f /root/analyst-pw   # after auth and verify have both passed
 ```
+
+`verify` uploads its capture to the directory Malcolm actually mounts for the
+`upload` service, read from `malcolm/docker-compose.yml` (with this config's
+`pcapDir` that is under `/data/pcap/raw`, not `malcolm/pcap/upload`), and
+refuses if the compose file names none. Its Arkime check only counts sessions
+from a window that opens just before its own capture.
 
 **Integration decided by measurement (2026-09-12, staging).** Malcolm sits
 behind the portal: `config/nginx/malcolm.lab.conf` proxies `malcolm.lab` to
@@ -380,14 +502,203 @@ risk of the air gap and belongs in the cycle log, not in a surprise.
 
 ## Part 10 — Portal and monitoring  *(Phases 13, 14)*
 
-Nginx, Prometheus, Grafana, alertmanager, cAdvisor and the docs site all come
-from the monitoring images loaded in Part 5. Internal CA only — issue portal,
-Malcolm and GNS3 certificates from it and distribute the CA certificate to
+Prometheus, Grafana, alertmanager, cAdvisor and the MkDocs build image all come
+from the monitoring images loaded in Part 5. Internal CA only — the `.lab`
+certificate comes from it (`r770-lab-ca.sh apply`, which installs
+`/etc/nginx/ssl/{lab.crt,lab.key,ca.crt}`); distribute the CA certificate to
 analyst browsers. No ACME, no Let's Encrypt: both need the internet.
+
+### 10.0 Internal CA
+
+The one internal CA and its `.lab` server certificate, before anything that
+serves TLS. `plan` (the default) is read-only; `apply` creates the CA only if
+there is none — it never replaces an existing one — issues the certificate if
+absent and installs `/etc/nginx/ssl/{lab.crt,lab.key,ca.crt}`; `verify` checks
+chain, SANs, expiry and key mode.
+
+```bash
+sudo ./site/scripts/r770-lab-ca.sh plan && sudo ./site/scripts/r770-lab-ca.sh apply && sudo ./site/scripts/r770-lab-ca.sh verify
+sudo ./site/scripts/r770-lab-ca.sh export-ca > lab-ca.crt
+```
+
+Hand `lab-ca.crt` to analysts to install as a trusted root in their browsers
+(and to pass as `--cacert` to an off-box `r770-portal.sh verify`, 10.1).
+
+### 10.1 Portal
+
+Needs, in this order: `r770-lab-ca.sh apply` (10.0 — the three files above), the
+monitoring images loaded (Part 5 — `apply` builds the docs with the
+mkdocs-material image named in the bundle's `docker/monitoring-image-list.txt`,
+whose tag the fetch script's pin block owns) and Malcolm's `auth` (8.1a — its
+`nginx/htpasswd` becomes the portal's one analyst login). Until every one of
+those is in place, and every source file under `site/` is present, `apply`
+refuses before it writes anything — nothing under `/etc/nginx`, `/srv/www` or
+`/var/backups` is touched. `plan` (the default verb) is read-only and shows
+what `apply` would install.
+
+```bash
+sudo ./site/scripts/r770-portal.sh plan
+sudo ./site/scripts/r770-portal.sh apply
+```
+
+`apply` works in two stages. **Outside nginx first:** it copies
+`config/portal/index.html` to `/srv/www/portal` and builds `docs.lab` from
+`site/config/docs/mkdocs.yml` and `site/docs/analyst-wiki/*.md` under
+`docker run --pull never --network none`, into `/srv/www/docs.new`, then swaps
+it into `/srv/www/docs`. The docs are rebuilt only when the source stamp
+(`/srv/www/docs/.r770-source.sha256`: mkdocs.yml, the wiki pages and the image
+ID) changes. A failed build stops here with nginx untouched and no backup.
+**Then nginx:** it works out what would change and, only if something would,
+backs up `/etc/nginx` to a `0600` tarball in the `0700` directory
+`/var/backups/r770-portal/` (the tarball holds `ssl/lab.key`), then installs
+`config/nginx/conf.d/*` (the one `$connection_upgrade` map),
+`config/nginx/snippets/*` (TLS, auth, security headers), and only the
+`00-default-reject.conf` catch-all plus the `portal.lab`, `malcolm.lab` and
+`docs.lab` vhosts (enabled by symlink), and installs Malcolm's `nginx/htpasswd`
+as `/etc/nginx/lab.htpasswd` in one step at `0640 root:www-data` so all three
+names share one login. `gns3.lab` and `monitoring.lab` are not installed.
+**Any** failure after the backup — an install step or `nginx -t` — restores the
+backup, prints `FAIL` and the backup's path, and does not reload. It reloads
+nginx only if its config changed, so re-running it is safe; if nothing changed
+but nginx is not running, it says so and exits 1 (`sudo systemctl start nginx`).
+
+The catch-all rejects the TLS handshake for any name that is not one of the
+three (a bare IP, an unknown name, IPv6), so browse by `.lab` name, over
+`https`. No `.lab` vhost listens on `:80` — the firewall (10.2) admits only 22
+and 443, so a redirect there would be unreachable.
+
+**The portal login is a snapshot** of Malcolm's `nginx/htpasswd` taken at
+`apply` time. After any later Malcolm `auth` run, re-run
+`sudo ./site/scripts/r770-portal.sh apply` so the portal, docs and Malcolm
+names keep one login.
+
+`verify` checks each name for 401 without credentials and, given
+`--user` and `--password-file` (together or not at all), 200 with them, over
+TLS checked against `--cacert` (default `/etc/nginx/ssl/ca.crt`). The password
+goes to curl on stdin, never argv. Without credentials it WARNs and skips the
+200 checks. `--host <ip>` points the checks at another address (default
+`127.0.0.1`); without `--host` it also checks that only nginx listens on
+`:443`, which is what `bind-loopback` (8.4) set up. The user is the one
+Malcolm's `auth` created (`analyst` unless you overrode it).
+
+8.4 removed `/root/analyst-pw`, so the on-box check recreates it first, the
+same way 8.1a does, and removes it again afterwards:
+
+```bash
+sudo install -m600 -o root -g root /dev/null /root/analyst-pw && sudo bash -c 'umask 077; printf "analyst password: " >&2; read -rs p && echo >&2 && printf %s "$p" > /root/analyst-pw'
+sudo ./site/scripts/r770-portal.sh verify --user analyst --password-file /root/analyst-pw
+sudo rm -f /root/analyst-pw
+```
+
+Or skip the password file on the box and run `verify --host <R770 address>
+--cacert <lab CA cert> --user analyst --password-file <file>` from an analyst
+workstation that trusts the lab CA.
 
 Publish a `.lab` name only where a route genuinely exists. Discovery found
 iDRAC on a different subnet from management; a name that resolves to something
 unreachable is worse than no name.
+
+### 10.2 UFW  *(GATED)*
+
+A firewall change on a remote box, so it is gated (CLAUDE.md rule 3): run
+`plan`, show its output — current `ufw status verbose`, the discovered
+management path and the proposed ruleset — and get the operator's explicit
+confirmation before `apply`. The policy is deny incoming by default, allow SSH
+and `443/tcp` only on the management interface and only from its subnet. Nothing
+is guessed: the interface, subnet and SSH port come from the live SSH session
+(`$SSH_CONNECTION`), so run it as root from an SSH session, never a console.
+`plan` refuses if any of that is missing, or if the rules would not admit the
+current session.
+
+**Every step keeps `SSH_CONNECTION` through sudo.** sudo's `env_reset` strips
+it, and without it every verb except `revert`-to-disabled refuses (the refusal
+says so). Set `UFW_EXPECT_IFACE` to the inventory's management interface
+(`state/BUILD-STATE.md`: `lacp-trunk.10` on the R770) so discovery landing on
+any other interface is a refusal too:
+
+```bash
+sudo --preserve-env=SSH_CONNECTION UFW_EXPECT_IFACE=lacp-trunk.10 ./site/scripts/r770-ufw.sh plan
+sudo --preserve-env=SSH_CONNECTION UFW_EXPECT_IFACE=lacp-trunk.10 ./site/scripts/r770-ufw.sh apply   # --minutes N (1-60, default 10)
+```
+
+`apply` backs up `/etc/ufw`, `/etc/default/ufw` (where `ufw default` writes the
+policy) and `iptables-save` to `/var/backups/r770-ufw/` (mode 700), adds and
+reads back the two allow rules, then arms a **dead-man switch** — a detached
+`ufw --force disable` after N minutes — before it sets deny-by-default and
+enables UFW. It refuses while an earlier switch is still pending: confirm or
+revert that one first.
+
+What the switch does and does not do:
+
+- it runs **`ufw --force disable`**: it fails **open** (no host firewall at
+  all), it does not restore the previous ruleset. Run `revert` afterwards to get
+  the pre-apply state back;
+- it is a process in your SSH session's scope, so `plan` and `apply` refuse if
+  logind has `KillUserProcesses=yes` (the sleeper would die with the session).
+  The live value is read with `busctl get-property org.freedesktop.login1
+  /org/freedesktop/login1 org.freedesktop.login1.Manager KillUserProcesses`;
+  only if busctl is missing or fails does the script parse `logind.conf` and
+  the `logind.conf.d/*.conf` drop-ins under `/etc`, `/run`, `/usr/local/lib`
+  and `/usr/lib` `systemd/` (same name: the earlier directory wins; then file-name
+  order, last setting wins);
+- a **reboot inside the window loses it** while UFW stays enabled
+  (`ENABLED=yes`). Do not reboot until `confirm` has run.
+
+**Leave the current session open, open a NEW ssh session** and, within the
+window, run the commands below. Open it **without connection sharing** —
+`ssh -o ControlMaster=no -o ControlPath=none <host>` — or a multiplexed ssh
+(`ControlMaster`/`ControlPath` in `~/.ssh/config`) reuses the TCP connection
+`apply` recorded, and `confirm` refuses it:
+
+```bash
+sudo --preserve-env=SSH_CONNECTION ./site/scripts/r770-ufw.sh confirm
+sudo --preserve-env=SSH_CONNECTION UFW_EXPECT_IFACE=lacp-trunk.10 ./site/scripts/r770-ufw.sh verify
+```
+
+`confirm` proves a new connection: `apply` records the established sshd
+connections (`ss`) at the moment UFW is enabled, and `confirm` refuses unless
+its own client address and port were **not** among them and **are** established
+now. A terminal that was already open before `apply` rides on conntrack and
+proves nothing, so it is refused — "confirm from a session opened AFTER apply".
+If the new session cannot connect, do nothing — when the window closes, UFW
+turns itself off. If `confirm` reports that the switch already fired — or that
+it fired *during* `confirm` ("UFW is being disabled") — UFW is (or is about to
+be) disabled: re-run `apply`.
+
+`verify` is read-only and its scope is **UFW state, listeners and Docker
+publishing**: UFW active, default incoming deny, both allow rules and no
+others, no pending auto-revert; no `docker-proxy` (or unidentified) listener
+off loopback; and no DNAT rule in the nat `DOCKER` chain that is not pinned to
+`-d 127.0.0.1/32` (that is how ports are published with `userland-proxy:false`,
+where there is no listener to see). Both of those bypass UFW, so they FAIL.
+The DNAT check is **IPv4 only**: ports Docker publishes through `ip6tables` are
+not checked.
+Other host listeners beyond SSH/443 are a **WARN**, not a FAIL: UFW's INPUT
+chain filters them, so they are unreachable unless a rule admits them, but they
+are worth knowing about. `verify` cannot see the box from outside its own
+firewall: **reachability is checked from a second host** — the proof run does
+`nc` from outside against the open and the closed ports.
+
+**Rollback:**
+
+```bash
+sudo --preserve-env=SSH_CONNECTION ./site/scripts/r770-ufw.sh revert
+```
+
+`revert` restores `/etc/ufw` and `/etc/default/ufw` from the newest pre-apply
+backup. If that backup had UFW disabled, UFW is left disabled and any pending
+switch is cancelled. If it had UFW **enabled**, the re-enable is a firewall
+change like `apply`: it arms the same 10-minute dead-man switch and needs
+`confirm` from a NEW session, exactly as above. Its checks cover the *current*
+session, not the restored rules: if the backup's rules do not admit SSH, the new
+session cannot connect, `confirm` never runs, and recovery relies on the switch
+firing — **fail-open**, UFW disabled. If the re-enable fails, `revert` can be
+run again.
+
+A backup taken before `/etc/default/ufw` was captured (the d9581cb version of
+the script) has no `default-ufw`. `revert` to such a backup's **disabled** state
+still works, with a WARN that `/etc/default/ufw` was not captured and is left as
+is; `revert` to its **enabled** state is refused.
 
 ---
 

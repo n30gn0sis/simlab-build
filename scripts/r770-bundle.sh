@@ -182,6 +182,43 @@ check_manual() {  # <dir>
     fi
 }
 
+# site/ carries this repo's reviewed scripts/, config/ and docs/analyst-wiki/, so the
+# R770 deploy runs exactly bundle-*/site/ (see r770-offline-fetch.sh's stage_site()
+# and docs/superpowers/specs/2026-09-26-analyst-stack-design.md). Listed here as a
+# list variable, not a single name, so later scripts land in this check as they ship.
+#
+# Both absence cases below are WARN here in cmd_verify -- but that is NOT the same
+# as "won't block a bundle build". r770-build-bundle.sh's gate (step 5/5) always
+# runs `verify --strict`, and --strict promotes every WARN to FAIL, so a real
+# build DOES stop on either case. WARN (rather than an unconditional FAIL, which
+# is what check_hashes/check_coverage give a tampered or truncated file) is the
+# right severity because "missing" is sometimes a legitimate, dispositionable
+# state rather than corruption this script must always refuse:
+#   - no site/ at all: this bundle predates the site/ delivery path.
+#   - site/ present but missing a required script: all six listed below exist
+#     in the repo and ship in site/ today, but a bundle cut before a given
+#     script landed (r770-lab-ca.sh, r770-portal.sh and r770-ufw.sh are the
+#     latest) will legitimately lack it. In a bundle cut from the current
+#     repo, a missing script is a genuine defect to disposition.
+SITE_REQUIRED_SCRIPTS=(scripts/r770-bundle.sh scripts/r770-malcolm-deploy.sh scripts/r770-airgap-sim.sh scripts/r770-lab-ca.sh scripts/r770-portal.sh scripts/r770-ufw.sh)
+
+check_site() {  # <dir>
+    local dir="$1" s missing=()
+    if [ ! -d "$dir/site" ]; then
+        warn "site/ is missing — bundle predates the site/ delivery path (or the fetch's site stage was skipped)"
+        return 0
+    fi
+    for s in "${SITE_REQUIRED_SCRIPTS[@]}"; do
+        [ -s "$dir/site/$s" ] || missing+=("$s")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        printf '      site/%s\n' "${missing[@]}"
+        warn "site/ is missing expected script(s) above (a bundle cut before they shipped, or a defect — see comment above)"
+    else
+        pass "site/ has the expected deploy script(s)"
+    fi
+}
+
 # A list file without its payload -- or a payload with no list file -- means the
 # bundle cannot be imported. import-bundle.md step 3b docker-loads the payload and
 # then verifies the loaded tags against the list; either half alone is useless.
@@ -269,6 +306,7 @@ cmd_verify() {
     check_required "$dir"
     check_notes    "$dir"
     check_manual   "$dir"
+    check_site     "$dir"
     summary "$strict"
 }
 

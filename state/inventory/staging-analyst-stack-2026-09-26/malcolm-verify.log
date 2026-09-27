@@ -1,0 +1,13 @@
+capturing loopback 8443 for 20s while probing https://127.0.0.1:8443/
+  probe 1
+  probe 2
+  probe 3
+  probe 4
+  probe 5
+PASS    capture: 28804 bytes
+PASS    uploaded: /data/pcap/raw/upload/r770-verify-20260927T015049.pcap
+PASS    arkime: 4 session(s) on port 8443 since the capture started
+PASS    zeek: new log files under /opt/malcolm/malcolm/zeek-logs
+PASS    zeek container: malcolm-zeek-1 running healthy
+verify: all checks PASS
+VERIFY rc=0

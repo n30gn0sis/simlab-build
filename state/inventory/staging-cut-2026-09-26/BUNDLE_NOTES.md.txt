@@ -1,0 +1,47 @@
+# R770 offline bundle 20260926
+- Staging container runtime: docker (Docker version 29.8.1, build 4a63305)
+- No proxy configured (direct egress assumed)
+- Preflight OK: daemon pull + in-container apt egress verified
+- APT bundle: 855 debs incl. docker-ce + dist-upgrade security debs; Packages, Packages.gz and Release generated (serve as a trivial repo)
+- Ubuntu ISO 24.04.4 verified: SHA256SUMS GPG signature checked against /usr/share/keyrings/ubuntu-archive-keyring.gpg, then the ISO checked against SHA256SUMS
+- Malcolm 26.08.0: install zip + 23 images saved (6.8G). Restore with: docker load -i malcolm-images-26.08.0.tar.gz
+- GeoIP DESCOPED by decision 2026-08-31: no MaxMind account — Malcolm runs without geo tagging (v2 of this script has the fetch block if reversed)
+- Monitoring/portal images: 8 saved
+- GNS3 wheelhouse (gns3-server==3.0.6): install offline with  python3 -m venv /opt/gns3 && /opt/gns3/bin/pip install --no-index --find-links /path/wheelhouse gns3-server
+- GNS3 v3 note: server bundles the web UI and enforces auth (admin user on first run); images still live as files under images_path — pre-staging appliances on disk remains valid
+- VM base images: noble cloud image + cirros (validation-suite test VM)
+- GNS3 definitions: 12 .gns3a files (definitions are free even for licensed appliances)
+- VyOS rolling 2026.09.25-0029-rolling ISO + minisig fetched
+- MikroTik CHR 7.24.4 raw image fetched (unzip on the R770; GNS3/QEMU boots the raw .img directly)
+- OPNsense 26.7 dvd ISO verified against its sha256 list
+- Alpine virt ISO alpine-virt-3.24.2-x86_64.iso fetched + verified
+- GNS3 docker-node images: 4 saved (alpine/debian/netshoot/FRR)
+- Licensed GNS3 images: MANUAL — see gns3/appliances/README.txt
+- ET Open rules (suricata-7.0) fetched
+- docs: malcolm mirrored — 10 upstream link(s) returned HTTP 4xx (defects on the source site; not retryable)
+- docs: zeek offline htmlzip (Read the Docs build) fetched
+- docs: wireshark mirrored
+- docs: gns3-server v3.0.6 source tarball (includes docs/) fetched
+- Dell firmware: not a bundle item — handled on the R770 directly (dell/README.txt)
+
+## Versions
+- Malcolm: 26.08.0
+- Ubuntu ISO: 24.04.4
+- gns3-server: 3.0.6
+- MikroTik CHR: 7.24.4
+- OPNsense: 26.7
+- VyOS rolling: 2026.09.25-0029-rolling
+- FRR image: quay.io/frrouting/frr:10.7.1
+- Built: 2026-09-26T03:00:07+00:00 on r770-staging-2 with docker
+
+## Import order on the R770
+1. ./r770-bundle.sh verify .     (before anything else -- the verifier
+   ships in this bundle root and is covered by MANIFEST.sha256. Exit 0
+   PASS, 2 warnings to disposition, 1 DO NOT IMPORT. Plain 'sha256sum -c'
+   cannot see files added after the manifest was written, which is
+   exactly the Dell firmware and licensed-appliance case.)
+2. Site AV/content scan per policy
+3. apt/ -> local repo dir; point sources.list at it; apt update
+4. docker load -i malcolm/malcolm-images-*.tar.gz && docker load -i docker/monitoring-images.tar.gz && docker load -i gns3/docker-nodes/gns3-node-images.tar.gz
+5. gns3 wheelhouse, definitions/, appliances/, images/, enrichment/, docs/ into place per buildout doc
+6. Keep previous bundle until this one validates

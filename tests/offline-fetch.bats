@@ -50,7 +50,7 @@ load_seed_fns() {
     note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
 }
 
-ALL="preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual manifest"
+ALL="preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site manifest"
 
 # selected <output> -- the stage names the dry run says it would execute, in order
 selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print $NF}' | tr '\n' ' ' | sed 's/ $//'; }
@@ -93,7 +93,7 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
     run "$SCRIPT" --skip docs,manifest,preflight --dry-run
     echo "$output"
     [ "$status" -eq 0 ]
-    [ "$(selected "$output")" = "apt iso malcolm monitoring gns3 appliances enrichment manual" ]
+    [ "$(selected "$output")" = "apt iso malcolm monitoring gns3 appliances enrichment manual site" ]
 }
 
 @test "an unknown stage name is rejected by name, before anything runs" {
@@ -136,6 +136,383 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
     [ "$status" -eq 0 ]
     grep -q 'Malcolm images saved' "$BUNDLE_DIR/BUNDLE_NOTES.md"
     grep -qE 'rerun|section' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+# ── site/ stage — copies this repo's scripts/config/docs-analyst-wiki into the bundle ──
+#
+# 2026-09-26 review fix: the old fixture was a plain directory, no git. Under
+# `r770-build-bundle.sh --pack`, the unpacked scripts run flat out of a
+# `mktemp -d`, so SITE_SRC_ROOT's default resolved to /tmp -- and the old
+# stage_site() would happily ship whatever was lying around there (or "0
+# files, exit 0" if nothing was), because missing trees were `continue`d
+# past rather than refused. stage_site() now refuses outright unless
+# SITE_SRC_ROOT is a real git work tree that looks like this repo, has all
+# three trees, and yields at least one file; and it ships content read from
+# HEAD, never the working tree or a dirty index, so these fixtures build a
+# real (tiny) git repo rather than a bare directory.
+
+gitc() { git -c user.name=test -c user.email=test@test.invalid "$@"; }
+
+# setup_site_repo <dir> -- a real git repo standing in for a checkout: tracked
+# scripts/config/docs-analyst-wiki content, including the marker file
+# (scripts/r770-offline-fetch.sh) stage_site() uses to confirm SITE_SRC_ROOT
+# really is a repo like this one. Also plants five TRACKED secret-looking
+# files -- two of them outside config/, which the old denylist never looked
+# at -- to prove the widened filter still excludes them even though they are
+# committed (defence in depth, not merely ".gitignore already kept them
+# out"). Everything is committed, so HEAD and the working tree start
+# identical; individual tests dirty it further as needed.
+#
+# Deliberately does NOT plant a file literally named ".git" as a denylist
+# case (2026-09-26 re-review, item 5): git refuses to track any path
+# component named ".git" at all -- `git add -A` on one silently adds
+# nothing, so an assertion that it isn't shipped passes whether or not
+# site_excluded's ".git" pattern does anything. See the direct
+# site_excluded() unit test below instead.
+setup_site_repo() {
+    local src="$1"
+    mkdir -p "$src/scripts" "$src/config/nginx" "$src/docs/analyst-wiki"
+    printf '#!/usr/bin/env bash\n' > "$src/scripts/r770-offline-fetch.sh"
+    printf '#!/usr/bin/env bash\necho hi\n' > "$src/scripts/hello.sh"
+    chmod +x "$src/scripts/hello.sh"
+    echo "not executable" > "$src/scripts/README.txt"
+    echo "server { }"   > "$src/config/nginx/site.conf"
+    echo "# wiki page"  > "$src/docs/analyst-wiki/index.md"
+    echo "SECRET=1"     > "$src/config/x.env"                    # *.env, inside config/
+    echo "fake key"     > "$src/config/y.key"                    # *.key, inside config/
+    echo "SECRET=2"     > "$src/scripts/outside.env"              # *.env, OUTSIDE config/
+    echo "fake cert"    > "$src/docs/analyst-wiki/site.pem"       # *.pem, OUTSIDE config/
+    echo "fake creds"   > "$src/scripts/htpasswd"                 # htpasswd, OUTSIDE config/
+    echo "fake creds"   > "$src/docs/analyst-wiki/.htpasswd"      # .htpasswd, OUTSIDE config/
+    git -C "$src" init -q
+    gitc -C "$src" add -A
+    gitc -C "$src" commit -q -m init
+}
+
+@test "--only site ships only TRACKED content, excludes secrets anywhere (not just config/), keeps +x, writes the note, touches no network" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ -s "$BUNDLE_DIR/site/scripts/hello.sh" ]
+    [ -x "$BUNDLE_DIR/site/scripts/hello.sh" ]
+    [ ! -x "$BUNDLE_DIR/site/scripts/README.txt" ]
+    [ -s "$BUNDLE_DIR/site/config/nginx/site.conf" ]
+    [ -s "$BUNDLE_DIR/site/docs/analyst-wiki/index.md" ]
+    [ ! -e "$BUNDLE_DIR/site/config/x.env" ]
+    [ ! -e "$BUNDLE_DIR/site/config/y.key" ]
+    [ ! -e "$BUNDLE_DIR/site/scripts/outside.env" ]
+    [ ! -e "$BUNDLE_DIR/site/docs/analyst-wiki/site.pem" ]
+    [ ! -e "$BUNDLE_DIR/site/scripts/htpasswd" ]
+    [ ! -e "$BUNDLE_DIR/site/docs/analyst-wiki/.htpasswd" ]
+    grep -qE 'site/: 5 files from [0-9a-f]{7,40} copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+    [ ! -e "$BUNDLE_DIR/MANIFEST.sha256" ]
+    [ ! -s "$NET" ]
+}
+
+@test "site_excluded() unit: .git anywhere, secret extensions anywhere, and an ordinary script pass through" {
+    load_fn "$SCRIPT" site_excluded || { echo "site_excluded not found in $SCRIPT"; false; }
+    run site_excluded "a/.git/x"
+    [ "$status" -eq 0 ]
+    run site_excluded ".git"
+    [ "$status" -eq 0 ]
+    run site_excluded "x.p12"
+    [ "$status" -eq 0 ]
+    run site_excluded "sub/.htpasswd"
+    [ "$status" -eq 0 ]
+    run site_excluded "config/creds.pfx"
+    [ "$status" -eq 0 ]
+    run site_excluded "scripts/ok.sh"
+    [ "$status" -eq 1 ]
+}
+
+@test "a real commit hash appears in the note" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    local want; want="$(git -C "$SRC" rev-parse --short HEAD)"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -qF "from $want copied" "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+@test "an untracked file under config/ is NOT shipped" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    echo "oops" > "$SRC/config/untracked.txt"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ ! -e "$BUNDLE_DIR/site/config/untracked.txt" ]
+}
+
+@test "a tracked file with an uncommitted edit ships the COMMITTED content, not the working-tree edit" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    echo "TAMPERED" > "$SRC/scripts/hello.sh"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    run cat "$BUNDLE_DIR/site/scripts/hello.sh"
+    [[ "$output" != *"TAMPERED"* ]]
+    [[ "$output" == *"echo hi"* ]]
+}
+
+@test "a dirty tree still ships committed content and leaves a WARN in the notes" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    echo "TAMPERED" > "$SRC/scripts/hello.sh"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q 'WARN: site/ built from a dirty tree; uncommitted edits NOT shipped' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+@test "a clean tree leaves no dirty-tree WARN in the notes" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    ! grep -q 'dirty tree' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+@test "a SITE_SRC_ROOT that doesn't look like this repo refuses, before touching git" {
+    SRC="$BATS_TEST_TMPDIR/not-a-repo"
+    mkdir -p "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"r770-offline-fetch.sh"* ]]
+    [ ! -d "$BUNDLE_DIR/site" ]
+    [ ! -s "$NET" ]
+}
+
+@test "a SITE_SRC_ROOT that looks like this repo but is not a git work tree refuses" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki"
+    touch "$SRC/scripts/r770-offline-fetch.sh"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"git work tree"* ]]
+    [ ! -d "$BUNDLE_DIR/site" ]
+}
+
+@test "a missing tree (docs/analyst-wiki removed) refuses" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    rm -rf "$SRC/docs"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"docs/analyst-wiki"* ]]
+}
+
+@test "0 tracked files under the three trees refuses, even though the identity marker exists" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki"
+    touch "$SRC/scripts/r770-offline-fetch.sh"    # present, but UNTRACKED below
+    git -C "$SRC" init -q
+    gitc -C "$SRC" commit -q -m init --allow-empty
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"0 files"* ]]
+}
+
+@test "a fetch with SITE_ARCHIVE and SITE_COMMIT (no work tree) builds site/ and notes the commit" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    local commit; commit="$(git -C "$SRC" rev-parse HEAD)"
+    ARCHIVE="$BATS_TEST_TMPDIR/site.tar"
+    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki > "$ARCHIVE"
+    unset SITE_SRC_ROOT
+    export SITE_ARCHIVE="$ARCHIVE" SITE_COMMIT="$commit"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ -s "$BUNDLE_DIR/site/scripts/hello.sh" ]
+    [ -x "$BUNDLE_DIR/site/scripts/hello.sh" ]
+    [ ! -x "$BUNDLE_DIR/site/scripts/README.txt" ]
+    [ ! -e "$BUNDLE_DIR/site/config/x.env" ]
+    [ ! -e "$BUNDLE_DIR/site/scripts/htpasswd" ]
+    grep -qF "from $commit copied" "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+@test "the startup site-source check fails fast, before any stage output, with neither a work tree nor SITE_ARCHIVE/SITE_COMMIT" {
+    SRC="$BATS_TEST_TMPDIR/not-a-repo"
+    mkdir -p "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT"
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"r770-offline-fetch.sh"* ]]
+    [[ "$output" != *"[0/11]"* ]]
+    [[ "$output" != *"Staging container runtime"* ]]
+    [ ! -s "$NET" ]
+}
+
+@test "a staged-but-uncommitted NEW file is not shipped, and leaves a dirty WARN instead of a FATAL" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    echo "brand new" > "$SRC/scripts/new-file.sh"
+    git -C "$SRC" add scripts/new-file.sh    # staged, NOT committed -- HEAD does not have it yet
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ ! -e "$BUNDLE_DIR/site/scripts/new-file.sh" ]
+    grep -q 'WARN: site/ built from a dirty tree; uncommitted edits NOT shipped' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+}
+
+@test "a git rm --cached path still in HEAD IS shipped" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    git -C "$SRC" rm --cached -q scripts/hello.sh    # index no longer has it; HEAD and the working tree still do
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ -s "$BUNDLE_DIR/site/scripts/hello.sh" ]
+}
+
+@test "a tracked symlink refuses, naming the path" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    ln -s /etc/passwd "$SRC/scripts/evil-link"
+    git -C "$SRC" add scripts/evil-link
+    gitc -C "$SRC" commit -q -m "add symlink"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"scripts/evil-link"* ]]
+    [[ "$output" == *"symlink"* ]]
+    [ ! -e "$BUNDLE_DIR/site" ]
+}
+
+@test "a tracked submodule (gitlink) refuses, naming the path" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    git -C "$SRC" update-index --add --cacheinfo 160000,1111111111111111111111111111111111111111,config/fake-submodule
+    gitc -C "$SRC" commit -q -m "add fake submodule"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"config/fake-submodule"* ]]
+    [[ "$output" == *"submodule"* ]]
+    [ ! -e "$BUNDLE_DIR/site" ]
+}
+
+@test "a refusal mid-build leaves no site.tmp and no partial site/, and a previous good site/ is untouched" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    [ "$status" -eq 0 ]
+    [ -s "$BUNDLE_DIR/site/scripts/hello.sh" ]
+    local before; before="$(sha256sum "$BUNDLE_DIR/site/scripts/hello.sh" | cut -d' ' -f1)"
+
+    ln -s /etc/passwd "$SRC/scripts/evil-link"
+    git -C "$SRC" add scripts/evil-link
+    gitc -C "$SRC" commit -q -m "add symlink -- should refuse without touching the prior good site/"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [ ! -d "$BUNDLE_DIR/site.tmp" ]
+    [ -s "$BUNDLE_DIR/site/scripts/hello.sh" ]
+    [ "$(sha256sum "$BUNDLE_DIR/site/scripts/hello.sh" | cut -d' ' -f1)" = "$before" ]
+}
+
+@test "the site stage always refreshes: a file removed at HEAD is not re-shipped from a prior copy" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    export SITE_SRC_ROOT="$SRC"
+    run "$SCRIPT" --only site
+    [ "$status" -eq 0 ]
+    [ -s "$BUNDLE_DIR/site/scripts/hello.sh" ]
+    gitc -C "$SRC" rm -q scripts/hello.sh
+    gitc -C "$SRC" commit -q -m "remove hello.sh"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ ! -e "$BUNDLE_DIR/site/scripts/hello.sh" ]
+}
+
+# git_logging_stub -- a git on PATH that records every safe.directory value it
+# is handed (one per line, in $BATS_TEST_TMPDIR/safe-dirs), then runs the real
+# git unchanged.
+git_logging_stub() {
+    local real; real="$(command -v git)"
+    stub git 'prev=""; for a; do case "$prev $a" in "-c safe.directory="*) printf "%s\n" "${a#safe.directory=}" >> "'"$BATS_TEST_TMPDIR"'/safe-dirs" ;; esac; prev=$a; done
+exec "'"$real"'" "$@"'
+}
+
+@test "a scripts/..-style or symlinked SITE_SRC_ROOT is normalised: git gets the canonical path as safe.directory" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    local canon; canon="$(cd "$SRC" && pwd -P)"
+    ln -s "$SRC" "$BATS_TEST_TMPDIR/site-link"
+    git_logging_stub
+    for root in "$SRC/scripts/.." "$BATS_TEST_TMPDIR/site-link"; do
+        rm -f "$BATS_TEST_TMPDIR/safe-dirs"
+        export SITE_SRC_ROOT="$root"
+        run "$SCRIPT" --only site
+        echo "[$root] $output"
+        [ "$status" -eq 0 ]
+        [ -s "$BATS_TEST_TMPDIR/safe-dirs" ]
+        # every git call names the canonical path, and only it
+        [ "$(sort -u "$BATS_TEST_TMPDIR/safe-dirs")" = "$canon" ]
+    done
+}
+
+@test "a SITE_SRC_ROOT that cannot be entered refuses before touching git" {
+    git_logging_stub
+    export SITE_SRC_ROOT="$BATS_TEST_TMPDIR/does-not-exist"
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"SITE_SRC_ROOT ($BATS_TEST_TMPDIR/does-not-exist) is not a directory that can be entered"* ]]
+    [ ! -e "$BATS_TEST_TMPDIR/safe-dirs" ]
+    [ ! -d "$BUNDLE_DIR/site" ]
+}
+
+@test "a symlink inside SITE_ARCHIVE refuses, naming the path" {
+    SRC="$BATS_TEST_TMPDIR/site-src"
+    setup_site_repo "$SRC"
+    local stage="$BATS_TEST_TMPDIR/archive-src"
+    mkdir -p "$stage"
+    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki | tar xf - -C "$stage"
+    ln -s /etc/passwd "$stage/scripts/evil-link"
+    ARCHIVE="$BATS_TEST_TMPDIR/site.tar"
+    tar cf "$ARCHIVE" -C "$stage" scripts config docs
+    unset SITE_SRC_ROOT
+    export SITE_ARCHIVE="$ARCHIVE" SITE_COMMIT=0123456789abcdef
+    run "$SCRIPT" --only site
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"scripts/evil-link is a symlink in SITE_ARCHIVE"* ]]
+    [ ! -e "$BUNDLE_DIR/site" ]
+}
+
+@test "--list shows the new site stage as always refreshed" {
+    run "$SCRIPT" --list
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$(echo "$output" | grep -E '^\s*site ')" == *"runs every time"* ]]
 }
 
 @test "resolve_latest_tag survives grep -m1 closing the pipe early under set -euo pipefail" {

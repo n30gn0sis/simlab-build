@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 #
 # r770-staging-vm.sh drives a real VM on a hypervisor that also hosts other
-# guests, so these tests pin the target (every call is node proxmox, VMID 9770),
+# guests, so these tests pin the target (every call is node proxmox, VMID 9770 by default),
 # the ordering (a running VM is stopped before a rollback), task-failure
 # handling, and that the API token is never printed.
 #
@@ -238,4 +238,37 @@ snapshot/clean-2026-09-24/rollback" ]
 @test "every_call_targets_9770 fails, not vacuously passes, when no calls were made" {
     run every_call_targets_9770
     [ "$status" -eq 1 ]
+}
+
+# ── second staging VM (2026-09-25) ────────────────────────────────────────────
+# A second Claude session works on 9770, so this session got a clone, 9771.
+# The driver accepts exactly {9770, 9771} via STAGING_VMID and nothing else;
+# the token's ACL covers exactly those two, so both guards agree.
+
+@test "STAGING_VMID=9771 sends every call to qemu/9771 only" {
+    STAGING_VMID=9771 run svm start
+    echo "$output"; cat "$S/calls"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"vm 9771 started"* ]]
+    ! grep -vE '^(GET|POST) https://pve\.test:8006/api2/json/nodes/proxmox/(qemu/9771/|tasks/)' "$S/calls"
+    [ -s "$S/calls" ]
+}
+
+@test "any other VMID is refused before any API call" {
+    for v in 101 9772 abc ""; do
+        STAGING_VMID="$v" run svm status
+        echo "[$v] $output"
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"STAGING_VMID must be 9770 or 9771"* ]]
+    done
+    [ ! -s "$S/calls" ]
+}
+
+@test "9771 defaults to its DHCP reservation, 192.168.4.26" {
+    unset STAGING_VM_HOST
+    stub ssh 'echo "$*" > "$S/ssh_args"; exit 0'
+    STAGING_VMID=9771 run svm wait-ssh 5
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ssh to ubuntu@192.168.4.26 is up"* ]]
+    grep -q 'ubuntu@192.168.4.26' "$S/ssh_args"
 }

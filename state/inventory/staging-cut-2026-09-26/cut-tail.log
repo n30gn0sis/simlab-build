@@ -1,0 +1,60 @@
+02ef011194f6: Pull complete
+f7ee36c9aa34: Pull complete
+7460114066d1: Download complete
+7460114066d1: Pull complete
+67113c48a71c: Download complete
+4f4fb700ef54: Pull complete
+afb0d5225f6b: Pull complete
+67113c48a71c: Pull complete
+0c2c7544a070: Pull complete
+Digest: sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2
+Status: Downloaded newer image for quay.io/frrouting/frr:10.7.1
+quay.io/frrouting/frr:10.7.1
+>> GNS3 docker-node images: 4 saved (alpine/debian/netshoot/FRR)
+>> Licensed GNS3 images: MANUAL — see gns3/appliances/README.txt
+==== [7/10] Enrichment data ====
+>> ET Open rules (suricata-7.0) fetched
+==== [8/10] Docs mirrors ====
+>> docs: malcolm mirrored — 10 upstream link(s) returned HTTP 4xx (defects on the source site; not retryable)
+>> docs: zeek offline htmlzip (Read the Docs build) fetched
+>> docs: wireshark mirrored
+>> docs: gns3-server v3.0.6 source tarball (includes docs/) fetched
+==== [9/10] Manual items ====
+>> Dell firmware: not a bundle item — handled on the R770 directly (dell/README.txt)
+==== [10/10] Manifest ====
+wrote /home/ubuntu/simlab-build/bundle-20260926/MANIFEST.sha256 — 1598 file(s), 15G on disk
+Bundle complete: /home/ubuntu/simlab-build/bundle-20260926
+15G	/home/ubuntu/simlab-build/bundle-20260926
+If this run was interrupted, just rerun it — completed items are skipped
+(same-day runs resume automatically; otherwise BUNDLE_DIR=/home/ubuntu/simlab-build/bundle-20260926; FORCE=1 redoes all).
+Review /home/ubuntu/simlab-build/bundle-20260926/BUNDLE_NOTES.md, complete the MANUAL items (dell/, gns3/appliances/), then
+regenerate the manifest after adding manual files:
+  ./scripts/r770-bundle.sh manifest /home/ubuntu/simlab-build/bundle-20260926
+then gate it before the media leaves staging:
+  ./scripts/r770-bundle.sh verify /home/ubuntu/simlab-build/bundle-20260926 --strict
+Then transfer per the supply plan (ext4 drive; verify MANIFEST.sha256 on the R770).
+== 3/5  Manual items — nothing below can be scripted
+  gns3/appliances/         licensed appliance images you hold entitlements for.
+                           The .gns3a definitions are already staged and are
+                           free even where the images are not.
+They are added by hand, AFTER the fetch wrote its manifest. That manifest
+cannot see them. Step 4 regenerates it so it can. (Dell firmware is not a
+bundle item: it is handled on the R770 directly.)
+== 4/5  Manifest — regenerated so it covers the manual additions
+wrote /home/ubuntu/simlab-build/bundle-20260926/MANIFEST.sha256 — 1598 file(s), 15G on disk
+== 5/5  Gate — --strict, before the media is allowed to move
+Verifying bundle: /home/ubuntu/simlab-build/bundle-20260926
+ok    MANIFEST.sha256 parses — 1598 entries
+ok    every manifested file is present and unmodified
+ok    no unmanifested files — manual additions are covered
+ok    no incomplete downloads
+ok    malcolm/image-list.txt has its payload
+ok    docker/monitoring-image-list.txt has its payload
+ok    gns3/docker-nodes/image-list.txt has its payload
+ok    BUNDLE_NOTES.md has no WARN lines
+ok    gns3/appliances/ has 8 staged file(s)
+RESULT: PASS — bundle is complete, unmodified and ready to transfer.
+BUNDLE READY — gated clean at /home/ubuntu/simlab-build/bundle-20260926
+Next: verify the Ubuntu ISO GPG signature, copy to ext4 media, gate again
+FROM the media, then follow docs/plans/r770-install-runbook.md on the R770.
+cut exit=0

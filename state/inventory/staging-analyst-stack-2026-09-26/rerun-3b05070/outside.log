@@ -1,0 +1,18 @@
+PASS    portal.lab -> 401 without credentials
+PASS    portal.lab -> 200 with credentials
+PASS    malcolm.lab -> 401 without credentials
+PASS    malcolm.lab -> 200 with credentials
+PASS    docs.lab -> 401 without credentials
+PASS    docs.lab -> 200 with credentials
+portal-verify rc=0
+malcolm.lab/             200
+malcolm.lab/arkime/      302
+malcolm.lab/dashboards/  302
+bare-IP handshake: curl rc=35 (non-zero = rejected)
+nc 22 OPEN
+nc 443 OPEN
+nc 8443 closed
+nc 9200 closed
+nc 5601 closed
+nc 80 closed
+nc 31337 closed

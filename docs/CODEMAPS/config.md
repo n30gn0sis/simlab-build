@@ -1,4 +1,4 @@
-<!-- Generated: 2026-09-14 | Files scanned: 92 | Token estimate: ~550 -->
+<!-- Generated: 2026-09-26 | Files scanned: 92 | Token estimate: ~550 -->
 # Config — what ships to the R770 and which phase consumes it
 
 Nothing under `config/` runs on staging. Files are copied into the bundle or onto the R770 by the
@@ -14,8 +14,11 @@ browser ──443──▶ nginx (R770)  portal.lab ─▶ config/portal/index.h
 
 | Path | Phase | Notes |
 |---|---|---|
-| `config/nginx/portal.lab.conf` + 4 site confs | 13 | one `server` each; TLS + auth via snippets |
-| `config/nginx/snippets/lab-tls.conf` | 13 | internal CA cert, one cert with five SANs |
+| `config/nginx/portal.lab.conf` + 4 site confs | 13 | one `:443` `server` each (none on `:80`); TLS + auth via snippets. `r770-portal.sh` installs only portal, malcolm and docs |
+| `config/nginx/00-default-reject.conf` | 13 | `:443` catch-all (v4 + v6): `ssl_reject_handshake` for any name that is not an enabled `.lab` vhost |
+| `config/nginx/conf.d/lab-connection-upgrade.conf` | 13 | http-level: the one `$connection_upgrade` map the proxied vhosts use for websockets |
+| `config/nginx/snippets/lab-tls.conf` | 13 | internal CA cert (`r770-lab-ca.sh`), one cert with five SANs |
+| `config/nginx/snippets/lab-headers.conf` | 13 | server-level security headers (HSTS one day, nosniff, SAMEORIGIN, referrer policy) |
 | `config/nginx/snippets/lab-auth.conf` | 13 | basic auth, included by portal, docs and monitoring only (GNS3 and Malcolm bring their own login) |
 | `config/portal/index.html` | 13 | static landing page linking the five names |
 | `config/docs/mkdocs.yml` | 13 | builds `docs/analyst-wiki/` into docs.lab |
@@ -25,10 +28,11 @@ browser ──443──▶ nginx (R770)  portal.lab ─▶ config/portal/index.h
 | `config/monitoring/blackbox.yml` | 14 | probes the five `.lab` names via host-gateway |
 | `config/monitoring/alertmanager.yml` | 14 | `null` receiver: alerts are visible, nothing is notified |
 | `config/monitoring/grafana/provisioning/datasources/prometheus.yml` | 14 | single datasource |
-| `config/malcolm/malcolm-config-rehearsal.json` | 10 | installer answers export; zero credential keys |
+| `config/malcolm/malcolm-config.json` | 10 | the config `r770-malcolm-deploy.sh configure` imports: storage off the defaults (`pcapDir`/`indexDir` under `/data`), `processUserId`/`processGroupId`, Suricata off; zero credential keys |
+| `config/malcolm/malcolm-config-rehearsal.json` | 10 | the 2026-09-12 rehearsal's installer answers export; zero credential keys |
 
-Malcolm itself has no config here: its installer is driven non-interactively (runbook Part 8),
-auth via its own `auth_setup`, and started with its own start script (a compose override is ignored).
+Malcolm's installer is driven non-interactively from `malcolm-config.json` (runbook Part 8), auth via its own
+`auth_setup`, and started with its own start script (a compose override is ignored).
 
 Secrets never live in `config/`: the CA key, htpasswd, GNS3 password and JWT are generated on the box.
 

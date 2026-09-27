@@ -1,0 +1,102 @@
+unpacking /data/staging/bundle-20260926/malcolm/malcolm-26.08.0-docker_install.zip -> /opt/malcolm
+PASS    installed malcolm-26.08.0-docker_install.zip into /opt/malcolm
+configuring Malcolm from /data/staging/bundle-20260926/site/config/malcolm/malcolm-config.json
+[2026-09-27 01:20:38] (START) [Determining Presentation Format]
+[2026-09-27 01:20:38] (SUCCESS) [Determining Presentation Format]: Using MODE_SILENT
+[2026-09-27 01:20:38] (START) [Initializing Internal Malcolm Configs]
+[2026-09-27 01:20:38] (WARNING) Configuration directory '/opt/malcolm/config' not found. EnvMapper will be empty.
+[2026-09-27 01:20:38] (WARNING) Failed to set default "False" for "suricataDisableSids": ""
+[2026-09-27 01:20:38] (SUCCESS) [Initializing Internal Malcolm Configs]
+[2026-09-27 01:20:38] (START) [Initializing User Interface]
+[2026-09-27 01:20:38] (SUCCESS) [Initializing User Interface]: UI initialized
+[2026-09-27 01:20:38] (START) [Spawning Platform-specific Installer]
+[2026-09-27 01:20:38] (SUCCESS) [Spawning Platform-specific Installer]: Detected linux
+[2026-09-27 01:20:38] (info) Malcolm runtime files extracted to /opt/malcolm/malcolm
+[2026-09-27 01:20:38] (SUCCESS) [INSTALLER]: Package handling completed
+[2026-09-27 01:20:38] (START) [Determining Presentation Format]
+[2026-09-27 01:20:38] (SUCCESS) [Determining Presentation Format]: Using MODE_SILENT
+[2026-09-27 01:20:38] (START) [Initializing Internal Malcolm Configs]
+[2026-09-27 01:20:38] (WARNING) Failed to set default "False" for "suricataDisableSids": ""
+[2026-09-27 01:20:38] (SUCCESS) [Initializing Internal Malcolm Configs]
+[2026-09-27 01:20:38] (START) [Initializing User Interface]
+[2026-09-27 01:20:38] (SUCCESS) [Initializing User Interface]: UI initialized
+[2026-09-27 01:20:38] (START) [Spawning Platform-specific Installer]
+[2026-09-27 01:20:38] (SUCCESS) [Spawning Platform-specific Installer]: Detected linux
+[2026-09-27 01:20:38] (WARNING) Failed to set default "False" for "suricataDisableSids": ""
+[2026-09-27 01:20:38] (info) Successfully loaded settings from: /data/staging/bundle-20260926/site/config/malcolm/malcolm-config.json
+[2026-09-27 01:20:38] (WARNING) Found 129 configuration items missing from settings file, using defaults
+[2026-09-27 01:20:38] (info) Skipping config directory ingestion prompts because --import-malcolm-config-file was provided.
+[2026-09-27 01:20:38] (info) Configuration will be saved to /opt/malcolm/malcolm/config
+[2026-09-27 01:20:38] (info) Created upload-common.env from upload-common.env.example
+[2026-09-27 01:20:38] (info) Created ssl.env from ssl.env.example
+[2026-09-27 01:20:38] (info) Created dashboards.env from dashboards.env.example
+[2026-09-27 01:20:38] (info) Created arkime-live.env from arkime-live.env.example
+[2026-09-27 01:20:38] (info) Created auth.env from auth.env.example
+[2026-09-27 01:20:38] (info) Created pipeline.env from pipeline.env.example
+[2026-09-27 01:20:38] (info) Created zeek.env from zeek.env.example
+[2026-09-27 01:20:38] (info) Created lookup-common.env from lookup-common.env.example
+[2026-09-27 01:20:38] (info) Created logstash.env from logstash.env.example
+[2026-09-27 01:20:38] (info) Created zeek-live.env from zeek-live.env.example
+[2026-09-27 01:20:38] (info) Created keycloak.env from keycloak.env.example
+[2026-09-27 01:20:38] (info) Created process.env from process.env.example
+[2026-09-27 01:20:38] (info) Created nginx.env from nginx.env.example
+[2026-09-27 01:20:38] (info) Created filebeat.env from filebeat.env.example
+[2026-09-27 01:20:38] (info) Created filescan-secret.env from filescan-secret.env.example
+[2026-09-27 01:20:38] (info) Created arkime-secret.env from arkime-secret.env.example
+[2026-09-27 01:20:38] (info) Created netbox.env from netbox.env.example
+[2026-09-27 01:20:38] (info) Created postgres.env from postgres.env.example
+[2026-09-27 01:20:38] (info) Created arkime.env from arkime.env.example
+[2026-09-27 01:20:38] (info) Created pcap-capture.env from pcap-capture.env.example
+[2026-09-27 01:20:38] (info) Created filescan.env from filescan.env.example
+[2026-09-27 01:20:38] (info) Created netbox-secret.env from netbox-secret.env.example
+[2026-09-27 01:20:38] (info) Created valkey.env from valkey.env.example
+[2026-09-27 01:20:38] (info) Created suricata-offline.env from suricata-offline.env.example
+[2026-09-27 01:20:38] (info) Created netbox-common.env from netbox-common.env.example
+[2026-09-27 01:20:38] (info) Created suricata-live.env from suricata-live.env.example
+[2026-09-27 01:20:38] (info) Created opensearch.env from opensearch.env.example
+[2026-09-27 01:20:38] (info) Created beats-common.env from beats-common.env.example
+[2026-09-27 01:20:38] (info) Created arkime-offline.env from arkime-offline.env.example
+[2026-09-27 01:20:38] (info) Created dashboards-helper.env from dashboards-helper.env.example
+[2026-09-27 01:20:38] (info) Created zeek-offline.env from zeek-offline.env.example
+[2026-09-27 01:20:38] (info) Created suricata.env from suricata.env.example
+[2026-09-27 01:20:38] (info) Created auth-common.env from auth-common.env.example
+[2026-09-27 01:20:38] (info) Wrote environment file: upload-common.env
+[2026-09-27 01:20:38] (info) Wrote environment file: dashboards.env
+[2026-09-27 01:20:38] (info) Wrote environment file: arkime-live.env
+[2026-09-27 01:20:38] (info) Wrote environment file: pipeline.env
+[2026-09-27 01:20:38] (info) Wrote environment file: zeek.env
+[2026-09-27 01:20:38] (info) Wrote environment file: lookup-common.env
+[2026-09-27 01:20:38] (info) Wrote environment file: logstash.env
+[2026-09-27 01:20:38] (info) Wrote environment file: zeek-live.env
+[2026-09-27 01:20:38] (info) Wrote environment file: process.env
+[2026-09-27 01:20:38] (info) Wrote environment file: nginx.env
+[2026-09-27 01:20:38] (info) Wrote environment file: filebeat.env
+[2026-09-27 01:20:38] (info) Wrote environment file: filescan-secret.env
+[2026-09-27 01:20:38] (info) Wrote environment file: arkime-secret.env
+[2026-09-27 01:20:38] (info) Wrote environment file: arkime.env
+[2026-09-27 01:20:38] (info) Wrote environment file: pcap-capture.env
+[2026-09-27 01:20:38] (info) Wrote environment file: filescan.env
+[2026-09-27 01:20:38] (info) Wrote environment file: suricata-offline.env
+[2026-09-27 01:20:38] (info) Wrote environment file: netbox-common.env
+[2026-09-27 01:20:38] (info) Wrote environment file: suricata-live.env
+[2026-09-27 01:20:38] (info) Wrote environment file: opensearch.env
+[2026-09-27 01:20:38] (info) Wrote environment file: beats-common.env
+[2026-09-27 01:20:38] (info) Wrote environment file: arkime-offline.env
+[2026-09-27 01:20:38] (info) Wrote environment file: dashboards-helper.env
+[2026-09-27 01:20:38] (info) Wrote environment file: zeek-offline.env
+[2026-09-27 01:20:38] (info) Wrote environment file: suricata.env
+[2026-09-27 01:20:38] (info) Setting ownership of /opt/malcolm/malcolm/config directory to 1000:1000...
+[2026-09-27 01:20:38] (info) Dry run/config-only: would install system dependencies
+[2026-09-27 01:20:38] (info) Dry run/config-only: would install Docker if missing
+[2026-09-27 01:20:38] (info) Dry run/config-only: would install Docker Compose
+[2026-09-27 01:20:38] (info) Updating 1 compose file(s) for orchestration (docker-compose.yml)...
+[2026-09-27 01:20:38] (info) Updated compose file: /opt/malcolm/malcolm/docker-compose.yml
+[2026-09-27 01:20:38] (info) Dry run/config-only: would apply Linux system tweaks
+[2026-09-27 01:20:38] (info) Dry run/config-only: would perform docker operations (start/load)
+[2026-09-27 01:20:38] (SKIP) [INSTALLER]: Configuration-only: installation steps skipped
+PASS    configured (sha256 642bb22c99e444b4e03ff6428d434956869ce1569407236d06f9a268bc306924)
+NOTE    the installer rewrites docker-compose.yml: run bind-loopback again before start
+running Malcolm's auth_setup for user analyst (hashes only)
+Exception: auth_setup should not be run as root
+r770-malcolm-deploy: FAIL    auth_setup failed
+CHAIN rc=1

@@ -1,0 +1,8 @@
+Get:1 file:/srv/repo/apt ./ InRelease
+Ign:1 file:/srv/repo/apt ./ InRelease
+Get:2 file:/srv/repo/apt ./ Release [832 B]
+Get:2 file:/srv/repo/apt ./ Release [832 B]
+Get:3 file:/srv/repo/apt ./ Release.gpg
+Ign:3 file:/srv/repo/apt ./ Release.gpg
+Get:4 file:/srv/repo/apt ./ Packages [293 kB]
+Reading package lists...

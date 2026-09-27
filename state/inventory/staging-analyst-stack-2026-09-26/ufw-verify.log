@@ -1,0 +1,15 @@
+DISCOVERED  interface=eth0 subnet=192.168.4.0/22 ssh_port=22 (client 192.168.4.59:33710 -> 192.168.4.26:22)
+PASS    ufw is active
+PASS    default incoming is deny
+PASS    rule: ufw allow in on eth0 from 192.168.4.0/22 to any port 22 proto tcp
+PASS    rule: ufw allow in on eth0 from 192.168.4.0/22 to any port 443 proto tcp
+PASS    no other allow rules
+PASS    no auto-revert pending
+WARN    non-loopback listener 0.0.0.0:80 (nginx): filtered by UFW
+WARN    non-loopback listener 192.168.4.26:53 (dnsmasq): filtered by UFW
+WARN    non-loopback listener *:9100 (prometheus-node): filtered by UFW
+WARN    non-loopback listener [::]:80 (nginx): filtered by UFW
+WARN    non-loopback listener [fe80::be24:11ff:fee7:af99]%eth0:53 (dnsmasq): filtered by UFW
+PASS    no docker-proxy or unidentified non-loopback listeners
+PASS    every Docker DNAT rule is restricted to 127.0.0.1
+RESULT: PASS

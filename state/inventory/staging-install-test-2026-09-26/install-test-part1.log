@@ -1,0 +1,26 @@
+
+== 0. make it R770-like: remove the internet-installed Docker and its apt source  (05:29:34)
+PASS  no Docker on the box (purged, state and apt source removed)
+
+== 0b. air gap: block internet for host and containers (auto-revert 240 min), prove it  (05:30:08)
+auto-revert scheduled in 240 minute(s)
+BLOCKED (14399s until auto-revert)
+PASS  no internet (archive.ubuntu.com, download.docker.com, pypi.org unreachable)
+
+== 1. runbook 1.2-1.4: verify in place, copy to /data/staging, verify the copy --strict  (05:30:33)
+
+RESULT: PASS — bundle is complete, unmodified and ready to transfer.
+
+RESULT: PASS — bundle is complete, unmodified and ready to transfer.
+PASS  bundle passes --strict in place and after the copy
+
+== 3. runbook Part 3: APT from the bundle only  (05:32:31)
+Get:3 file:/srv/repo/apt ./ Release.gpg
+Ign:3 file:/srv/repo/apt ./ Release.gpg
+Get:4 file:/srv/repo/apt ./ Packages [293 kB]
+Reading package lists...
+PASS  apt update: exit 0, no Err, no skipped index (Release file works)
+   R770 package set: 59 packages
+PASS  dist-upgrade from the bundle (0 packages set up)
+FAIL  not installed: qemu-kvm
+test exit=1

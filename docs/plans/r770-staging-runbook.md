@@ -35,7 +35,9 @@ what it downloaded; licensed appliances are added by hand
 afterwards, and a manifest written before those files existed cannot see them.
 Done by hand, that step is the one that gets skipped.
 
-To build on a host with no checkout — a RHEL 8 box, say — carry one file:
+To build on a host with no checkout — a RHEL 8 box, say — carry one file. Run
+`--pack` from a clean checkout (it refuses a dirty `scripts/`, `config/` or
+`docs/analyst-wiki/`):
 
 ```bash
 ./scripts/r770-build-bundle.sh --pack > r770-bundle-builder.sh
@@ -47,6 +49,12 @@ ssh -t staging 'sudo -E bash r770-bundle-builder.sh'      # sudo -E: rootful pod
 The packed file carries all four scripts and is gitignored — its payload is
 base64, which would hide the version pins from the guard that keeps them in
 one place. Regenerate it whenever a pin moves; it is a snapshot, not a source.
+It also carries this repo's reviewed `scripts/`, `config/` and
+`docs/analyst-wiki/` as a git archive of the exact commit it was packed at
+(2026-09-26), so the fetch's `site` stage ships that reviewed content on the
+target host even though the unpacked builder has no checkout of its own to
+read it from — regenerate it whenever that content changes too, not only on a
+pin move.
 
 The steps below are the same pipeline done by hand, and remain the reference
 for what each stage is doing.

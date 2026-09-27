@@ -1,0 +1,78 @@
+== portal plan ==
+site root:        /data/staging/bundle-20260926/site
+nginx dir:        /etc/nginx
+www root:         /srv/www
+backup dir:       /var/backups/r770-portal
+malcolm htpasswd: /opt/malcolm/malcolm/nginx/htpasswd
+sites:            portal malcolm docs
+mkdocs image:     docker.io/squidfunk/mkdocs-material:latest
+
+PASS    running as root
+PASS    /etc/nginx/ssl/lab.crt present
+PASS    /etc/nginx/ssl/lab.key present
+PASS    /etc/nginx/ssl/ca.crt present
+PASS    /opt/malcolm/malcolm/nginx/htpasswd present
+PASS    mkdocs image docker.io/squidfunk/mkdocs-material:latest
+PASS    mkdocs image loaded
+
+-- would install --
+INSTALL             /srv/www/portal/index.html
+BUILD               /srv/www/docs  (docker run --rm --pull never --network none -v <tmp>:/docs docker.io/squidfunk/mkdocs-material:latest build)
+INSTALL             /etc/nginx/conf.d/lab-connection-upgrade.conf
+INSTALL             /etc/nginx/snippets/lab-auth.conf
+INSTALL             /etc/nginx/snippets/lab-headers.conf
+INSTALL             /etc/nginx/snippets/lab-tls.conf
+INSTALL             /etc/nginx/sites-available/00-default-reject.conf
+INSTALL             /etc/nginx/sites-enabled/00-default-reject.conf
+INSTALL             /etc/nginx/sites-available/portal.lab.conf
+INSTALL             /etc/nginx/sites-enabled/portal.lab.conf
+INSTALL             /etc/nginx/sites-available/malcolm.lab.conf
+INSTALL             /etc/nginx/sites-enabled/malcolm.lab.conf
+INSTALL             /etc/nginx/sites-available/docs.lab.conf
+INSTALL             /etc/nginx/sites-enabled/docs.lab.conf
+INSTALL             /etc/nginx/lab.htpasswd
+INSTALL             /srv/www/portal/index.html
+
+[31m │  ⚠  Warning from the Material for MkDocs team[0m
+[31m │[0m
+[31m │[0m  MkDocs 2.0, the underlying framework of Material for MkDocs,
+[31m │[0m  will introduce backward-incompatible changes, including:
+[31m │[0m
+[31m │  × [0mAll plugins will stop working – the plugin system has been removed
+[31m │  × [0mAll theme overrides will break – the theming system has been rewritten
+[31m │  × [0mNo migration path exists – existing projects cannot be upgraded
+[31m │  × [0mClosed contribution model – community members can't report bugs
+[31m │  × [0mCurrently unlicensed – unsuitable for production use
+[31m │[0m
+[31m │[0m  Our full analysis:
+[31m │[0m
+[31m │[0m  [4mhttps://squidfunk.github.io/mkdocs-material/blog/2026/02/18/mkdocs-2.0/[0m
+[0m
+INFO    -  Cleaning site directory
+INFO    -  Building documentation to directory: /docs/site
+INFO    -  Documentation built in 0.26 seconds
+INSTALL             /srv/www/docs
+BACKUP  /var/backups/r770-portal/nginx-20260927T015043-1ryB51.tar.gz
+INSTALL             /etc/nginx/conf.d/lab-connection-upgrade.conf
+INSTALL             /etc/nginx/snippets/lab-auth.conf
+INSTALL             /etc/nginx/snippets/lab-headers.conf
+INSTALL             /etc/nginx/snippets/lab-tls.conf
+INSTALL             /etc/nginx/sites-available/00-default-reject.conf
+INSTALL             /etc/nginx/sites-enabled/00-default-reject.conf
+INSTALL             /etc/nginx/sites-available/portal.lab.conf
+INSTALL             /etc/nginx/sites-enabled/portal.lab.conf
+INSTALL             /etc/nginx/sites-available/malcolm.lab.conf
+INSTALL             /etc/nginx/sites-enabled/malcolm.lab.conf
+INSTALL             /etc/nginx/sites-available/docs.lab.conf
+INSTALL             /etc/nginx/sites-enabled/docs.lab.conf
+INSTALL             /etc/nginx/lab.htpasswd
+PASS    nginx -t
+DONE    nginx reloaded
+PASS    portal.lab -> 401 without credentials
+PASS    portal.lab -> 200 with credentials
+PASS    malcolm.lab -> 401 without credentials
+PASS    malcolm.lab -> 200 with credentials
+PASS    docs.lab -> 401 without credentials
+PASS    docs.lab -> 200 with credentials
+PASS    only nginx listens on :443
+PORTAL rc=0

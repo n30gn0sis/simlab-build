@@ -1,0 +1,24 @@
+DISCOVERED  interface=eth0 subnet=192.168.4.0/22 ssh_port=22 (client 192.168.4.59:33702 -> 192.168.4.26:22)
+== CURRENT ==
+Status: inactive
+== PROPOSED ==
+  ufw default deny incoming
+  ufw default allow outgoing
+  ufw allow in on eth0 from 192.168.4.0/22 to any port 22 proto tcp
+  ufw allow in on eth0 from 192.168.4.0/22 to any port 443 proto tcp
+INFO    backup: /var/backups/r770-ufw/20260927T015204.691443792
+Rules updated
+Rules updated
+INFO    allow rules confirmed in 'ufw show added'
+INFO    auto-revert armed: 'ufw --force disable' in 10 minute(s) (pid 47293) — fail-open, not a restore
+Default incoming policy changed to 'deny'
+(be sure to update your rules accordingly)
+Default outgoing policy changed to 'allow'
+(be sure to update your rules accordingly)
+Firewall is active and enabled on system startup
+
+################################################################################
+#  run 'r770-ufw.sh confirm' from a NEW ssh session within 10 minutes,
+#  or UFW turns itself off (fail-open: 'ufw --force disable', not a restore)
+#  do NOT reboot before confirm: a reboot loses the switch, UFW stays enabled
+################################################################################

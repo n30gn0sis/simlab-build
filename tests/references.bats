@@ -22,8 +22,14 @@ assert_named_paths_exist() {
             *'<'*) continue ;;
         esac
         [ -e "$p" ] || missing="$missing $p"
-    done < <(grep -rhoE '(state|docs|scripts|tests|work)/[A-Za-z0-9_./-]+(<[^>]*>?[A-Za-z0-9_./-]*)*' \
-                 "$@" 2>/dev/null | sed 's/[.,)`]*$//' | sort -u)
+    # A repo-relative path starts at a token boundary (line start, blank,
+    # quote, backtick, bracket, '=' or ':'), optionally as ./path. Text such as
+    # /docs/site or malcolm/scripts/install.py -- a path on some other box or
+    # inside another tree -- is not a repo reference. Raw captured output
+    # (*.log) is skipped: it is evidence kept verbatim, and tools print paths
+    # relative to their own trees; the prose that cites it is still checked.
+    done < <(grep -rhoE "(^|[[:space:]\`\"'(=:[])(\./)?(state|docs|scripts|tests|work)/[A-Za-z0-9_./-]+(<[^>]*>?[A-Za-z0-9_./-]*)*" \
+                 --exclude='*.log' "$@" 2>/dev/null | sed -E "s/^[[:space:]\`\"'(=:[]//; s#^\./##; s/[.,)\`]*\$//" | sort -u)
     echo "missing:$missing"
     [ -z "$missing" ]
 }
@@ -103,4 +109,18 @@ assert_prd_sections_exist() {  # <prd> <root>...
 @test "every PRD.md section cited by CLAUDE.md, OWNERS.md or .claude/ exists as a heading" {
     cd "$BATS_TEST_DIRNAME/.."
     assert_prd_sections_exist PRD.md CLAUDE.md OWNERS.md .claude/
+}
+
+@test "the path check counts repo-relative paths only, not paths inside other trees" {
+    d="$BATS_TEST_TMPDIR/refs"; mkdir -p "$d"
+    printf 'built into /docs/site and ran malcolm/scripts/install.py\n' > "$d/notes.txt"
+    printf 'configuring with scripts/no-such-installer.py\n' > "$d/raw.log"
+    cd "$BATS_TEST_DIRNAME/.."
+    run assert_named_paths_exist "$d"
+    [ "$status" -eq 0 ]
+    printf 'see `docs/no-such-file.md` and ./scripts/no-such.sh\n' > "$d/bad.md"
+    run assert_named_paths_exist "$d"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"docs/no-such-file.md"* ]]
+    [[ "$output" == *"scripts/no-such.sh"* ]]
 }

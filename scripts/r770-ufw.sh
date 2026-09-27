@@ -3,19 +3,24 @@
 # r770-ufw.sh — host firewall for the analyst stack: deny incoming by default,
 # allow SSH and 443/tcp ONLY on the management interface, from the management
 # subnet. Runs ON the target box (VM 9771 for the proof run, the R770 later), as
-# root, from an SSH session.
+# root, from an SSH session. Under sudo, keep the session variable:
+#   sudo --preserve-env=SSH_CONNECTION ./r770-ufw.sh <verb>
+# (sudo's env_reset strips it, and every verb that needs it then refuses).
 #
 #   plan                 default. Read-only: discovered management path, current
 #                        `ufw status verbose`, the proposed ruleset
 #   apply [--minutes N]  back up, add the allow rules, arm the dead-man switch,
-#                        then deny-by-default and enable. N = 1-60, default 10
+#                        then deny-by-default and enable. N = 1-60, default 10.
+#                        Refuses while an earlier switch is still pending
+#                        (confirm or revert first): it never supersedes one
 #   confirm              run from a NEW ssh session: cancels the auto-revert
-#   verify               read-only: UFW active, both allow rules present, default
-#                        incoming deny, no pending auto-revert, and no
-#                        docker-proxy (or unidentified) non-loopback listener;
-#                        other host listeners beyond :22/:443 WARN (UFW filters them)
-#   revert               restore /etc/ufw from the newest pre-apply backup and
-#                        cancel any pending auto-revert
+#   verify               read-only, see "verify's scope" below
+#   revert               restore /etc/ufw and /etc/default/ufw from the newest
+#                        pre-apply backup. If that backup had UFW enabled, the
+#                        re-enable is guarded by the same dead-man switch
+#                        (10 minutes) and needs `confirm` from a NEW session,
+#                        exactly as apply does; otherwise UFW is left disabled
+#                        and any pending switch is cancelled
 #
 #   0  done, nothing to do, or every check passed
 #   1  refused (REFUSE: nothing changed), failed (FAIL: the output says what
@@ -24,14 +29,37 @@
 # LOSING SSH IS THE WORST FAILURE, so:
 #   - nothing is guessed: the management interface, subnet and SSH port come from
 #     the live session ($SSH_CONNECTION -> `ip route get` -> `ip addr`). Any gap,
-#     or a client that the proposed rule would NOT admit, is a REFUSE;
+#     or a client that the proposed rule would NOT admit, is a REFUSE. Set
+#     UFW_EXPECT_IFACE to the inventory's management interface to also REFUSE
+#     when discovery lands anywhere else;
 #   - the allow rules are added and read back from `ufw show added` before the
 #     default policy changes or UFW is enabled;
-#   - the auto-revert sleeper (`ufw --force disable` after N minutes) is armed
-#     BEFORE the deny policy and the enable, so a dropped session or a dying
-#     script mid-apply still undoes itself. SIGHUP is ignored during apply;
-#   - confirm refuses from the session that ran apply: only a NEW connection
-#     proves the firewall admits new SSH connections.
+#   - the auto-revert sleeper is armed BEFORE the deny policy and the enable, so
+#     a dropped session or a dying script mid-apply still undoes itself. SIGHUP
+#     is ignored during apply. The switch runs `ufw --force disable`: it FAILS
+#     OPEN (no firewall at all), it does not restore the previous ruleset — run
+#     revert afterwards for that;
+#   - confirm proves a NEW connection: it refuses unless its own client
+#     ip:port was NOT among the established sshd connections recorded when UFW
+#     was enabled AND is established now (`ss`). A session that was open before
+#     the enable rides on conntrack and proves nothing.
+#
+# The sleeper has limits, and plan/apply say so:
+#   - it is a process in the SSH session's scope. If logind is configured with
+#     KillUserProcesses=yes it dies with that session, so plan and apply REFUSE;
+#   - a REBOOT inside the window loses it, while UFW stays enabled (ufw.conf
+#     has ENABLED=yes). Do not reboot until confirm has run.
+#
+# verify's scope: UFW state and rules, the pending switch, and what listens or
+# is published on this host — non-loopback listeners from `ss -ltnp`, and
+# Docker's nat DOCKER chain (DNAT rules published on any address other than
+# 127.0.0.1 bypass UFW, docker-proxy or not: userland-proxy:false leaves no
+# listener to see). A docker-proxy or unidentified non-loopback listener FAILs.
+# Other host listeners beyond SSH/443 are a WARN: UFW's INPUT chain does filter
+# them, so they are reachable only if a rule admits them, but they are still
+# worth knowing about. Reachability from outside is NOT checked here — a box
+# cannot see itself from the far side of its own firewall; the proof run checks
+# it from a second host (`nc` against the open and closed ports).
 #
 # The detached sleeper is the pattern from scripts/r770-airgap-sim.sh, including
 # its lesson: a pending sleeper is cancelled before a new one is armed, or the
@@ -40,24 +68,38 @@
 # Design: docs/superpowers/specs/2026-09-26-analyst-stack-design.md
 #         ("scripts/r770-ufw.sh plan | apply | confirm | verify | revert")
 #
+# Operator option: UFW_EXPECT_IFACE (see above).
 # Test overrides: UFW_RUN_DIR (default /run), UFW_BACKUP_DIR (default
-# /var/backups/r770-ufw), UFW_ETC_DIR (default /etc/ufw), UFW_SSH_CONNECTION
-# (default $SSH_CONNECTION; set-but-empty counts as empty), UFW_DRY_RUN=1 prints
-# the ufw commands (and skips backup and sleeper) instead of running them.
+# /var/backups/r770-ufw), UFW_ETC_DIR (default /etc/ufw), UFW_DEFAULT_FILE
+# (default /etc/default/ufw), UFW_LOGIND_CONF (default
+# /etc/systemd/logind.conf; its .d/*.conf drop-ins are read too),
+# UFW_DRY_RUN=1 prints the ufw commands (and skips backup and sleeper) instead
+# of running them. UFW_SSH_CONNECTION replaces $SSH_CONNECTION ONLY when
+# UFW_TEST=1 (set-but-empty counts as empty); otherwise it is ignored.
 set -uo pipefail
 export LC_ALL=C
 
 RUN_DIR="${UFW_RUN_DIR:-/run}"
 BACKUP_DIR="${UFW_BACKUP_DIR:-/var/backups/r770-ufw}"
 ETC_DIR="${UFW_ETC_DIR:-/etc/ufw}"
-CONN="${UFW_SSH_CONNECTION-${SSH_CONNECTION:-}}"
+DEFAULT_FILE="${UFW_DEFAULT_FILE:-/etc/default/ufw}"
+LOGIND_CONF="${UFW_LOGIND_CONF:-/etc/systemd/logind.conf}"
+EXPECT_IF="${UFW_EXPECT_IFACE:-}"
+if [ "${UFW_TEST:-0}" = 1 ]; then
+    CONN="${UFW_SSH_CONNECTION-${SSH_CONNECTION:-}}"
+else
+    CONN="${SSH_CONNECTION:-}"
+fi
 DRY="${UFW_DRY_RUN:-0}"
 MARK="r770-ufw"
 PIDFILE="$RUN_DIR/$MARK.pid"            # the detached auto-revert sleeper
 TIMER="$RUN_DIR/$MARK.deadline"         # epoch seconds when it fires
-PORTFILE="$RUN_DIR/$MARK.client-port"   # client port of the session that ran apply
+ESTFILE="$RUN_DIR/$MARK.established"    # sshd peers (ip:port) established at enable time
+SSHPORTFILE="$RUN_DIR/$MARK.ssh-port"   # the sshd port those were read on
 LAST_REVERT="$BACKUP_DIR/last-revert"   # set by revert, cleared by apply
 HTTPS_PORT=443
+REVERT_MINUTES=10
+SLEEPER_WAIT_TICKS=500                  # x 0.02 s = 10 s for the sleeper to start
 
 die()  { printf 'REFUSE  %s\n' "$*" >&2; exit 1; }   # before any change
 fail() { printf 'FAIL    %s\n' "$*" >&2; exit 1; }   # a mutating step failed
@@ -67,6 +109,15 @@ warn() { printf 'WARN    %s\n' "$*"; }
 usage() { die "usage: r770-ufw.sh [plan | apply [--minutes N] | confirm | verify | revert]"; }
 
 need_root() { [ "$(id -u 2>/dev/null)" = 0 ] || die "must run as root (ufw, /etc/ufw, $RUN_DIR)"; }
+
+# An empty session variable under sudo is almost always env_reset, not a console.
+need_conn() {  # need_conn WHAT
+    [ -z "$CONN" ] || return 0
+    if [ -n "${SUDO_USER:-}" ]; then
+        die "SSH_CONNECTION is empty under sudo (env_reset strips it): run 'sudo --preserve-env=SSH_CONNECTION $0 ...' from an SSH session; $1"
+    fi
+    die "SSH_CONNECTION is empty: $1"
+}
 
 # ── discovery ────────────────────────────────────────────────────────────────
 
@@ -80,20 +131,28 @@ ip2int() { local IFS=. a b c d; read -r a b c d <<< "$1"; echo $(( (10#$a << 24)
 int2ip() { echo "$(( ($1 >> 24) & 255 )).$(( ($1 >> 16) & 255 )).$(( ($1 >> 8) & 255 )).$(( $1 & 255 ))"; }
 is_port() { [[ "$1" =~ ^[0-9]{1,5}$ ]] && [ $((10#$1)) -ge 1 ] && [ $((10#$1)) -le 65535 ]; }
 
-# Sets CLIENT_IP CLIENT_PORT SERVER_IP SSH_PORT MGMT_IF MGMT_NET, or refuses.
-discover() {
-    local extra route cidr prefix mask net
-    [ -n "$CONN" ] || die "SSH_CONNECTION is empty: run this from an SSH session (the management path is read from it, never guessed)"
+# Sets CLIENT_IP CLIENT_PORT SERVER_IP SSH_PORT from $CONN, or refuses.
+parse_conn() {
+    local extra
     read -r CLIENT_IP CLIENT_PORT SERVER_IP SSH_PORT extra <<< "$CONN"
     { [ -n "${SSH_PORT:-}" ] && [ -z "${extra:-}" ]; } || die "SSH_CONNECTION is not 'client_ip client_port server_ip server_port': '$CONN'"
     { is_ipv4 "$CLIENT_IP" && is_ipv4 "$SERVER_IP"; } || die "SSH_CONNECTION is not an IPv4 session ('$CONN'); IPv6 management is not supported"
     { is_port "$CLIENT_PORT" && is_port "$SSH_PORT"; } || die "SSH_CONNECTION has a bad port: '$CONN'"
+}
+
+# Sets CLIENT_IP CLIENT_PORT SERVER_IP SSH_PORT MGMT_IF MGMT_NET, or refuses.
+discover() {
+    local route cidr prefix mask net
+    need_conn "run this from an SSH session (the management path is read from it, never guessed)"
+    parse_conn
 
     route="$(ip -o route get "$CLIENT_IP" 2>/dev/null)" || die "ip route get $CLIENT_IP failed"
     MGMT_IF="$(awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}' <<< "$route")"
     [ -n "$MGMT_IF" ] || die "no 'dev' in 'ip route get $CLIENT_IP' output: $route"
     [ "$MGMT_IF" != lo ] || die "the SSH client $CLIENT_IP routes via lo: not a management session"
     [[ "$MGMT_IF" =~ ^[A-Za-z0-9._-]{1,15}$ ]] || die "unexpected interface name '$MGMT_IF'"
+    [ -z "$EXPECT_IF" ] || [ "$MGMT_IF" = "$EXPECT_IF" ] \
+        || die "discovered interface $MGMT_IF is not UFW_EXPECT_IFACE=$EXPECT_IF: this session does not arrive on the expected management interface"
 
     cidr="$(ip -o -4 addr show dev "$MGMT_IF" 2>/dev/null \
         | awk -v ip="$SERVER_IP" '{for (i = 1; i < NF; i++) if ($i == "inet") {split($(i + 1), a, "/"); if (a[1] == ip) {print $(i + 1); exit}}}')"
@@ -125,7 +184,7 @@ proposed() {
 # `ufw show added` lines, whitespace-normalised, one rule per line.
 added_rules() { ufw show added 2>/dev/null | awk '$1 == "ufw" {$1 = $1; print}'; }
 
-has_rule() { grep -qxF "$1" <<< "$2"; }
+has_line() { grep -qxF "$1" <<< "$2"; }
 
 # Rules present in `ufw show added` that are not ours.
 extra_rules() {
@@ -158,22 +217,80 @@ cancel_sleeper() {
             kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
         fi
     fi
-    rm -f "$PIDFILE" "$TIMER" "$PORTFILE"
+    rm -f "$PIDFILE" "$TIMER" "$ESTFILE" "$SSHPORTFILE"
 }
 
 arm_sleeper() {  # arm_sleeper MINUTES
-    local secs=$(( $1 * 60 )) i=0 deadline
+    local secs=$(( $1 * 60 )) i=0 deadline launched
     cancel_sleeper
     deadline="$(date -d "+$1 minutes" +%s)" || return 1
     echo "$deadline" > "$TIMER" || return 1
-    echo "$CLIENT_PORT" > "$PORTFILE" || return 1
     # The sleeper records its own session-leader PID and removes that record
     # before disabling, so nothing later mistakes a fired sleeper for a pending one.
-    setsid bash -c "echo \$\$ > \"\$1\"; sleep \"\$2\"; rm -f \"\$1\" \"\$3\" \"\$4\"; ufw --force disable" \
-        r770-ufw-autorevert "$PIDFILE" "$secs" "$TIMER" "$PORTFILE" \
+    setsid bash -c "echo \$\$ > \"\$1\"; sleep \"\$2\"; rm -f \"\$1\" \"\$3\" \"\$4\" \"\$5\"; ufw --force disable" \
+        r770-ufw-autorevert "$PIDFILE" "$secs" "$TIMER" "$ESTFILE" "$SSHPORTFILE" \
         </dev/null >/dev/null 2>&1 3>&- &
-    while [ ! -s "$PIDFILE" ] && [ "$i" -lt 100 ]; do sleep 0.02; i=$((i + 1)); done
+    launched=$!
+    while [ ! -s "$PIDFILE" ] && [ "$i" -lt "$SLEEPER_WAIT_TICKS" ]; do sleep 0.02; i=$((i + 1)); done
+    if [ ! -s "$PIDFILE" ]; then
+        # Too slow to be trusted: take down whatever we launched so it cannot
+        # start (and fire) later, unaccounted for.
+        kill -- "-$launched" 2>/dev/null || kill "$launched" 2>/dev/null || true
+        rm -f "$PIDFILE" "$TIMER"
+        warn "auto-revert sleeper wrote no pidfile within $(( SLEEPER_WAIT_TICKS / 50 )) s; killed its process group ($launched)"
+        return 1
+    fi
     sleeper_pending
+}
+
+# Effective logind KillUserProcesses (last setting wins, drop-ins after the main file).
+logind_kills_sleeper() {
+    local f v="" line
+    for f in "$LOGIND_CONF" "$LOGIND_CONF.d"/*.conf; do
+        [ -r "$f" ] || continue
+        line="$(sed -n 's/^[[:space:]]*KillUserProcesses[[:space:]]*=[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$f" | tail -1)"
+        [ -z "$line" ] || v="$line"
+    done
+    case "${v,,}" in yes|true|on|1) return 0 ;; esac
+    return 1
+}
+
+# Established sshd connections on port $1, as peer ip:port, one per line.
+established_peers() {
+    local out
+    out="$(ss -Htn state established "( sport = :$1 )" 2>&1)" || { printf '%s\n' "$out" >&2; return 1; }
+    awk '{p = $4; if (p ~ /^\[::ffff:[0-9.]+\]:[0-9]+$/) {sub(/^\[::ffff:/, "", p); sub(/\]/, "", p)} if (p != "") print p}' <<< "$out" | sort -u
+}
+
+# Everything the switch needs, checked before ANY change (plan runs it too).
+switch_preflight() {
+    local peers
+    ! logind_kills_sleeper \
+        || die "logind has KillUserProcesses=yes ($LOGIND_CONF or $LOGIND_CONF.d/*.conf): the auto-revert sleeper would die with this SSH session, leaving no dead-man switch"
+    peers="$(established_peers "$SSH_PORT")" || die "ss could not list established connections on :$SSH_PORT: confirm could not prove a new session"
+    has_line "$CLIENT_IP:$CLIENT_PORT" "$peers" \
+        || die "this session ($CLIENT_IP:$CLIENT_PORT) is not an established connection on :$SSH_PORT per ss: SSH_CONNECTION cannot be trusted, and confirm could not prove a new session"
+}
+
+switch_arm() {  # switch_arm MINUTES STATE-IF-IT-FAILS
+    arm_sleeper "$1" || fail "auto-revert sleeper did not start; $2"
+    info "auto-revert armed: 'ufw --force disable' in $1 minute(s) (pid $(cat "$PIDFILE")) — fail-open, not a restore"
+}
+
+# After the enable: record who was already connected, then say what to do.
+switch_finish() {  # switch_finish MINUTES
+    local peers
+    if ! peers="$(established_peers "$SSH_PORT")" || [ -z "$peers" ]; then
+        fail "UFW is enabled but ss could not record the established sessions: confirm cannot work, the auto-revert is still armed and will fire (or run revert)"
+    fi
+    { printf '%s\n' "$peers" > "$ESTFILE" && echo "$SSH_PORT" > "$SSHPORTFILE"; } \
+        || fail "UFW is enabled but $ESTFILE could not be written: the auto-revert is still armed and will fire (or run revert)"
+    echo
+    echo "################################################################################"
+    echo "#  run 'r770-ufw.sh confirm' from a NEW ssh session within $1 minutes,"
+    echo "#  or UFW turns itself off (fail-open: 'ufw --force disable', not a restore)"
+    echo "#  do NOT reboot before confirm: a reboot loses the switch, UFW stays enabled"
+    echo "################################################################################"
 }
 
 # ── verbs ────────────────────────────────────────────────────────────────────
@@ -181,13 +298,16 @@ arm_sleeper() {  # arm_sleeper MINUTES
 cmd_plan() {
     need_root
     discover
+    switch_preflight
     echo "== CURRENT (ufw status verbose) =="
     ufw status verbose 2>&1 || warn "ufw status failed"
     echo "== PROPOSED =="
     proposed | sed 's/^/  /'
     local extra; extra="$(extra_rules "$(added_rules)")"
     [ -z "$extra" ] || { warn "existing rules apply will NOT remove (verify fails on them):"; printf '%s' "$extra" | sed 's/^/  /'; }
-    info "apply backs up $ETC_DIR and iptables-save to $BACKUP_DIR/<timestamp> first, and arms a 'ufw --force disable' after N minutes (default 10) that only 'confirm' from a NEW ssh session cancels"
+    info "apply backs up $ETC_DIR, $DEFAULT_FILE and iptables-save to $BACKUP_DIR/<timestamp> first, and arms a dead-man switch that only 'confirm' from a NEW ssh session cancels"
+    info "the switch runs 'ufw --force disable' after N minutes (default 10): it fails OPEN (no firewall), it does not restore the old rules — run revert for that"
+    info "a reboot inside the window loses the switch while UFW stays enabled: do not reboot before confirm"
     info "plan changed nothing"
 }
 
@@ -198,15 +318,19 @@ run_ufw() {
 
 take_backup() {
     local dir pending=no
+    umask 077
     sleeper_pending && pending=yes
     dir="$BACKUP_DIR/$(date +%Y%m%dT%H%M%S.%N)" || return 1
     mkdir -p "$BACKUP_DIR" && mkdir "$dir" || return 1
     tar -C "$(dirname "$ETC_DIR")" -czf "$dir/etc-ufw.tgz" "$(basename "$ETC_DIR")" || return 1
     [ -s "$dir/etc-ufw.tgz" ] || return 1
     cp "$ETC_DIR/ufw.conf" "$dir/ufw.conf" || return 1
+    # `ufw default ...` writes DEFAULT_*_POLICY here, not under /etc/ufw.
+    cp "$DEFAULT_FILE" "$dir/default-ufw" || return 1
     iptables-save > "$dir/iptables-save.txt" || return 1
     # A backup taken while an earlier apply is still unconfirmed holds THAT
-    # apply's firewall, not the pre-apply state: revert skips it.
+    # apply's firewall, not the pre-apply state: revert skips it. (apply now
+    # refuses while a switch is pending; this stays as a second line.)
     echo "taken_while_pending=$pending" > "$dir/meta" || return 1
     rm -f "$LAST_REVERT"
     echo "$dir"
@@ -229,14 +353,20 @@ cmd_apply() {
     need_root
     discover
 
+    # One switch at a time. Superseding would cancel the pending one before the
+    # new one is proven to start, with UFW already enabled.
+    ! sleeper_pending \
+        || die "an auto-revert from an earlier apply/revert is still pending (fires at $(date -d "@$(cat "$TIMER" 2>/dev/null || echo 0)" 2>/dev/null)): run confirm from a NEW ssh session, or revert, then apply again"
+
     status="$(ufw status verbose 2>&1)" || die "ufw status failed: $status"
     added="$(added_rules)"
     if grep -q '^Status: active' <<< "$status" && grep -q 'deny (incoming)' <<< "$status" \
-        && [ -n "$added" ] && [ "$(sort <<< "$added")" = "$(printf '%s\n%s\n' "$(rule "$SSH_PORT")" "$(rule "$HTTPS_PORT")" | sort)" ] \
-        && ! sleeper_pending; then
+        && [ -n "$added" ] && [ "$(sort <<< "$added")" = "$(printf '%s\n%s\n' "$(rule "$SSH_PORT")" "$(rule "$HTTPS_PORT")" | sort)" ]; then
         echo "already applied: UFW active with exactly the management rules, no auto-revert pending"
         return 0
     fi
+
+    switch_preflight
 
     echo "== CURRENT =="; printf '%s\n' "$status"
     echo "== PROPOSED =="; proposed | sed 's/^/  /'
@@ -259,36 +389,42 @@ cmd_apply() {
         || fail "adding the 443 allow rule failed; default policy and enable untouched"
     if [ "$DRY" != 1 ]; then
         added="$(added_rules)"
-        { has_rule "$(rule "$SSH_PORT")" "$added" && has_rule "$(rule "$HTTPS_PORT")" "$added"; } \
+        { has_line "$(rule "$SSH_PORT")" "$added" && has_line "$(rule "$HTTPS_PORT")" "$added"; } \
             || fail "allow rules not visible in 'ufw show added'; default policy and enable untouched. Got:"$'\n'"$added"
         info "allow rules confirmed in 'ufw show added'"
 
         # Dead-man switch BEFORE the deny: if anything below cuts us off, it still fires.
-        arm_sleeper "$minutes" || fail "auto-revert sleeper did not start; allow rules added but the default policy is unchanged and UFW was NOT enabled"
-        info "auto-revert armed: 'ufw --force disable' in $minutes minute(s) (pid $(cat "$PIDFILE"))"
+        switch_arm "$minutes" "nothing changed beyond the two allow rules: the default policy is unchanged and UFW was NOT enabled"
     fi
 
     run_ufw default deny incoming   || fail "ufw default deny incoming failed; auto-revert still armed"
     run_ufw default allow outgoing  || fail "ufw default allow outgoing failed; auto-revert still armed"
     run_ufw --force enable          || fail "ufw --force enable failed; auto-revert still armed"
 
-    echo
-    echo "################################################################################"
-    echo "#  run 'r770-ufw.sh confirm' from a NEW ssh session within $minutes minutes,"
-    echo "#  or UFW turns itself off"
-    echo "################################################################################"
+    [ "$DRY" = 1 ] || switch_finish "$minutes"
 }
 
 cmd_confirm() {
     need_root
-    local port recorded
+    local port recorded now status
     sleeper_pending || die "no auto-revert pending: nothing to confirm (if apply ran, the sleeper may already have fired: check 'ufw status')"
-    [ -n "$CONN" ] || die "SSH_CONNECTION is empty: confirm must run from a NEW ssh session"
-    read -r _ port _ <<< "$CONN"
-    recorded="$(cat "$PORTFILE" 2>/dev/null)"
-    [ -n "$recorded" ] || die "no client port recorded at apply time ($PORTFILE): cannot prove this is a new session"
-    [ "$port" != "$recorded" ] || die "this is the session that ran apply (client port $port): open a NEW ssh session and confirm from there"
+    need_conn "confirm must run from a NEW ssh session"
+    parse_conn
+    port="$(cat "$SSHPORTFILE" 2>/dev/null)"
+    { [ -r "$ESTFILE" ] && [ -n "$port" ]; } \
+        || die "no established-session record from the enable ($ESTFILE): cannot prove this is a new session (if apply is still running, wait for its banner)"
+    recorded="$(cat "$ESTFILE")"
+    [ "$SSH_PORT" = "$port" ] || die "this session is on port $SSH_PORT, not the sshd port $port the policy was applied for"
+    ! has_line "$CLIENT_IP:$CLIENT_PORT" "$recorded" \
+        || die "this session ($CLIENT_IP:$CLIENT_PORT) was already open when UFW was enabled: confirm from a session opened AFTER apply"
+    now="$(established_peers "$port")" || die "ss could not list established connections on :$port: cannot prove a new session"
+    has_line "$CLIENT_IP:$CLIENT_PORT" "$now" \
+        || die "this session ($CLIENT_IP:$CLIENT_PORT) is not an established connection on :$port per ss: confirm from a session opened AFTER apply"
     cancel_sleeper
+    # The switch may have fired between the check above and the cancel.
+    status="$(ufw status 2>&1)"
+    grep -q '^Status: active' <<< "$status" \
+        || fail "the switch fired; UFW is disabled — re-run apply (ufw status: $(head -1 <<< "$status"))"
     echo "UFW confirmed; auto-revert cancelled"
 }
 
@@ -304,26 +440,39 @@ restore_source() {
 
 cmd_revert() {
     need_root
-    local src
+    local src enable=no
     if [ -s "$LAST_REVERT" ] && ! sleeper_pending; then
         echo "already reverted (from $(cat "$LAST_REVERT")); no apply since"
         return 0
     fi
     src="$(restore_source)" || die "no pre-apply backup under $BACKUP_DIR: nothing to revert to"
-    { [ -s "$src/etc-ufw.tgz" ] && [ -r "$src/ufw.conf" ]; } || die "backup $src is incomplete"
+    { [ -s "$src/etc-ufw.tgz" ] && [ -r "$src/ufw.conf" ] && [ -r "$src/default-ufw" ]; } || die "backup $src is incomplete"
+    if grep -q '^ENABLED=yes' "$src/ufw.conf"; then
+        # Re-enabling a restored ruleset is a firewall change like apply: it
+        # needs the same discovery, the same switch and a confirm.
+        enable=yes
+        discover
+        switch_preflight
+    fi
     info "restoring from $src"
+    trap '' HUP
     ufw --force disable || fail "ufw --force disable failed; nothing restored"
     tar -C "$(dirname "$ETC_DIR")" -xzf "$src/etc-ufw.tgz" \
         || fail "restoring $ETC_DIR from $src failed; UFW is DISABLED"
-    if grep -q '^ENABLED=yes' "$src/ufw.conf"; then
-        ufw --force enable || fail "restored $ETC_DIR but ufw --force enable failed; UFW is DISABLED"
-        info "backup had ENABLED=yes: UFW re-enabled on the restored rules"
-    else
-        info "backup had UFW disabled: left disabled"
-    fi
-    cancel_sleeper
+    cp "$src/default-ufw" "$DEFAULT_FILE" \
+        || fail "restoring $DEFAULT_FILE from $src failed; UFW is DISABLED"
     echo "$src" > "$LAST_REVERT"
-    echo "reverted to $src; auto-revert cancelled"
+    if [ "$enable" = yes ]; then
+        switch_arm "$REVERT_MINUTES" "restored $ETC_DIR and $DEFAULT_FILE, UFW left DISABLED"
+        ufw --force enable || fail "restored $ETC_DIR but ufw --force enable failed; auto-revert still armed"
+        info "backup had ENABLED=yes: UFW re-enabled on the restored rules, under the dead-man switch"
+        echo "reverted to $src"
+        switch_finish "$REVERT_MINUTES"
+    else
+        cancel_sleeper
+        info "backup had UFW disabled: left disabled"
+        echo "reverted to $src; auto-revert cancelled"
+    fi
 }
 
 is_loopback() {
@@ -336,7 +485,7 @@ is_loopback() {
 cmd_verify() {
     need_root
     discover
-    local fails=0 status added extra listeners line local_addr addr port proc offenders=""
+    local fails=0 status added extra listeners line local_addr addr port proc offenders="" nat rc dnat_bad=""
     pass()  { printf 'PASS    %s\n' "$*"; }
     vfail() { printf 'FAIL    %s\n' "$*"; fails=$((fails + 1)); }
 
@@ -345,7 +494,7 @@ cmd_verify() {
     if grep -q 'deny (incoming)' <<< "$status"; then pass "default incoming is deny"; else vfail "default incoming is not deny"; fi
     added="$(added_rules)"
     for port in "$SSH_PORT" "$HTTPS_PORT"; do
-        if has_rule "$(rule "$port")" "$added"; then pass "rule: $(rule "$port")"; else vfail "missing rule: $(rule "$port")"; fi
+        if has_line "$(rule "$port")" "$added"; then pass "rule: $(rule "$port")"; else vfail "missing rule: $(rule "$port")"; fi
     done
     extra="$(extra_rules "$added")"
     if [ -z "$extra" ]; then pass "no other allow rules"; else vfail "rules beyond the management policy:"$'\n'"$extra"; fi
@@ -381,6 +530,26 @@ cmd_verify() {
         fi
     done <<< "$listeners"
     if [ -z "$offenders" ]; then pass "no docker-proxy or unidentified non-loopback listeners"; else fails=$((fails + 1)); fi
+
+    # With userland-proxy:false there is no docker-proxy to see, only DNAT
+    # rules. Any DNAT in Docker's nat chain not pinned to -d 127.0.0.1/32 is
+    # published on a reachable address, past UFW.
+    nat="$(iptables -t nat -S DOCKER 2>&1)"; rc=$?
+    if [ "$rc" -ne 0 ]; then
+        if grep -qi 'no chain' <<< "$nat"; then
+            pass "no Docker nat chain: nothing published by DNAT"
+        else
+            vfail "iptables -t nat -S DOCKER failed (exit $rc): $nat"
+        fi
+    else
+        while IFS= read -r line; do
+            [[ "$line" == *" -j DNAT"* ]] || continue
+            if [[ " $line " == *" -d 127.0.0.1/32 "* ]] && [[ " $line " != *" ! -d 127.0.0.1/32 "* ]]; then continue; fi
+            dnat_bad+="$line"$'\n'
+            printf 'FAIL    Docker DNAT not restricted to 127.0.0.1 (published past UFW): %s\n' "$line"
+        done <<< "$nat"
+        if [ -z "$dnat_bad" ]; then pass "every Docker DNAT rule is restricted to 127.0.0.1"; else fails=$((fails + 1)); fi
+    fi
 
     if [ "$fails" -eq 0 ]; then echo "RESULT: PASS"; return 0; fi
     echo "RESULT: FAIL ($fails)"

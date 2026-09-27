@@ -510,31 +510,74 @@ is guessed: the interface, subnet and SSH port come from the live SSH session
 `plan` refuses if any of that is missing, or if the rules would not admit the
 current session.
 
-```bash
-sudo ./site/scripts/r770-ufw.sh plan
-sudo ./site/scripts/r770-ufw.sh apply            # --minutes N (1-60, default 10)
-```
-
-`apply` backs up `/etc/ufw` and `iptables-save` to `/var/backups/r770-ufw/`,
-adds and reads back the two allow rules, then arms a **dead-man switch** — a
-detached `ufw --force disable` after N minutes — before it sets deny-by-default
-and enables UFW. **Leave the current session open, open a NEW ssh session** and,
-within the window, run:
+**Every step keeps `SSH_CONNECTION` through sudo.** sudo's `env_reset` strips
+it, and without it every verb except `revert`-to-disabled refuses (the refusal
+says so). Set `UFW_EXPECT_IFACE` to the inventory's management interface
+(`state/BUILD-STATE.md`: `lacp-trunk.10` on the R770) so discovery landing on
+any other interface is a refusal too:
 
 ```bash
-sudo ./site/scripts/r770-ufw.sh confirm
-sudo ./site/scripts/r770-ufw.sh verify
+sudo --preserve-env=SSH_CONNECTION UFW_EXPECT_IFACE=lacp-trunk.10 ./site/scripts/r770-ufw.sh plan
+sudo --preserve-env=SSH_CONNECTION UFW_EXPECT_IFACE=lacp-trunk.10 ./site/scripts/r770-ufw.sh apply   # --minutes N (1-60, default 10)
 ```
 
-`confirm` refuses from the session that ran `apply`: only a new connection
-proves the firewall admits new SSH connections. If the new session cannot
-connect, do nothing — when the window closes, UFW turns itself off. `verify` is
-read-only: UFW active, default incoming deny, both allow rules and no others,
-no pending auto-revert, and no `docker-proxy` (or unidentified) listener off
-loopback.
+`apply` backs up `/etc/ufw`, `/etc/default/ufw` (where `ufw default` writes the
+policy) and `iptables-save` to `/var/backups/r770-ufw/` (mode 700), adds and
+reads back the two allow rules, then arms a **dead-man switch** — a detached
+`ufw --force disable` after N minutes — before it sets deny-by-default and
+enables UFW. It refuses while an earlier switch is still pending: confirm or
+revert that one first.
 
-**Rollback:** `sudo ./site/scripts/r770-ufw.sh revert` restores `/etc/ufw` from
-the newest pre-apply backup and cancels any pending auto-revert.
+What the switch does and does not do:
+
+- it runs **`ufw --force disable`**: it fails **open** (no host firewall at
+  all), it does not restore the previous ruleset. Run `revert` afterwards to get
+  the pre-apply state back;
+- it is a process in your SSH session's scope, so `plan` and `apply` refuse if
+  logind has `KillUserProcesses=yes` (the sleeper would die with the session);
+- a **reboot inside the window loses it** while UFW stays enabled
+  (`ENABLED=yes`). Do not reboot until `confirm` has run.
+
+**Leave the current session open, open a NEW ssh session** and, within the
+window, run:
+
+```bash
+sudo --preserve-env=SSH_CONNECTION ./site/scripts/r770-ufw.sh confirm
+sudo --preserve-env=SSH_CONNECTION UFW_EXPECT_IFACE=lacp-trunk.10 ./site/scripts/r770-ufw.sh verify
+```
+
+`confirm` proves a new connection: `apply` records the established sshd
+connections (`ss`) at the moment UFW is enabled, and `confirm` refuses unless
+its own client address and port were **not** among them and **are** established
+now. A terminal that was already open before `apply` rides on conntrack and
+proves nothing, so it is refused — "confirm from a session opened AFTER apply".
+If the new session cannot connect, do nothing — when the window closes, UFW
+turns itself off. If `confirm` reports that the switch already fired, UFW is
+disabled: re-run `apply`.
+
+`verify` is read-only and its scope is **UFW state, listeners and Docker
+publishing**: UFW active, default incoming deny, both allow rules and no
+others, no pending auto-revert; no `docker-proxy` (or unidentified) listener
+off loopback; and no DNAT rule in the nat `DOCKER` chain that is not pinned to
+`-d 127.0.0.1/32` (that is how ports are published with `userland-proxy:false`,
+where there is no listener to see). Both of those bypass UFW, so they FAIL.
+Other host listeners beyond SSH/443 are a **WARN**, not a FAIL: UFW's INPUT
+chain filters them, so they are unreachable unless a rule admits them, but they
+are worth knowing about. `verify` cannot see the box from outside its own
+firewall: **reachability is checked from a second host** — the proof run does
+`nc` from outside against the open and the closed ports.
+
+**Rollback:**
+
+```bash
+sudo --preserve-env=SSH_CONNECTION ./site/scripts/r770-ufw.sh revert
+```
+
+`revert` restores `/etc/ufw` and `/etc/default/ufw` from the newest pre-apply
+backup. If that backup had UFW disabled, UFW is left disabled and any pending
+switch is cancelled. If it had UFW **enabled**, the re-enable is a firewall
+change like `apply`: it arms the same 10-minute dead-man switch and needs
+`confirm` from a NEW session, exactly as above.
 
 ---
 

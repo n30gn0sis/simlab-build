@@ -77,6 +77,10 @@ run_scn() { PATH="$TEST_PATH" "$SCRIPT" "$@"; }
     [ "$(grep -c 'POST.*/nodes$' "$S/curl_calls")" -eq 5 ]
     [ "$(grep -c 'POST.*/links$' "$S/curl_calls")" -eq 4 ]
     [ "$(grep -c 'POST.*/start$' "$S/curl_calls")" -ge 1 ]
+    # GNS3 v3's EthernetPort schema requires an explicit "type":"ethernet" in
+    # every ports_mapping entry (422 without it) -- confirmed empirically
+    # against the live server in Task 8; pin it so it can't silently regress.
+    [ "$(grep -c 'cloud1.*"type":"ethernet"' "$S/curl_calls")" -eq 1 ]
     [ "$(cat "$GNS3SCN_STATE_DIR/project_id")" = "proj-1" ]
 }
 

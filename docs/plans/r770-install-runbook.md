@@ -729,13 +729,19 @@ a bundle. Expect gaps, and expect them to be reading material only.
 
 ## Part 12 — Dell firmware  *(reference only — not a bundle item since 2026-09-25)*
 
-> Dell firmware is **not a bundle item** (operator, 2026-09-25): it is handled on the R770 directly, outside this runbook.
+> Dell firmware is **not a bundle item** (operator, 2026-09-25): it is handled
+> on the R770 directly, outside this runbook. No iDRAC or PERC work on the
+> R770 (operator, 2026-09-24) — this runbook, and no script in this repo,
+> applies firmware, queries, or otherwise touches iDRAC or the PERC. If the
+> operator updates firmware themselves via iDRAC, the baselines below are
+> for their reference only.
 
-Firmware is applied through iDRAC, not over SSH. Apply only a DUP that is
-**newer than what is installed** — the Phase 1 inventory holds the baselines.
-
-**IPMI-over-LAN is disabled on this chassis** (Serial-over-LAN is enabled), so
-any scripted out-of-band work must use Redfish. `ipmitool -H` will not connect.
+Installed baselines (Phase 1 evidence, for reference only): BIOS **1.7.5**
+(2026-01-16) · iDRAC/LC **1.30.20.10** · PERC **8.14.0.0.28-40** · backplane
+**1.92** · Broadcom NIC family **233.1.181.0** · PSU **1408** · CPLD
+**109.125.104**. **IPMI-over-LAN is disabled on this chassis** (Serial-over-LAN
+is enabled) — not that it matters here, since nothing in this repo automates
+against iDRAC either way.
 
 ---
 

@@ -136,11 +136,11 @@ Staleness note: with ad-hoc cadence, rules/OUI are only as fresh as the last bun
 > Dell firmware is **not a bundle item** (operator, 2026-09-25): it is handled on the R770 directly. Nothing below is fetched or staged into the bundle.
 
 
-From dell.com/support by service tag **`G8WFGH4`** (confirmed 2026-09-03), with Dell's published checksums: BIOS DUP, iDRAC firmware, Broadcom NIC firmware DUPs, optionally DSU offline repo. ~2–5 GB. Applied via iDRAC OOB (Phase 2 of the buildout).
+From dell.com/support by service tag **`G8WFGH4`** (confirmed 2026-09-03), with Dell's published checksums: BIOS DUP, iDRAC firmware, Broadcom NIC firmware DUPs, optionally DSU offline repo. ~2–5 GB, for reference only — not fetched, staged, or applied by anything in this repo. No iDRAC or PERC work on the R770 (operator, 2026-09-24): if firmware is updated at all, that is the operator's own out-of-band action; no script or phase here applies it, and none of this repo's automation touches iDRAC or the PERC in any way, including Phase 2.
 
 Installed baselines to compare against before downloading anything (Phase 1 evidence): BIOS **1.7.5** (2026-01-16) · iDRAC/LC **1.30.20.10** · PERC **8.14.0.0.28-40** · backplane **1.92** · Broadcom NIC family **233.1.181.0** · PSU **1408** · CPLD **109.125.104**.
 
-**IPMI-over-LAN is disabled on this chassis** (Serial-over-LAN enabled). `ipmitool` stays in the APT set for in-band use, but no OOB automation may assume it — use **Redfish** or the iDRAC web UI. The two storage questions discovery left open — **TRIM passthrough on the VD**, and the **encryption key mode (LKM vs SEKM)** behind the controller's `Security Key Assigned` state — are answered OS-side in Phase 2, not via a PERC CLI.
+**IPMI-over-LAN is disabled on this chassis** (Serial-over-LAN enabled). `ipmitool` stays in the APT set for in-band use only. The two storage questions discovery left open — **TRIM passthrough on the VD**, and the **encryption key mode (LKM vs SEKM)** behind the controller's `Security Key Assigned` state — are answered OS-side in Phase 2, not via a PERC CLI or iDRAC.
 
 ## 8. Docs mirrors — scripted §8 (best-effort)
 

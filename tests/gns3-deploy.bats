@@ -266,13 +266,6 @@ setup_labnet_ip_stub() {
 @test "a second labnet apply is a no-op" {
     setup_labnet_ip_stub
     run_gns3 labnet apply
-    echo "DEBUG: After first apply:"
-    echo "S=$S"
-    echo "Contents of $S/links:"
-    cat "$S/links" 2>&1
-    echo "DEBUG: ip_calls contents:"
-    cat "$S/ip_calls" 2>&1
-    echo "---"
     : > "$S/ip_calls"
     run run_gns3 labnet apply
     echo "$output"
@@ -292,10 +285,6 @@ setup_labnet_ip_stub() {
 @test "labnet verify passes once applied" {
     setup_labnet_ip_stub
     run_gns3 labnet apply
-    echo "DEBUG: State file after apply:"
-    cat "$S/links"
-    echo "DEBUG: Checking for lab-mirror0 up:"
-    grep "^lab-mirror0 " "$S/links" | head -1
     run run_gns3 labnet verify
     echo "$output"
     [ "$status" -eq 0 ]

@@ -85,3 +85,66 @@ run_scn() { PATH="$TEST_PATH" "$SCRIPT" "$@"; }
     [[ "$output" == *"already exists"* ]]
     [ "$(grep -c 'POST.*/projects$' "$S/curl_calls")" -eq 0 ]
 }
+
+# ── run ──────────────────────────────────────────────────────────────────────
+#
+# docker is a stub: `docker exec <container> <cmd...>` just logs the call and
+# returns 0, modeling every command inside the netshoot nodes succeeding.
+# GNS3's node-list API maps node_id -> the real Docker container name/id,
+# which docker ps (also stubbed) resolves.
+
+setup_run_stubs() {
+    echo "proj-1" > "$GNS3SCN_STATE_DIR/project_id"
+    cat > "$S/nodes_response" <<'JSON'
+[
+  {"node_id":"node-3","name":"netshoot-client","node_type":"docker","status":"started","properties":{"container_id":"c-client"}},
+  {"node_id":"node-4","name":"netshoot-server","node_type":"docker","status":"started","properties":{"container_id":"c-server"}}
+]
+JSON
+    # Extend the curl stub with a GET .../nodes route.
+    sed -i "s#\*) echo \"stub-curl: unhandled#\"GET \"*\"/nodes\") cat \"\$S/nodes_response\" ;;\n    *) echo \"stub-curl: unhandled#" "$BIN/curl"
+    stub docker '
+        printf "%s\n" "$*" >> "'"$S"'/docker_calls"
+        exit "$(cat "'"$S"'/docker_exec_rc" 2>/dev/null || echo 0)"'
+}
+
+@test "run refuses if the project has not been built" {
+    rm -f "$GNS3SCN_STATE_DIR/project_id"
+    run run_scn run
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not built"* ]]
+}
+
+@test "run refuses if the netshoot nodes are not started" {
+    setup_run_stubs
+    sed -i 's/"started"/"stopped"/' "$S/nodes_response"
+    run run_scn run
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not started"* ]]
+    [ ! -f "$GNS3SCN_STATE_DIR/evidence.json" ]
+}
+
+@test "run drives the expected traffic counts and writes the evidence file" {
+    setup_run_stubs
+    GNS3SCN_PING_COUNT=5 GNS3SCN_CURL_COUNT=3 GNS3SCN_DIG_COUNT=2 run run_scn run
+    echo "$output"; cat "$S/docker_calls"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c 'exec c-client ping' "$S/docker_calls")" -eq 1 ]
+    [ "$(grep -c 'exec c-client curl' "$S/docker_calls")" -eq 3 ]
+    [ "$(grep -c 'exec c-client dig' "$S/docker_calls")" -eq 2 ]
+    [ "$(grep -c 'exec c-client iperf3 -c' "$S/docker_calls")" -eq 1 ]
+    [ "$(grep -c 'exec c-server iperf3 -s' "$S/docker_calls")" -eq 1 ]
+    run python3 -c "import json; d=json.load(open('$GNS3SCN_STATE_DIR/evidence.json')); print(d['pings'], d['curls'], d['digs'], d['iperf_transfers'])"
+    [ "$output" = "5 3 2 1" ]
+}
+
+@test "run refuses (and writes no evidence) if a driven command fails" {
+    setup_run_stubs
+    echo 7 > "$S/docker_exec_rc"
+    run run_scn run
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"failed"* ]]
+    [ ! -f "$GNS3SCN_STATE_DIR/evidence.json" ]
+}

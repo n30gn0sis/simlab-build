@@ -19,6 +19,10 @@
 # GNS3SCN_CREDFILE (path to a 2-line file: user, then password -- never
 # argv), GNS3SCN_PROJECT_NAME (default reference-scenario), GNS3SCN_BRIDGE_IFACE
 # (default br-lab), GNS3SCN_STATE_DIR (default /var/lib/r770-gns3-scenario).
+# `run` additions: GNS3SCN_PING_COUNT (default 20), GNS3SCN_CURL_COUNT
+# (default 10), GNS3SCN_DIG_COUNT (default 5), GNS3SCN_SERVER_IP (default
+# 192.168.100.2 -- a fixed address the two netshoot nodes are given via
+# `ip addr add` at run time, since the switch segment has no DHCP).
 set -uo pipefail
 
 GNS3SCN_API="${GNS3SCN_API:-https://127.0.0.1:3080/v2}"
@@ -26,6 +30,10 @@ GNS3SCN_CREDFILE="${GNS3SCN_CREDFILE:-/etc/r770-gns3-scenario/credentials}"
 GNS3SCN_PROJECT_NAME="${GNS3SCN_PROJECT_NAME:-reference-scenario}"
 GNS3SCN_BRIDGE_IFACE="${GNS3SCN_BRIDGE_IFACE:-br-lab}"
 GNS3SCN_STATE_DIR="${GNS3SCN_STATE_DIR:-/var/lib/r770-gns3-scenario}"
+GNS3SCN_PING_COUNT="${GNS3SCN_PING_COUNT:-20}"
+GNS3SCN_CURL_COUNT="${GNS3SCN_CURL_COUNT:-10}"
+GNS3SCN_DIG_COUNT="${GNS3SCN_DIG_COUNT:-5}"
+GNS3SCN_SERVER_IP="${GNS3SCN_SERVER_IP:-192.168.100.2}"
 
 die() { echo "r770-gns3-scenario-reference: $*" >&2; exit 1; }
 
@@ -89,9 +97,60 @@ cmd_build() {
     echo "PASS    project $GNS3SCN_PROJECT_NAME built and started ($proj_id)"
 }
 
+container_for() {  # container_for NODE_NAME -- prints "STATUS\nCONTAINER_ID"
+    api GET "/projects/$(cat "$GNS3SCN_STATE_DIR/project_id")/nodes" |
+        python3 -c "
+import json, sys
+nodes = json.load(sys.stdin)
+n = next((n for n in nodes if n['name'] == '$1'), None)
+if n is None:
+    sys.exit(1)
+print(n['status'])
+print(n['properties']['container_id'])
+"
+}
+
+cmd_run() {
+    [ -f "$GNS3SCN_STATE_DIR/project_id" ] || die "project not built -- run 'build' first"
+
+    local client_info server_info client_status client_id server_status server_id
+    client_info=$(container_for netshoot-client) || die "could not find netshoot-client via the GNS3 API"
+    server_info=$(container_for netshoot-server) || die "could not find netshoot-server via the GNS3 API"
+    client_status=$(sed -n 1p <<< "$client_info"); client_id=$(sed -n 2p <<< "$client_info")
+    server_status=$(sed -n 1p <<< "$server_info"); server_id=$(sed -n 2p <<< "$server_info")
+    if [ "$client_status" != started ] || [ "$server_status" != started ]; then
+        die "netshoot nodes are not started (client=$client_status server=$server_status) -- run 'build' or start the project first"
+    fi
+
+    docker exec "$server_id" iperf3 -s -D || die "iperf3 -s on the server failed"
+    docker exec "$client_id" ping -c "$GNS3SCN_PING_COUNT" "$GNS3SCN_SERVER_IP" || die "ping from the client failed"
+    local i
+    for ((i = 0; i < GNS3SCN_CURL_COUNT; i++)); do
+        docker exec "$client_id" curl -s "http://$GNS3SCN_SERVER_IP/" -o /dev/null || die "curl #$((i+1)) from the client failed"
+    done
+    for ((i = 0; i < GNS3SCN_DIG_COUNT; i++)); do
+        docker exec "$client_id" dig "@$GNS3SCN_SERVER_IP" example.lab || die "dig #$((i+1)) from the client failed"
+    done
+    docker exec "$client_id" iperf3 -c "$GNS3SCN_SERVER_IP" -t 2 || die "iperf3 -c from the client failed"
+
+    python3 -c "
+import json, datetime
+json.dump({
+    'pings': $GNS3SCN_PING_COUNT,
+    'curls': $GNS3SCN_CURL_COUNT,
+    'digs': $GNS3SCN_DIG_COUNT,
+    'iperf_transfers': 1,
+    'started_at': datetime.datetime.utcnow().isoformat() + 'Z',
+}, open('$GNS3SCN_STATE_DIR/evidence.json.tmp', 'w'), indent=2)
+" || die "could not write evidence file"
+    mv -f "$GNS3SCN_STATE_DIR/evidence.json.tmp" "$GNS3SCN_STATE_DIR/evidence.json"
+    echo "PASS    drove $GNS3SCN_PING_COUNT pings, $GNS3SCN_CURL_COUNT curls, $GNS3SCN_DIG_COUNT digs, 1 iperf3 transfer -- evidence: $GNS3SCN_STATE_DIR/evidence.json"
+}
+
 VERB="${1:-build}"
 [ $# -eq 0 ] || shift
 case "$VERB" in
     build) cmd_build "$@" ;;
-    *)     die "unknown verb: $VERB (expected build; run/verify land in Tasks 5-6)" ;;
+    run)   cmd_run "$@" ;;
+    *)     die "unknown verb: $VERB (expected build or run; verify lands in Task 6)" ;;
 esac

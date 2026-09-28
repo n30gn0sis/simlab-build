@@ -43,7 +43,25 @@ setup() {
     stub useradd 'printf "%s\n" "$*" >> "'"$S"'/useradd_calls"; echo "$5" >> "'"$S"'/existing_users"; exit 0'
     stub usermod 'printf "%s\n" "$*" >> "'"$S"'/usermod_calls"; exit 0'
     stub getent 'grep -qx "$2" "'"$S"'/existing_users" 2>/dev/null && exit 0 || exit 2'
-    stub chown 'exit 0'
+    stub chown 'printf "%s\n" "$*" >> "'"$S"'/chown_calls"; exit 0'
+    stub install '
+        # Track install calls; extract target file from args (usually last arg)
+        printf "%s\n" "$*" >> "'"$S"'/install_calls"
+        # Copy the source file to the target (handle -o and -g flags)
+        local src target
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -m|-o|-g) shift; shift ;; # Skip flag and its argument
+                -*) shift ;; # Skip other flags
+                *)
+                    if [ -z "$src" ]; then src="$1"; else target="$1"; fi
+                    shift
+                    ;;
+            esac
+        done
+        [ -n "$src" ] && [ -n "$target" ] && cp "$src" "$target"
+        exit 0
+    '
     stub python3 '
         if [ "$1" = "-m" ] && [ "$2" = "venv" ]; then
             mkdir -p "$3/bin"
@@ -54,6 +72,14 @@ PIPSCRIPT
             chmod +x "$3/bin/pip"
             : > "$3/bin/gns3server"
             chmod +x "$3/bin/gns3server"
+            exit 0
+        elif [ "$1" = "-c" ]; then
+            # render_conf: read template path and output path from argv, secrets from stdin
+            tmpl_path="$3"
+            out_path="$4"
+            read pw
+            read jwt
+            sed -e "s#__PASSWORD__#$pw#" -e "s#__JWT__#$jwt#" "$tmpl_path" > "$out_path" || exit 1
             exit 0
         else
             exit 1
@@ -123,6 +149,7 @@ touch_wheel() { : > "$GNS3_WHEELHOUSE/gns3_server-3.0.6-py3-none-any.whl"; }
     grep -q -- "--system --create-home --shell /usr/sbin/nologin $GNS3_USER" "$S/useradd_calls"
     grep -q -- "-aG kvm,docker $GNS3_USER" "$S/usermod_calls"
     grep -q "enable --now gns3" "$S/systemctl_calls"
+    grep -q "$GNS3_USER:$GNS3_USER $GNS3_CONF_DIR" "$S/chown_calls"
     [ -f "$GNS3_NGINX_DIR/conf.d/gns3.lab.conf" ]
 }
 

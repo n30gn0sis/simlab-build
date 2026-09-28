@@ -85,7 +85,24 @@ ensure_venv() {
     [ -x "$GNS3_VENV/bin/gns3server" ] || die "pip reported success but $GNS3_VENV/bin/gns3server is missing"
 }
 
+render_conf() {  # render_conf TEMPLATE OUT_TMP -- password and JWT via stdin
+    python3 -c "
+import sys
+tmpl_path = sys.argv[1]
+out_path = sys.argv[2]
+pw = sys.stdin.readline().rstrip('\n')
+jwt = sys.stdin.readline().rstrip('\n')
+with open(tmpl_path) as f:
+    tmpl = f.read()
+tmpl = tmpl.replace('__PASSWORD__', pw).replace('__JWT__', jwt)
+with open(out_path, 'w') as f:
+    f.write(tmpl)
+" "$1" "$2"
+}
+
 ensure_conf() {
+    mkdir -p "$GNS3_CONF_DIR" || die "could not create $GNS3_CONF_DIR"
+    chown "$GNS3_USER:$GNS3_USER" "$GNS3_CONF_DIR" || die "could not chown $GNS3_CONF_DIR"
     if [ -f "$GNS3_CONF_DIR/gns3_server.conf" ]; then
         echo "KEEP    $GNS3_CONF_DIR/gns3_server.conf already installed (password/JWT never regenerated)"
         return 0
@@ -93,11 +110,10 @@ ensure_conf() {
     local pass jwt tmp
     pass=$(openssl rand -base64 24) || die "openssl rand (password) failed"
     jwt=$(openssl rand -hex 32) || die "openssl rand (jwt) failed"
-    mkdir -p "$GNS3_CONF_DIR" || die "could not create $GNS3_CONF_DIR"
     tmp="$GNS3_CONF_DIR/.gns3_server.conf.tmp.$$"
-    sed -e "s#__PASSWORD__#$pass#" -e "s#__JWT__#$jwt#" "$GNS3_CONF_TEMPLATE" > "$tmp" ||
+    { printf '%s\n' "$pass"; printf '%s\n' "$jwt"; } | render_conf "$GNS3_CONF_TEMPLATE" "$tmp" ||
         die "could not render $GNS3_CONF_TEMPLATE"
-    install -m 0640 "$tmp" "$GNS3_CONF_DIR/gns3_server.conf" || die "could not install gns3_server.conf"
+    install -m 0640 -o "$GNS3_USER" -g "$GNS3_USER" "$tmp" "$GNS3_CONF_DIR/gns3_server.conf" || die "could not install gns3_server.conf"
     rm -f "$tmp"
     echo "INSTALL $GNS3_CONF_DIR/gns3_server.conf (password/JWT generated on this box, never logged)"
 }
@@ -145,8 +161,8 @@ cmd_apply() {
     require_root
     [ $# -eq 0 ] || die "unknown argument: $1"
     ensure_venv
-    ensure_conf
     ensure_user
+    ensure_conf
     ensure_dirs
     ensure_service
     ensure_nginx_vhost

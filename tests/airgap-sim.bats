@@ -61,6 +61,25 @@ teardown() { reap_sleepers; }
     [ "$lan" -lt "$drop" ]
 }
 
+# UFW's own ufw-track-output chain (created whenever ufw is active) contains
+# unconditional ACCEPTs for NEW outbound tcp/udp connections, installed in
+# OUTPUT ahead of anything appended with -A. A DROP appended at the tail of
+# OUTPUT (-A OUTPUT ... DROP) never gets evaluated for such packets: they are
+# already ACCEPTed by ufw's chain jump before reaching it, and iptables
+# traversal stops there. Observed live on VM 9771 (2026-09-28): `block`
+# reported BLOCKED and the DROP rule showed 0 packets matched after a
+# successful `curl` to a real internet host, while egress was demonstrably
+# not blocked. The fix is to INSERT the DROP at a fixed early position (right
+# after the 4 ACCEPT rules this script itself inserts at positions 1-4) so it
+# is evaluated before any rule -- ufw's included -- that a different tool
+# appended to OUTPUT before this script ever ran.
+@test "the catch-all drop is inserted at a fixed early position, not appended after whatever else is already in OUTPUT" {
+    run "$SCRIPT" block
+    echo "$output"
+    [[ "$output" == *"iptables -I OUTPUT 5 -m comment --comment r770-airgap-sim -j DROP"* ]]
+    [[ "$output" != *"iptables -A OUTPUT -m comment --comment r770-airgap-sim -j DROP"* ]]
+}
+
 @test "block refuses to run without scheduling an auto-revert" {
     run "$SCRIPT" block
     [[ "$output" == *"auto-revert"* ]]

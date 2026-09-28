@@ -88,7 +88,15 @@ cmd_block() {
     apply -I OUTPUT 2 -d "127.0.0.0/8" -j ACCEPT
     apply -I OUTPUT 3 -d "$LAN" -j ACCEPT
     apply -I OUTPUT 4 -d 172.16.0.0/12 -j ACCEPT      # docker bridges
-    apply -A OUTPUT -m comment --comment "$MARK" -j DROP
+    # INSERT at the fixed position right after the four ACCEPTs above, not
+    # -A (append). ufw, when active, adds its own OUTPUT chain-jump rules
+    # (ufw-before-output -> ... -> ufw-track-output), and that chain
+    # unconditionally ACCEPTs every NEW outbound tcp/udp connection --
+    # traversal stops there and never reaches a rule appended after it.
+    # Position 5 is deterministic: it always lands immediately after the
+    # four inserts above, before ufw's rules or anything else already in
+    # OUTPUT, regardless of what was there before this script ran.
+    apply -I OUTPUT 5 -m comment --comment "$MARK" -j DROP
 
     # Forwarded traffic -- the path every container actually uses.
     # ESTABLISHED,RELATED first so return packets for permitted flows survive;

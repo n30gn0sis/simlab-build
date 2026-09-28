@@ -12,7 +12,7 @@
 #   apply     install gns3-server from the bundle wheelhouse into a venv,
 #             write gns3_server.conf (password/JWT generated on this box,
 #             never regenerated once installed), create the gns3 service
-#             user (kvm+docker groups), install the systemd unit and the
+#             user (kvm+docker+ubridge groups), install the systemd unit and the
 #             already-existing gns3.lab nginx vhost, enable and start.
 #   verify    service up, API answers, gns3.lab reachable through the portal.
 #
@@ -129,7 +129,12 @@ ensure_user() {
     getent passwd "$GNS3_USER" >/dev/null 2>&1 || {
         useradd --system --create-home --shell /usr/sbin/nologin "$GNS3_USER" || die "useradd $GNS3_USER failed"
     }
-    usermod -aG kvm,docker "$GNS3_USER" || die "usermod -aG kvm,docker $GNS3_USER failed"
+    # ubridge's own .deb sets its binary group-executable only, owned by a
+    # dedicated "ubridge" group (root:ubridge, mode 754) -- without
+    # membership GNS3 fails every cloud/link-touching node with "uBridge is
+    # not available" even though the binary is right there (confirmed live
+    # 2026-09-28: gns3 user had kvm+docker but not ubridge).
+    usermod -aG kvm,docker,ubridge "$GNS3_USER" || die "usermod -aG kvm,docker,ubridge $GNS3_USER failed"
 }
 
 ensure_dirs() {

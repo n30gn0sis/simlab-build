@@ -145,7 +145,7 @@ touch_wheel() { : > "$GNS3_WHEELHOUSE/gns3_server-0.0.0-test-py3-none-any.whl"; 
     grep -q "jwt_secret_key = FAKE-" "$GNS3_CONF_DIR/gns3_server.conf"
     ! grep -q "__PASSWORD__\|__JWT__" "$GNS3_CONF_DIR/gns3_server.conf"
     grep -q -- "--system --create-home --shell /usr/sbin/nologin $GNS3_USER" "$S/useradd_calls"
-    grep -q -- "-aG kvm,docker $GNS3_USER" "$S/usermod_calls"
+    grep -q -- "-aG kvm,docker,ubridge $GNS3_USER" "$S/usermod_calls"
     grep -q "enable --now gns3" "$S/systemctl_calls"
     grep -q "$GNS3_USER:$GNS3_USER $GNS3_CONF_DIR" "$S/chown_calls"
     [ -f "$GNS3_NGINX_DIR/conf.d/gns3.lab.conf" ]

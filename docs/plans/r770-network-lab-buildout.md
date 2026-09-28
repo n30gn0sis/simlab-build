@@ -221,7 +221,7 @@ dnsmasq (simplest fit: DNS + optional DHCP for lab bridges in one small service)
 ## 6. GNS3 Architecture
 
 - GNS3 **server only** (no GUI on host), installed in a Python venv or from the GNS3 PPA (the one sanctioned exception to the no-PPA rule, as it is the upstream project's supported channel — decision recorded; alternative is pip install into a dedicated venv).
-- Dedicated `gns3` service user, member of `kvm` and `docker` groups (docker membership documented as root-equivalent — see §9), systemd unit, auto-start.
+- Dedicated `gns3` service user, member of `kvm`, `docker` and `ubridge` groups (docker membership documented as root-equivalent — see §9; `ubridge` needed because its own package restricts the binary to group-execute only, else GNS3 fails every link/cloud node with "uBridge is not available"), systemd unit, auto-start.
 - Paths: projects `/srv/gns3/projects`, images `/srv/gns3/images`, symlinked/configured in `gns3_server.conf`.
 - Bound to localhost; exposed **only** through Nginx at `gns3.lab` with authentication enabled in GNS3 (v3 has built-in auth) plus reverse-proxy TLS. The GNS3 Web UI serves topology control; the desktop GNS3 GUI on analyst workstations connects to the same API through the proxy.
 - Node types: QEMU appliances (routers/firewalls/endpoints), Docker nodes for lightweight endpoints, built-in switches/clouds. Cloud nodes may attach lab bridges — never the management bond or its VLAN, never capture ports.

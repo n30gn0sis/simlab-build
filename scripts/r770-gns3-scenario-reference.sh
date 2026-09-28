@@ -24,7 +24,12 @@
 # header line (never argv) -- confirmed empirically against the live server
 # in Task 8 (v2/https and Basic Auth were Task 4's unverified assumptions;
 # both were wrong). GNS3SCN_PROJECT_NAME (default reference-scenario), GNS3SCN_BRIDGE_IFACE
-# (default br-lab), GNS3SCN_STATE_DIR (default /var/lib/r770-gns3-scenario).
+# (default br-lab), GNS3SCN_ALPINE_ISO (default alpine-virt-3.24.2-x86_64.iso
+# -- filename staged under GNS3's images_path; the registry's "Alpine Linux"
+# .gns3a is a Docker appliance, not QEMU, so the alpine1 node is created with
+# explicit qemu properties -- platform, cdrom_image, ram -- rather than a
+# template_name that does not exist as a registered GNS3 template; confirmed
+# empirically in Task 8), GNS3SCN_STATE_DIR (default /var/lib/r770-gns3-scenario).
 # `run` additions: GNS3SCN_PING_COUNT (default 20), GNS3SCN_CURL_COUNT
 # (default 10), GNS3SCN_DIG_COUNT (default 5), GNS3SCN_SERVER_IP (default
 # 192.168.100.2) and GNS3SCN_CLIENT_IP (default 192.168.100.3) -- fixed
@@ -44,6 +49,7 @@ GNS3SCN_API="${GNS3SCN_API:-http://127.0.0.1:3080/v3}"
 GNS3SCN_CREDFILE="${GNS3SCN_CREDFILE:-/etc/r770-gns3-scenario/credentials}"
 GNS3SCN_PROJECT_NAME="${GNS3SCN_PROJECT_NAME:-reference-scenario}"
 GNS3SCN_BRIDGE_IFACE="${GNS3SCN_BRIDGE_IFACE:-br-lab}"
+GNS3SCN_ALPINE_ISO="${GNS3SCN_ALPINE_ISO:-alpine-virt-3.24.2-x86_64.iso}"
 GNS3SCN_STATE_DIR="${GNS3SCN_STATE_DIR:-/var/lib/r770-gns3-scenario}"
 GNS3SCN_PING_COUNT="${GNS3SCN_PING_COUNT:-20}"
 GNS3SCN_CURL_COUNT="${GNS3SCN_CURL_COUNT:-10}"
@@ -127,7 +133,7 @@ cmd_build() {
         die "netshoot-client create failed"
     server_id=$(api POST "/projects/$proj_id/nodes" '{"name":"netshoot-server","node_type":"docker","compute_id":"local","properties":{"image":"nicolaka/netshoot:latest","start_command":"sleep infinity"}}' | json_get "['node_id']") ||
         die "netshoot-server create failed"
-    alpine_id=$(api POST "/projects/$proj_id/nodes" '{"name":"alpine1","node_type":"qemu","compute_id":"local","properties":{"template_name":"Alpine Linux"}}' | json_get "['node_id']") ||
+    alpine_id=$(api POST "/projects/$proj_id/nodes" "{\"name\":\"alpine1\",\"node_type\":\"qemu\",\"compute_id\":\"local\",\"properties\":{\"platform\":\"x86_64\",\"cdrom_image\":\"$GNS3SCN_ALPINE_ISO\",\"ram\":256,\"adapters\":1}}" | json_get "['node_id']") ||
         die "alpine node create failed"
 
     local peer

@@ -81,6 +81,13 @@ run_scn() { PATH="$TEST_PATH" "$SCRIPT" "$@"; }
     # every ports_mapping entry (422 without it) -- confirmed empirically
     # against the live server in Task 8; pin it so it can't silently regress.
     [ "$(grep -c 'cloud1.*"type":"ethernet"' "$S/curl_calls")" -eq 1 ]
+    # The registry's "Alpine Linux" .gns3a is a Docker appliance, not QEMU --
+    # there is no registered QEMU template to reference by name, so alpine1
+    # must be created with explicit qemu properties instead of template_name
+    # (confirmed empirically in Task 8: template_name produced "QEMU binary
+    # 'qemu-system-None' cannot be found").
+    [ "$(grep -c 'alpine1.*"platform":"x86_64".*"cdrom_image"' "$S/curl_calls")" -eq 1 ]
+    [ "$(grep -c 'alpine1.*template_name' "$S/curl_calls")" -eq 0 ]
     [ "$(cat "$GNS3SCN_STATE_DIR/project_id")" = "proj-1" ]
 }
 

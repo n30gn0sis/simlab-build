@@ -202,34 +202,40 @@ touch_wheel() { : > "$GNS3_WHEELHOUSE/gns3_server-3.0.6-py3-none-any.whl"; }
 
 setup_labnet_ip_stub() {
     : > "$S/links"
-    # Export S so the stub script can use it
     export S="$S"
     stub ip '
         printf "%s\n" "$*" >> "$S/ip_calls"
         case "$*" in
             *link\ show*)
-                name="${*##*link show }"; name="${name%% *}"
-                grep "^${name} " "$S/links" 2>/dev/null | grep -q "up$" && echo "1: ${name}@up <UP,LOWER_UP> mtu 1500 up" || echo "1: ${name}@down <DOWN> mtu 1500"
+                name=$(echo "$*" | awk "{for(i=1;i<=NF;i++) if(\$i==\"show\") print \$(i+1)}")
+                if grep -q "^${name} up$" "$S/links" 2>/dev/null; then
+                    echo "1: ${name}: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500"
+                else
+                    echo "1: ${name}: <BROADCAST,MULTICAST> mtu 1500"
+                fi
                 grep -q "^${name} " "$S/links" 2>/dev/null || exit 1
                 exit 0 ;;
+            *link\ add\ name\ br-lab\ type\ bridge*)
+                echo "br-lab down" >> "$S/links"
+                exit 0 ;;
+            *link\ add*veth*peer\ name*)
+                a=$(echo "$*" | sed -n "s/.*add name \([^ ]*\).*/\1/p")
+                b=$(echo "$*" | sed -n "s/.*peer name \([^ ]*\).*/\1/p")
+                [ -n "$a" ] && echo "$a down" >> "$S/links"
+                [ -n "$b" ] && echo "$b down" >> "$S/links"
+                exit 0 ;;
             *link\ set*up*)
-                name=""
-                set -- $*
-                shift 2
-                for a; do [ "$a" != "up" ] && [ "$a" != "dev" ] && [ "$a" != "promisc" ] && [ "$a" != "on" ] && [ "$a" != "type" ] && [ "$a" != "veth" ] && [ "$a" != "peer" ] && [ "$a" != "name" ] && name="$a"; done
-                echo "${name} up" >> "$S/links"
+                name=$(echo "$*" | awk "{for(i=1;i<=NF;i++) if(\$i==\"set\") print \$(i+1)}")
+                [ -n "$name" ] && echo "${name} up" >> "$S/links"
                 exit 0 ;;
-            *link\ add\ name\ br-lab\ type\ bridge*) echo "br-lab down" >> "$S/links"; exit 0 ;;
-            *link\ add*type\ veth\ peer\ name*)
-                a="${*#*name }"; a="${a%% *}"
-                b="${*##*peer name }"
-                echo "$a down" >> "$S/links"
-                echo "$b down" >> "$S/links"
+            *link\ set*master\ br-lab*)
                 exit 0 ;;
-            *link\ set*master\ br-lab*) exit 0 ;;
-            *link\ set\ br-lab\ type\ bridge*) exit 0 ;;
-            *link\ set*promisc\ on*) exit 0 ;;
-            *) exit 0 ;;
+            *link\ set*type\ bridge*)
+                exit 0 ;;
+            *link\ set*promisc\ on*)
+                exit 0 ;;
+            *)
+                exit 0 ;;
         esac
     '
 }
@@ -286,6 +292,10 @@ setup_labnet_ip_stub() {
 @test "labnet verify passes once applied" {
     setup_labnet_ip_stub
     run_gns3 labnet apply
+    echo "DEBUG: State file after apply:"
+    cat "$S/links"
+    echo "DEBUG: Checking for lab-mirror0 up:"
+    grep "^lab-mirror0 " "$S/links" | head -1
     run run_gns3 labnet verify
     echo "$output"
     [ "$status" -eq 0 ]

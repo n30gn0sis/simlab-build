@@ -49,7 +49,7 @@ die()  { echo "r770-gns3-deploy: $*" >&2; exit 1; }
 require_root() { [ "$(id -u)" = 0 ] || die "must run as root"; }
 
 link_exists() { ip link show "$1" >/dev/null 2>&1; }
-link_up()     { ip link show "$1" 2>/dev/null | grep -q ' up'; }
+link_up()     { ip link show "$1" 2>/dev/null | grep -q '<.*UP'; }
 
 wheel_present() { ls "$GNS3_WHEELHOUSE"/gns3?server-*.whl >/dev/null 2>&1; }
 

@@ -1,0 +1,14 @@
+[Unit]
+Description=GNS3 server
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=__GNS3_USER__
+ExecStart=__GNS3_VENV__/bin/gns3server --config __GNS3_CONF_DIR__/gns3_server.conf
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

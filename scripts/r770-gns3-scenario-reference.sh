@@ -15,9 +15,15 @@
 # Design: docs/superpowers/specs/2026-09-27-gns3-mirror-design.md
 #   ("Reference scenario")
 #
-# Test overrides: GNS3SCN_API (default https://127.0.0.1:3080/v2),
-# GNS3SCN_CREDFILE (path to a 2-line file: user, then password -- never
-# argv), GNS3SCN_PROJECT_NAME (default reference-scenario), GNS3SCN_BRIDGE_IFACE
+# Test overrides: GNS3SCN_API (default http://127.0.0.1:3080/v3 -- this
+# install's GNS3 v3 server answers plain HTTP, and only the /v3 path exists;
+# /v2 answers 404), GNS3SCN_CREDFILE (path to a 2-line file: user, then
+# password -- never argv). GNS3 v3 has no HTTP Basic Auth: api() logs in once
+# via POST /access/users/authenticate (JSON body) and reuses the returned
+# bearer token for every later call, delivered to curl only via a -K -
+# header line (never argv) -- confirmed empirically against the live server
+# in Task 8 (v2/https and Basic Auth were Task 4's unverified assumptions;
+# both were wrong). GNS3SCN_PROJECT_NAME (default reference-scenario), GNS3SCN_BRIDGE_IFACE
 # (default br-lab), GNS3SCN_STATE_DIR (default /var/lib/r770-gns3-scenario).
 # `run` additions: GNS3SCN_PING_COUNT (default 20), GNS3SCN_CURL_COUNT
 # (default 10), GNS3SCN_DIG_COUNT (default 5), GNS3SCN_SERVER_IP (default
@@ -34,7 +40,7 @@
 # slightly behind the wire) and checks Zeek's capture_loss.log is <= 0.5%.
 set -uo pipefail
 
-GNS3SCN_API="${GNS3SCN_API:-https://127.0.0.1:3080/v2}"
+GNS3SCN_API="${GNS3SCN_API:-http://127.0.0.1:3080/v3}"
 GNS3SCN_CREDFILE="${GNS3SCN_CREDFILE:-/etc/r770-gns3-scenario/credentials}"
 GNS3SCN_PROJECT_NAME="${GNS3SCN_PROJECT_NAME:-reference-scenario}"
 GNS3SCN_BRIDGE_IFACE="${GNS3SCN_BRIDGE_IFACE:-br-lab}"
@@ -54,28 +60,50 @@ die() { echo "r770-gns3-scenario-reference: $*" >&2; exit 1; }
 
 check_creds() { [ -f "$GNS3SCN_CREDFILE" ] || die "no credentials file at $GNS3SCN_CREDFILE"; }
 
-# api METHOD PATH [DATA] -- credentials never touch argv, env, or a log: read
-# into local shell variables (never exported) and handed to curl only via a
-# -K - config heredoc, which the shell writes to curl's stdin directly. Do
-# NOT refactor this to `-u "$(creds)"` or any other form that puts the
-# user:pass string into a command's own argv (visible via ps/proc) -- that
-# was Task 4's one real review finding, fixed here.
-api() {
-    local method="$1" path="$2" data="${3:-}" u p
+json_get() { python3 -c "import json,sys; print(json.load(sys.stdin)$1)"; }
+
+_GNS3SCN_TOKEN=""
+
+# get_token -- GNS3 v3 has no HTTP Basic Auth (confirmed empirically: it
+# answers 401 "Not authenticated" even with correct credentials). Logs in via
+# JSON POST to /access/users/authenticate. The password never touches curl's
+# argv: `-d @-` tells curl to read the POST body from its own stdin, fed here
+# by a heredoc the shell writes directly -- same "never in argv" mechanism
+# the old -K -/`user = "..."` pattern used for Basic Auth.
+get_token() {
+    local u p
     check_creds
     { read -r u; read -r p; } < "$GNS3SCN_CREDFILE"
+    curl -sf -X POST -H 'Content-Type: application/json' -d @- "$GNS3SCN_API/access/users/authenticate" <<CURLBODY | json_get "['access_token']"
+{"username":"$u","password":"$p"}
+CURLBODY
+}
+
+ensure_token() {
+    [ -n "$_GNS3SCN_TOKEN" ] && return 0
+    _GNS3SCN_TOKEN=$(get_token)
+    [ -n "$_GNS3SCN_TOKEN" ] || die "authentication failed against $GNS3SCN_API"
+}
+
+# api METHOD PATH [DATA] -- the bearer token never touches argv, env, or a
+# log: handed to curl only via a -K - config heredoc, which the shell writes
+# to curl's stdin directly. Do NOT refactor this to `-H "Authorization: ..."`
+# on curl's own command line (visible via ps/proc) -- that was Task 4's one
+# real review finding (there for user:pass Basic Auth; GNS3 v3 dropped Basic
+# Auth for a bearer token instead, but the same argv discipline applies).
+api() {
+    local method="$1" path="$2" data="${3:-}"
+    ensure_token
     if [ -n "$data" ]; then
-        curl -sf -k -K - -X "$method" -H 'Content-Type: application/json' -d "$data" "$GNS3SCN_API$path" <<CURLCFG
-user = "$u:$p"
+        curl -sf -K - -X "$method" -H 'Content-Type: application/json' -d "$data" "$GNS3SCN_API$path" <<CURLCFG
+header = "Authorization: Bearer $_GNS3SCN_TOKEN"
 CURLCFG
     else
-        curl -sf -k -K - -X "$method" "$GNS3SCN_API$path" <<CURLCFG
-user = "$u:$p"
+        curl -sf -K - -X "$method" "$GNS3SCN_API$path" <<CURLCFG
+header = "Authorization: Bearer $_GNS3SCN_TOKEN"
 CURLCFG
     fi
 }
-
-json_get() { python3 -c "import json,sys; print(json.load(sys.stdin)$1)"; }
 
 cmd_build() {
     check_creds

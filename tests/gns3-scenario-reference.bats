@@ -1,15 +1,17 @@
 #!/usr/bin/env bats
 #
-# r770-gns3-scenario-reference.sh talks only to the GNS3 v2 REST API (curl) and
+# r770-gns3-scenario-reference.sh talks only to the GNS3 v3 REST API (curl) and
 # the GNS3-managed Docker containers (docker exec). curl and docker are stubs
 # backed by a state dir ($S); a fixed real-tool allowlist (jq/python3, sed,
-# mkdir, etc.) is the only other thing on PATH.
+# mkdir, etc.) is the only other thing on PATH. GNS3 v3 has no HTTP Basic
+# Auth, so every scenario first logs in via POST .../access/users/authenticate
+# (stubbed below to return a fixed bearer token) before any other call.
 
 setup() {
     SCRIPT="$BATS_TEST_DIRNAME/../scripts/r770-gns3-scenario-reference.sh"
     BIN="$BATS_TEST_TMPDIR/bin"; REAL="$BATS_TEST_TMPDIR/real"
     export S="$BATS_TEST_TMPDIR/state"
-    export GNS3SCN_API="https://127.0.0.1:3080/v2"
+    export GNS3SCN_API="http://127.0.0.1:3080/v3"
     export GNS3SCN_CREDFILE="$BATS_TEST_TMPDIR/creds"
     export GNS3SCN_PROJECT_NAME="reference-scenario"
     export GNS3SCN_BRIDGE_IFACE="br-lab"
@@ -33,6 +35,8 @@ for i in "${!args[@]}"; do [ "${args[$i]}" = "-X" ] && method="${args[$((i+1))]}
 url="${args[-1]}"
 case "$method $url" in
     "GET "*"/version") echo '{"version":"test"}' ;;
+    "POST "*"/access/users/authenticate")
+        echo '{"access_token":"test-token","token_type":"bearer"}' ;;
     "POST "*"/projects")
         echo '{"project_id":"proj-1","name":"reference-scenario","status":"opened"}' ;;
     "POST "*"/templates")

@@ -254,11 +254,27 @@ trusting the pool.
 
 No `pip install` from the internet. The wheelhouse is the index.
 
-`python3 -m venv` needs `python3-venv` (+ `python3.12-venv`, `python3-pip-whl`) from the
-curated set installed in Part 3 — without them the venv is created with no `pip` and the
-next line fails with "No such file or directory" (seen on staging 2026-09-12). GNS3 3.x also
-writes its controller database and JWT key **beside its config file**, so the directory
-holding `gns3_server.conf` must be owned by the user the server runs as.
+Part 3 only points the box at the local repo — it does not bulk-install the curated set.
+Install GNS3's own system dependencies from that repo first (mirrors Part 4's docker
+install line):
+
+```bash
+sudo apt install -y python3-venv ubridge dynamips \
+    qemu-kvm qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients bridge-utils
+```
+
+Without `ubridge`, GNS3 cannot open any link at all; without `dynamips`, its
+`ethernet_switch`/`ethernet_hub` node types fail node creation with "Could not find
+Dynamips" — this is true regardless of whether any Cisco IOS image is ever used, since GNS3
+implements plain switch/hub emulation through the same Dynamips process (found live
+2026-09-28 running the reference GNS3 scenario). The qemu/libvirt packages back GNS3's QEMU
+node type (e.g. the reference scenario's Alpine node).
+
+`python3 -m venv` needs `python3-venv` (+ `python3.12-venv`, `python3-pip-whl`, pulled in as
+its dependencies) — without it the venv is created with no `pip` and the next line fails with
+"No such file or directory" (seen on staging 2026-09-12). GNS3 3.x also writes its controller
+database and JWT key **beside its config file**, so the directory holding `gns3_server.conf`
+must be owned by the user the server runs as.
 
 ```bash
 python3 -m venv /opt/gns3

@@ -478,6 +478,12 @@ PKGS=(
     virtinst ovmf bridge-utils cpu-checker guestfs-tools
     # optional-but-cached switching
     openvswitch-switch
+    # GNS3's ethernet_switch/ethernet_hub node types are implemented via the
+    # Dynamips compute backend regardless of whether any Cisco IOS image is
+    # in play; GNS3 fails node creation with "Could not find Dynamips" on a
+    # box that lacks it. In Ubuntu's universe component, no PPA needed.
+    # Found by the 2026-09-28 GNS3 mirror proof run on staging.
+    dynamips
     # host services
     nginx dnsmasq chrony auditd ufw lvm2 xfsprogs easy-rsa restic
     prometheus-node-exporter

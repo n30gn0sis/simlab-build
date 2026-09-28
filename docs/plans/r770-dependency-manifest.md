@@ -40,6 +40,7 @@ Curated package list (script is authoritative):
 
 - **Virtualization:** qemu-kvm, qemu-system-x86, qemu-utils, libvirt-daemon-system, libvirt-clients, virtinst, ovmf, bridge-utils, cpu-checker, guestfs-tools
 - **Switching (deferred but cached):** openvswitch-switch
+- **GNS3 compute backend:** dynamips — GNS3's `ethernet_switch`/`ethernet_hub` node types route through it regardless of any Cisco IOS image; absent, node creation fails with "Could not find Dynamips". In Ubuntu's universe, no PPA needed. Added 2026-09-28 after a live GNS3 mirror proof run on staging hit this.
 - **Host services:** nginx, dnsmasq, chrony, auditd, ufw, lvm2, xfsprogs, easy-rsa, restic, prometheus-node-exporter
 - **Storage/HW:** smartmontools, nvme-cli, ipmitool, edac-utils, lm-sensors
 - **Network/capture/perf:** ethtool, numactl, sysstat, tcpdump, tshark, tcpreplay, iperf3, fio, stress-ng, mtr-tiny, traceroute, dnsutils, net-tools, nmap

@@ -206,33 +206,29 @@ setup_labnet_ip_stub() {
     export S="$S"
     stub ip '
         printf "%s\n" "$*" >> "$S/ip_calls"
-        case "$1 $2" in
-            "link add") shift 2; name=""
-                for a; do case "$prev" in name) name="$a";; esac; prev="$a"; done
-                echo "${name} down" >> "$S/links" ;;
-        esac
         case "$*" in
-            *"link show"*)
+            *link\ show*)
                 name="${*##*link show }"; name="${name%% *}"
-                grep -q "^${name} " "$S/links" || exit 1
+                grep "^${name} " "$S/links" 2>/dev/null | grep -q "up$" && echo "1: ${name}@up <UP,LOWER_UP> mtu 1500 up" || echo "1: ${name}@down <DOWN> mtu 1500"
+                grep -q "^${name} " "$S/links" 2>/dev/null || exit 1
                 exit 0 ;;
-            *"link set"*"up"*)
+            *link\ set*up*)
                 name=""
                 set -- $*
                 shift 2
                 for a; do [ "$a" != "up" ] && [ "$a" != "dev" ] && [ "$a" != "promisc" ] && [ "$a" != "on" ] && [ "$a" != "type" ] && [ "$a" != "veth" ] && [ "$a" != "peer" ] && [ "$a" != "name" ] && name="$a"; done
                 echo "${name} up" >> "$S/links"
                 exit 0 ;;
-            *"link add name br-lab type bridge"*) echo "br-lab down" >> "$S/links"; exit 0 ;;
-            *"link add"*"type veth peer name"*)
+            *link\ add\ name\ br-lab\ type\ bridge*) echo "br-lab down" >> "$S/links"; exit 0 ;;
+            *link\ add*type\ veth\ peer\ name*)
                 a="${*#*name }"; a="${a%% *}"
                 b="${*##*peer name }"
                 echo "$a down" >> "$S/links"
                 echo "$b down" >> "$S/links"
                 exit 0 ;;
-            *"link set"*"master br-lab"*) exit 0 ;;
-            *"link set br-lab type bridge"*) exit 0 ;;
-            *"link set"*"promisc on"*) exit 0 ;;
+            *link\ set*master\ br-lab*) exit 0 ;;
+            *link\ set\ br-lab\ type\ bridge*) exit 0 ;;
+            *link\ set*promisc\ on*) exit 0 ;;
             *) exit 0 ;;
         esac
     '
@@ -264,6 +260,13 @@ setup_labnet_ip_stub() {
 @test "a second labnet apply is a no-op" {
     setup_labnet_ip_stub
     run_gns3 labnet apply
+    echo "DEBUG: After first apply:"
+    echo "S=$S"
+    echo "Contents of $S/links:"
+    cat "$S/links" 2>&1
+    echo "DEBUG: ip_calls contents:"
+    cat "$S/ip_calls" 2>&1
+    echo "---"
     : > "$S/ip_calls"
     run run_gns3 labnet apply
     echo "$output"

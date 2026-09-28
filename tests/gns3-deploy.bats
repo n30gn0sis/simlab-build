@@ -24,6 +24,7 @@ setup() {
     export GNS3_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
     export GNS3_IMAGES_DIR="$BATS_TEST_TMPDIR/images"
     export GNS3_APPLIANCES_DIR="$BATS_TEST_TMPDIR/appliances"
+    export GNS3_MALCOLM_CONFIG="$GNS3_SITE/config/malcolm/malcolm-config.json"
     export FAKE_UID=0
     mkdir -p "$BIN" "$REAL" "$S" "$GNS3_WHEELHOUSE" "$GNS3_SITE/config/gns3" "$GNS3_SITE/config/nginx"
 
@@ -31,6 +32,7 @@ setup() {
         p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$REAL/$t"
     done
     TEST_PATH="$BIN:$REAL"
+    export REAL
 
     stub id 'echo "$FAKE_UID"'
     stub openssl 'case "$1" in rand) echo "FAKE-$2-$RANDOM" ;; *) exit 1 ;; esac'
@@ -74,13 +76,9 @@ PIPSCRIPT
             chmod +x "$3/bin/gns3server"
             exit 0
         elif [ "$1" = "-c" ]; then
-            # render_conf: read template path and output path from argv, secrets from stdin
-            tmpl_path="$3"
-            out_path="$4"
-            read pw
-            read jwt
-            sed -e "s#__PASSWORD__#$pw#" -e "s#__JWT__#$jwt#" "$tmpl_path" > "$out_path" || exit 1
-            exit 0
+            # For -c, delegate to real python3 to execute the code
+            shift
+            exec "$REAL/python3" -c "$@"
         else
             exit 1
         fi
@@ -289,4 +287,42 @@ setup_labnet_ip_stub() {
     echo "$output"
     [ "$status" -eq 0 ]
     [ "$(grep -c '^PASS' <<< "$output")" -ge 3 ]
+}
+
+# ── labnet malcolm-config ────────────────────────────────────────────────────
+
+@test "malcolm-config patches captureLiveNetworkTraffic and pcapIface, nothing else" {
+    mkdir -p "$GNS3_SITE/config/malcolm"
+    cat > "$GNS3_SITE/config/malcolm/malcolm-config.json" <<'JSON'
+{"configuration": {"captureLiveNetworkTraffic": false, "pcapIface": [], "autoZeek": true}}
+JSON
+    out="$BATS_TEST_TMPDIR/patched.json"
+    run run_gns3 labnet malcolm-config "$out"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    run python3 -c "import json; d=json.load(open('$out'))['configuration']; print(d['captureLiveNetworkTraffic'], d['pcapIface'], d['autoZeek'])"
+    [ "$output" = "True ['lab-mirror0'] True" ]
+}
+
+@test "malcolm-config refuses on a source file that isn't valid JSON" {
+    mkdir -p "$GNS3_SITE/config/malcolm"
+    echo "not json" > "$GNS3_SITE/config/malcolm/malcolm-config.json"
+    run run_gns3 labnet malcolm-config "$BATS_TEST_TMPDIR/patched.json"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"could not parse"* ]]
+    [ ! -e "$BATS_TEST_TMPDIR/patched.json" ]
+}
+
+@test "malcolm-config refuses when the source file is missing" {
+    run run_gns3 labnet malcolm-config "$BATS_TEST_TMPDIR/patched.json"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not found"* ]]
+}
+
+@test "malcolm-config requires the output path argument" {
+    mkdir -p "$GNS3_SITE/config/malcolm"
+    echo '{"configuration": {}}' > "$GNS3_SITE/config/malcolm/malcolm-config.json"
+    run run_gns3 labnet malcolm-config
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"usage"* ]]
 }

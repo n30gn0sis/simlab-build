@@ -44,6 +44,7 @@ GNS3_APPLIANCES_DIR="${GNS3_APPLIANCES_DIR:-/srv/gns3/appliances}"
 GNS3_BRIDGE="${GNS3_BRIDGE:-br-lab}"
 GNS3_VETH_BRIDGE_SIDE="${GNS3_VETH_BRIDGE_SIDE:-lab-mon0}"
 GNS3_VETH_CAPTURE_SIDE="${GNS3_VETH_CAPTURE_SIDE:-lab-mirror0}"
+GNS3_MALCOLM_CONFIG="${GNS3_MALCOLM_CONFIG:-$GNS3_SITE/config/malcolm/malcolm-config.json}"
 
 die()  { echo "r770-gns3-deploy: $*" >&2; exit 1; }
 require_root() { [ "$(id -u)" = 0 ] || die "must run as root"; }
@@ -243,11 +244,37 @@ labnet_verify() {
     return "$ok"
 }
 
+labnet_malcolm_config() {
+    local out="${1:-}"
+    [ -n "$out" ] || die "usage: labnet malcolm-config <output-path>"
+    [ -f "$GNS3_MALCOLM_CONFIG" ] || die "$GNS3_MALCOLM_CONFIG not found"
+    python3 -c "
+import json, sys
+try:
+    with open('$GNS3_MALCOLM_CONFIG') as f:
+        d = json.load(f)
+except Exception as e:
+    print(f'could not parse $GNS3_MALCOLM_CONFIG: {e}', file=sys.stderr)
+    sys.exit(1)
+d['configuration']['captureLiveNetworkTraffic'] = True
+d['configuration']['pcapIface'] = ['$GNS3_VETH_CAPTURE_SIDE']
+with open('$out.tmp', 'w') as f:
+    json.dump(d, f, indent=2, sort_keys=False)
+    f.write('\n')
+" || { rm -f "$out.tmp"; die "could not parse $GNS3_MALCOLM_CONFIG (see above)"; }
+    mv -f "$out.tmp" "$out" || die "could not write $out"
+    echo "PASS    wrote $out (captureLiveNetworkTraffic=true, pcapIface=[$GNS3_VETH_CAPTURE_SIDE])"
+}
+
 # Dispatch labnet subcommand
 if [ "${1:-}" = "labnet" ]; then
     shift
     SUBVERB="${1:-plan}"
     [ $# -eq 0 ] || shift
+    if [ "${SUBVERB}" = "malcolm-config" ]; then
+        labnet_malcolm_config "$@"
+        exit $?
+    fi
     case "$SUBVERB" in
         plan)   require_root; labnet_plan ;;
         apply)  labnet_apply "$@" ;;

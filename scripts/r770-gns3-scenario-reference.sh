@@ -24,6 +24,14 @@
 # 192.168.100.2) and GNS3SCN_CLIENT_IP (default 192.168.100.3) -- fixed
 # addresses `run` assigns to the two netshoot nodes via `ip addr replace`
 # at run time, since the switch segment has no DHCP.
+# `verify` additions: GNS3SCN_ARKIME_API (default http://127.0.0.1:8005 --
+# Arkime's own API, on-box), GNS3SCN_ARKIME_CREDFILE (same 2-line pattern as
+# GNS3SCN_CREDFILE, default /etc/r770-gns3-scenario/arkime-credentials),
+# GNS3SCN_ZEEK_CAPTURE_LOSS_LOG (default
+# /data/pcap/zeek-live/current/capture_loss.log), GNS3SCN_VERIFY_TIMEOUT
+# (default 60s) and GNS3SCN_VERIFY_POLL_INTERVAL (default 5s) -- `verify`
+# polls Arkime's session count against run's evidence.json (capture lags
+# slightly behind the wire) and checks Zeek's capture_loss.log is <= 0.5%.
 set -uo pipefail
 
 GNS3SCN_API="${GNS3SCN_API:-https://127.0.0.1:3080/v2}"
@@ -36,6 +44,11 @@ GNS3SCN_CURL_COUNT="${GNS3SCN_CURL_COUNT:-10}"
 GNS3SCN_DIG_COUNT="${GNS3SCN_DIG_COUNT:-5}"
 GNS3SCN_SERVER_IP="${GNS3SCN_SERVER_IP:-192.168.100.2}"
 GNS3SCN_CLIENT_IP="${GNS3SCN_CLIENT_IP:-192.168.100.3}"
+GNS3SCN_ARKIME_API="${GNS3SCN_ARKIME_API:-http://127.0.0.1:8005}"
+GNS3SCN_ARKIME_CREDFILE="${GNS3SCN_ARKIME_CREDFILE:-/etc/r770-gns3-scenario/arkime-credentials}"
+GNS3SCN_ZEEK_CAPTURE_LOSS_LOG="${GNS3SCN_ZEEK_CAPTURE_LOSS_LOG:-/data/pcap/zeek-live/current/capture_loss.log}"
+GNS3SCN_VERIFY_TIMEOUT="${GNS3SCN_VERIFY_TIMEOUT:-60}"
+GNS3SCN_VERIFY_POLL_INTERVAL="${GNS3SCN_VERIFY_POLL_INTERVAL:-5}"
 
 die() { echo "r770-gns3-scenario-reference: $*" >&2; exit 1; }
 
@@ -162,10 +175,78 @@ json.dump({
     echo "PASS    drove $GNS3SCN_PING_COUNT pings, $GNS3SCN_CURL_COUNT curls, $GNS3SCN_DIG_COUNT digs, 1 iperf3 transfer -- evidence: $GNS3SCN_STATE_DIR/evidence.json"
 }
 
+check_arkime_creds() { [ -f "$GNS3SCN_ARKIME_CREDFILE" ] || die "no Arkime credentials file at $GNS3SCN_ARKIME_CREDFILE"; }
+
+expected_sessions() {  # minimum plausible Arkime session count for the driven traffic
+    python3 -c "
+import json
+d = json.load(open('$GNS3SCN_STATE_DIR/evidence.json'))
+print(1 + d['curls'] + d['digs'] + d['iperf_transfers'])
+"
+}
+
+# arkime_sessions START_TS -- same "never in argv" discipline as api() above
+# (see Task 4's review finding): credentials go to curl only via a -K -
+# config heredoc, never `-u "$(...)"`.
+arkime_sessions() {
+    local start_ts="$1" u p
+    check_arkime_creds
+    { read -r u; read -r p; } < "$GNS3SCN_ARKIME_CREDFILE"
+    curl -sf -k -K - "$GNS3SCN_ARKIME_API/api/sessions?startTime=$start_ts" <<CURLCFG
+user = "$u:$p"
+CURLCFG
+}
+
+poll_arkime_sessions() {
+    local elapsed=0 sessions start_ts
+    start_ts=$(python3 -c "
+import json,datetime
+d=json.load(open('$GNS3SCN_STATE_DIR/evidence.json'))
+print(int(datetime.datetime.fromisoformat(d['started_at'].rstrip('Z')).timestamp()))
+")
+    while [ "$elapsed" -le "$GNS3SCN_VERIFY_TIMEOUT" ]; do
+        sessions=$(arkime_sessions "$start_ts" | python3 -c "import json,sys; print(json.load(sys.stdin).get('sessions', 0))" 2>/dev/null) || sessions=0
+        [ "${sessions:-0}" -ge "$(expected_sessions)" ] && { echo "$sessions"; return 0; }
+        sleep "$GNS3SCN_VERIFY_POLL_INTERVAL"
+        elapsed=$((elapsed + GNS3SCN_VERIFY_POLL_INTERVAL + 1))
+    done
+    echo "${sessions:-0}"
+    return 1
+}
+
+cmd_verify() {
+    [ -f "$GNS3SCN_STATE_DIR/evidence.json" ] || die "no evidence file at $GNS3SCN_STATE_DIR/evidence.json -- run 'run' first"
+    local ok=0 sessions want loss
+
+    want=$(expected_sessions)
+    if sessions=$(poll_arkime_sessions); then
+        echo "PASS    Arkime sessions: $sessions (>= expected $want)"
+    else
+        echo "FAIL    Arkime session count never reached $want within ${GNS3SCN_VERIFY_TIMEOUT}s (saw $sessions)"
+        ok=1
+    fi
+
+    if [ -f "$GNS3SCN_ZEEK_CAPTURE_LOSS_LOG" ]; then
+        loss=$(awk '{print $3}' "$GNS3SCN_ZEEK_CAPTURE_LOSS_LOG" | tail -1)
+        if awk -v l="$loss" 'BEGIN{exit !(l <= 0.5)}'; then
+            echo "PASS    capture_loss ${loss}% (<= 0.5%)"
+        else
+            echo "FAIL    capture_loss ${loss}% exceeds the 0.5% threshold"
+            ok=1
+        fi
+    else
+        echo "FAIL    no capture_loss log at $GNS3SCN_ZEEK_CAPTURE_LOSS_LOG"
+        ok=1
+    fi
+
+    return "$ok"
+}
+
 VERB="${1:-build}"
 [ $# -eq 0 ] || shift
 case "$VERB" in
-    build) cmd_build "$@" ;;
-    run)   cmd_run "$@" ;;
-    *)     die "unknown verb: $VERB (expected build or run; verify lands in Task 6)" ;;
+    build)  cmd_build "$@" ;;
+    run)    cmd_run "$@" ;;
+    verify) cmd_verify "$@" ;;
+    *)      die "unknown verb: $VERB (expected build, run, or verify)" ;;
 esac

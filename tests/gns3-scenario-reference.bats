@@ -17,7 +17,7 @@ setup() {
     mkdir -p "$BIN" "$REAL" "$S" "$GNS3SCN_STATE_DIR"
     printf 'admin\nPASSWORD\n' > "$GNS3SCN_CREDFILE"
 
-    for t in bash env cat sed awk grep tr cp mv mkdir chmod rm date stat cmp find dirname basename python3; do
+    for t in bash env cat sed awk grep tr cp mv mkdir chmod rm date stat cmp find dirname basename python3 sleep tail; do
         p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$REAL/$t"
     done
     TEST_PATH="$BIN:$REAL"
@@ -176,4 +176,53 @@ JSON
     [ "$status" -eq 1 ]
     [[ "$output" == *"iperf3 -s on the server failed"* ]]
     [ ! -f "$GNS3SCN_STATE_DIR/evidence.json" ]
+}
+
+# ── verify ───────────────────────────────────────────────────────────────────
+
+setup_verify_stubs() {
+    cat > "$GNS3SCN_STATE_DIR/evidence.json" <<'JSON'
+{"pings": 20, "curls": 10, "digs": 5, "iperf_transfers": 1, "started_at": "2026-09-27T00:00:00Z"}
+JSON
+    export GNS3SCN_ARKIME_CREDFILE="$BATS_TEST_TMPDIR/arkime-creds"
+    printf 'admin\nPASSWORD\n' > "$GNS3SCN_ARKIME_CREDFILE"
+    export GNS3SCN_ZEEK_CAPTURE_LOSS_LOG="$BATS_TEST_TMPDIR/capture_loss.log"
+    export GNS3SCN_VERIFY_TIMEOUT=1
+    export GNS3SCN_VERIFY_POLL_INTERVAL=0
+    echo '{"sessions": 36}' > "$S/arkime_sessions_response"
+    echo "1.5820000000	100	0.02" > "$GNS3SCN_ZEEK_CAPTURE_LOSS_LOG"
+    sed -i "s#\*) echo \"stub-curl: unhandled#\"GET \"*\"/sessions\"*) cat \"\$S/arkime_sessions_response\" ;;\n    *) echo \"stub-curl: unhandled#" "$BIN/curl"
+}
+
+@test "verify refuses without an evidence file (run has not happened)" {
+    run run_scn verify
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"no evidence"* ]]
+}
+
+@test "verify passes when Arkime's session count meets the minimum and capture_loss is low" {
+    setup_verify_stubs
+    run run_scn verify
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PASS"*"36"* ]]
+    [[ "$output" == *"PASS"*"capture_loss"* ]]
+}
+
+@test "verify fails when capture_loss exceeds 0.5%" {
+    setup_verify_stubs
+    echo "1.5820000000	100	1.20" > "$GNS3SCN_ZEEK_CAPTURE_LOSS_LOG"
+    run run_scn verify
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL"*"capture_loss"* ]]
+}
+
+@test "verify retries within the timeout, then fails once Arkime's session count never arrives" {
+    setup_verify_stubs
+    echo '{"sessions": 0}' > "$S/arkime_sessions_response"
+    run run_scn verify
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL"*"session"* ]]
 }

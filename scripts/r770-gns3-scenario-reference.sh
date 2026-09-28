@@ -21,8 +21,9 @@
 # (default br-lab), GNS3SCN_STATE_DIR (default /var/lib/r770-gns3-scenario).
 # `run` additions: GNS3SCN_PING_COUNT (default 20), GNS3SCN_CURL_COUNT
 # (default 10), GNS3SCN_DIG_COUNT (default 5), GNS3SCN_SERVER_IP (default
-# 192.168.100.2 -- a fixed address the two netshoot nodes are given via
-# `ip addr add` at run time, since the switch segment has no DHCP).
+# 192.168.100.2) and GNS3SCN_CLIENT_IP (default 192.168.100.3) -- fixed
+# addresses `run` assigns to the two netshoot nodes via `ip addr replace`
+# at run time, since the switch segment has no DHCP.
 set -uo pipefail
 
 GNS3SCN_API="${GNS3SCN_API:-https://127.0.0.1:3080/v2}"
@@ -34,6 +35,7 @@ GNS3SCN_PING_COUNT="${GNS3SCN_PING_COUNT:-20}"
 GNS3SCN_CURL_COUNT="${GNS3SCN_CURL_COUNT:-10}"
 GNS3SCN_DIG_COUNT="${GNS3SCN_DIG_COUNT:-5}"
 GNS3SCN_SERVER_IP="${GNS3SCN_SERVER_IP:-192.168.100.2}"
+GNS3SCN_CLIENT_IP="${GNS3SCN_CLIENT_IP:-192.168.100.3}"
 
 die() { echo "r770-gns3-scenario-reference: $*" >&2; exit 1; }
 
@@ -121,6 +123,19 @@ cmd_run() {
     if [ "$client_status" != started ] || [ "$server_status" != started ]; then
         die "netshoot nodes are not started (client=$client_status server=$server_status) -- run 'build' or start the project first"
     fi
+
+    # The switch segment has no DHCP -- assign fixed addresses before driving
+    # any traffic. `ip addr replace` (not `add`) so a second `run` is a no-op
+    # here rather than an "address already exists" failure. Interface name
+    # (eth0) and the assumption that these addresses are reachable across the
+    # GNS3-managed link are unverified against a real GNS3 project -- part of
+    # Task 8's empirical confirmation (see Task 8's checklist).
+    docker exec "$client_id" ip addr replace "$GNS3SCN_CLIENT_IP/24" dev eth0 || die "could not assign $GNS3SCN_CLIENT_IP to the client"
+    docker exec "$server_id" ip addr replace "$GNS3SCN_SERVER_IP/24" dev eth0 || die "could not assign $GNS3SCN_SERVER_IP to the server"
+    # netshoot is Alpine-based, so busybox httpd should be present; without
+    # -f it daemonizes itself, so this returns once the listener is up.
+    # Also unverified against the real image -- Task 8 confirms or corrects.
+    docker exec "$server_id" busybox httpd -p 80 -h /tmp || die "could not start the HTTP listener on the server"
 
     docker exec "$server_id" iperf3 -s -D || die "iperf3 -s on the server failed"
     docker exec "$client_id" ping -c "$GNS3SCN_PING_COUNT" "$GNS3SCN_SERVER_IP" || die "ping from the client failed"

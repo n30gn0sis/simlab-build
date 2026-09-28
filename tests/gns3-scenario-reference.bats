@@ -135,6 +135,18 @@ JSON
     [ "$(grep -c 'exec c-client dig' "$S/docker_calls")" -eq 2 ]
     [ "$(grep -c 'exec c-client iperf3 -c' "$S/docker_calls")" -eq 1 ]
     [ "$(grep -c 'exec c-server iperf3 -s' "$S/docker_calls")" -eq 1 ]
+    [ "$(grep -c 'exec c-client ip addr replace 192.168.100.3/24 dev eth0' "$S/docker_calls")" -eq 1 ]
+    [ "$(grep -c 'exec c-server ip addr replace 192.168.100.2/24 dev eth0' "$S/docker_calls")" -eq 1 ]
+    [ "$(grep -c 'exec c-server busybox httpd -p 80 -h /tmp' "$S/docker_calls")" -eq 1 ]
+    # IP assignment (client, then server) and the HTTP listener happen, in
+    # that order, before any traffic-generating command.
+    client_ip_line=$(grep -n 'exec c-client ip addr replace' "$S/docker_calls" | cut -d: -f1)
+    server_ip_line=$(grep -n 'exec c-server ip addr replace' "$S/docker_calls" | cut -d: -f1)
+    httpd_line=$(grep -n 'busybox httpd' "$S/docker_calls" | cut -d: -f1)
+    iperf_s_line=$(grep -n 'exec c-server iperf3 -s' "$S/docker_calls" | cut -d: -f1)
+    [ "$client_ip_line" -lt "$server_ip_line" ]
+    [ "$server_ip_line" -lt "$httpd_line" ]
+    [ "$httpd_line" -lt "$iperf_s_line" ]
     run python3 -c "import json; d=json.load(open('$GNS3SCN_STATE_DIR/evidence.json')); print(d['pings'], d['curls'], d['digs'], d['iperf_transfers'])"
     [ "$output" = "5 3 2 1" ]
 }
@@ -145,6 +157,23 @@ JSON
     run run_scn run
     echo "$output"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"failed"* ]]
+    # The first docker exec call (the client's IP assignment) is the one
+    # that fails here, since docker_exec_rc fails every call uniformly.
+    [[ "$output" == *"could not assign"* ]]
+    [ ! -f "$GNS3SCN_STATE_DIR/evidence.json" ]
+}
+
+@test "run refuses (and writes no evidence) if a later driven command fails" {
+    setup_run_stubs
+    stub docker '
+        printf "%s\n" "$*" >> "'"$S"'/docker_calls"
+        case "$*" in
+            "exec c-server iperf3 -s"*) exit 7 ;;
+            *) exit 0 ;;
+        esac'
+    run run_scn run
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"iperf3 -s on the server failed"* ]]
     [ ! -f "$GNS3SCN_STATE_DIR/evidence.json" ]
 }

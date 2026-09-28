@@ -43,7 +43,7 @@ GNS3_IMAGES_DIR="${GNS3_IMAGES_DIR:-/srv/gns3/images}"
 GNS3_APPLIANCES_DIR="${GNS3_APPLIANCES_DIR:-/srv/gns3/appliances}"
 GNS3_BRIDGE="${GNS3_BRIDGE:-br-lab}"
 GNS3_VETH_BRIDGE_SIDE="${GNS3_VETH_BRIDGE_SIDE:-lab-mon0}"
-GNS3_VETH_CAPTURE_SIDE="${GNS3_VETH_CAPTURE_SIDE:-lab-mirror0}"
+GNS3_VETH_CAPTURE_SIDE="${GNS3_VETH_CAPTURE_SIDE:-lab_mirror0}"
 GNS3_MALCOLM_CONFIG="${GNS3_MALCOLM_CONFIG:-$GNS3_SITE/config/malcolm/malcolm-config.json}"
 
 die()  { echo "r770-gns3-deploy: $*" >&2; exit 1; }

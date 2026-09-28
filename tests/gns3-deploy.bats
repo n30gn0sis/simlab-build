@@ -196,7 +196,7 @@ touch_wheel() { : > "$GNS3_WHEELHOUSE/gns3_server-0.0.0-test-py3-none-any.whl"; 
 #
 # ip is a stub logging every invocation to $S/ip_calls and modeling bridge/
 # link state in $S/links (one name per line, "up" or "down" suffix), so
-# "does br-lab exist" and "is lab-mirror0 up" are real state, not guesses.
+# "does br-lab exist" and "is lab_mirror0 up" are real state, not guesses.
 
 setup_labnet_ip_stub() {
     : > "$S/links"
@@ -244,7 +244,7 @@ setup_labnet_ip_stub() {
     echo "$output"
     [ "$status" -eq 0 ]
     [[ "$output" == *"CREATE  bridge br-lab"* ]]
-    [[ "$output" == *"CREATE  veth lab-mon0 / lab-mirror0"* ]]
+    [[ "$output" == *"CREATE  veth lab-mon0 / lab_mirror0"* ]]
 }
 
 @test "labnet apply creates the bridge in hub mode and brings both veth ends up" {
@@ -255,9 +255,9 @@ setup_labnet_ip_stub() {
     grep -q "link add name br-lab type bridge" "$S/ip_calls"
     grep -q "br-lab type bridge ageing_time 0" "$S/ip_calls"
     grep -q "br-lab type bridge mcast_snooping 0" "$S/ip_calls"
-    grep -q "link add name lab-mon0 type veth peer name lab-mirror0" "$S/ip_calls"
+    grep -q "link add name lab-mon0 type veth peer name lab_mirror0" "$S/ip_calls"
     grep -q "lab-mon0.*master br-lab" "$S/ip_calls"
-    grep -q "lab-mirror0.*promisc on" "$S/ip_calls"
+    grep -q "lab_mirror0.*promisc on" "$S/ip_calls"
     [[ "$output" == *"PASS"* ]]
 }
 
@@ -269,15 +269,15 @@ setup_labnet_ip_stub() {
     echo "$output"
     [ "$status" -eq 0 ]
     [[ "$output" == *"KEEP    bridge br-lab already exists"* ]]
-    [[ "$output" == *"KEEP    veth lab-mon0/lab-mirror0 already exist"* ]]
+    [[ "$output" == *"KEEP    veth lab-mon0/lab_mirror0 already exist"* ]]
     ! grep -q "link add" "$S/ip_calls"
 }
 
-@test "labnet verify fails when lab-mirror0 does not exist" {
+@test "labnet verify fails when lab_mirror0 does not exist" {
     setup_labnet_ip_stub
     run run_gns3 labnet verify
     [ "$status" -eq 1 ]
-    [[ "$output" == *"FAIL"*"lab-mirror0"* ]]
+    [[ "$output" == *"FAIL"*"lab_mirror0"* ]]
 }
 
 @test "labnet verify passes once applied" {
@@ -301,7 +301,7 @@ JSON
     echo "$output"
     [ "$status" -eq 0 ]
     run python3 -c "import json; d=json.load(open('$out'))['configuration']; print(d['captureLiveNetworkTraffic'], d['pcapIface'], d['liveZeek'], d['liveArkime'], d['autoZeek'])"
-    [ "$output" = "True ['lab-mirror0'] True True True" ]
+    [ "$output" = "True ['lab_mirror0'] True True True" ]
 }
 
 @test "malcolm-config refuses on a source file that isn't valid JSON" {

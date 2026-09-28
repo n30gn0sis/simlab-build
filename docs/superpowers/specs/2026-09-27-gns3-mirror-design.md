@@ -9,7 +9,7 @@ No physical R770 is available, so this proves **offline deployability** and **th
 
 ## Decisions (operator, 2026-09-27)
 
-1. **Mirror mechanism: hub-mode Linux bridge, not OVS.** Exactly what `docs/plans/r770-network-lab-buildout.md` §7.2 already specs (`br-lab`, `ageing_time 0`, multicast snooping off, veth pair `lab-mon0`/`lab-mirror0`) — "simple before clever," and the same OS-level mechanism the real R770 will use later, so nothing here needs to change when it moves to hardware.
+1. **Mirror mechanism: hub-mode Linux bridge, not OVS.** Exactly what `docs/plans/r770-network-lab-buildout.md` §7.2 already specs (`br-lab`, `ageing_time 0`, multicast snooping off, veth pair `lab-mon0`/`lab_mirror0`) — "simple before clever," and the same OS-level mechanism the real R770 will use later, so nothing here needs to change when it moves to hardware.
 2. **One reference scenario, kept RAM-light.** Two **netshoot** Docker nodes (ping/curl/dig/iperf3/tcpdump) plus one lightweight QEMU node (Alpine or CirrOS, boot-and-ping only) on a single GNS3 switch, uplinked to `br-lab` via a Cloud node. The QEMU node exists to satisfy the buildout §13 Phase 8 validation line ("one QEMU node + one Docker node boot and pass traffic") without the RAM cost of a router appliance (VyOS etc.) on a 12 GiB VM already running 27 Malcolm services.
 3. **Tooling scope:** traffic-gen/analysis via netshoot's built-in CLI arsenal, plus this repo's own drop-accounting validation pattern (buildout §7.4). WAN impairment (`wan` skill / tc-netem) and additional/varied scenarios are explicitly **deferred** to a later pass.
 4. **This pass also re-proves the full stack is still cleanly deployable offline** from current `main` (post PR #15/#16), as the baseline the GNS3 work builds on — a fresh bundle cut + air-gapped install-test, not a new design (it's the same proven playbook run again).
@@ -19,7 +19,7 @@ No physical R770 is available, so this proves **offline deployability** and **th
 **In:**
 - A fresh bundle cut from current `main` + air-gapped install-test on staging, confirming the already-proven analyst stack still deploys clean (baseline re-proof; no new script).
 - `scripts/r770-gns3-deploy.sh` (`plan`/`apply`/`verify`) — GNS3 server install/config/auth, behind the existing `gns3.lab` nginx vhost.
-- `scripts/r770-gns3-deploy.sh labnet` (`plan`/`apply`/`verify`) — builds `br-lab`/`lab-mon0`/`lab-mirror0` and wires Malcolm's capture container to the new interface.
+- `scripts/r770-gns3-deploy.sh labnet` (`plan`/`apply`/`verify`) — builds `br-lab`/`lab-mon0`/`lab_mirror0` and wires Malcolm's capture container to the new interface.
 - One reference GNS3 topology + a traffic-driver script with known, logged traffic counts.
 - Validation: Arkime session counts and Zeek logs vs. the known counts, `capture_loss.log` ≈ 0 — the same methodology already used for the tcpreplay-based Malcolm rehearsal, now against live GNS3 traffic.
 
@@ -48,8 +48,8 @@ Every verb is idempotent and reports "already done" instead of repeating work, m
 | Verb | Does |
 |---|---|
 | `plan` | Read-only: shows current bridge/veth state (if any) and what would be created. |
-| `apply` | Creates `br-lab` (hub mode: `ageing_time 0`, multicast snooping off), the veth pair `lab-mon0` (bridge side) / `lab-mirror0` (capture side), sets `lab-mirror0` promiscuous. Extends Malcolm's capture container to also listen on `lab-mirror0` (matches Malcolm's exact existing capture-interface config line, refuses unless exactly one match, backs the compose file up first — the same discipline as `bind-loopback` in `r770-malcolm-deploy.sh`). |
-| `verify` | Both interfaces exist and are up; `lab-mirror0` is promiscuous; Malcolm's Zeek container lists `lab-mirror0` as a live capture interface. |
+| `apply` | Creates `br-lab` (hub mode: `ageing_time 0`, multicast snooping off), the veth pair `lab-mon0` (bridge side) / `lab_mirror0` (capture side), sets `lab_mirror0` promiscuous. Extends Malcolm's capture container to also listen on `lab_mirror0` (matches Malcolm's exact existing capture-interface config line, refuses unless exactly one match, backs the compose file up first — the same discipline as `bind-loopback` in `r770-malcolm-deploy.sh`). |
+| `verify` | Both interfaces exist and are up; `lab_mirror0` is promiscuous; Malcolm's Zeek container lists `lab_mirror0` as a live capture interface. |
 
 ## Reference scenario
 
@@ -75,11 +75,11 @@ Compares Arkime session counts and Zeek log entries against the traffic driver's
 
 ## R770 afterwards
 
-Same scripts run later as operator-gated steps once sub-projects 0–3 are done on the real hardware. The only difference: `lab-mirror0` sits alongside the physical TAP/SPAN feeds instead of being the only feed, and the reference scenario becomes optional (real lab traffic is the point on hardware).
+Same scripts run later as operator-gated steps once sub-projects 0–3 are done on the real hardware. The only difference: `lab_mirror0` sits alongside the physical TAP/SPAN feeds instead of being the only feed, and the reference scenario becomes optional (real lab traffic is the point on hardware).
 
 ## Risks
 
 - **RAM pressure on 9771** (12 GiB) running Malcolm's 27 services + portal + GNS3 + 3 scenario nodes concurrently. Mitigated by keeping the scenario light (2 Docker + 1 lightweight QEMU) and stopping/removing scenario nodes after the proof run.
 - **GNS3 API / container-ID resolution** for the traffic driver. Mitigated by using GNS3's documented node-list endpoint (returns Docker container names); fallback is `docker ps` filtered by the GNS3 project label.
 - **Hub-mode bridge disables normal MAC learning** — a known, accepted trade-off already reflected in the buildout plan (§7.2), fine at this traffic scale.
-- **Extra Malcolm capture interface.** Staging currently has no physical feeds, so adding `lab-mirror0` is purely additive — no existing passing config should regress.
+- **Extra Malcolm capture interface.** Staging currently has no physical feeds, so adding `lab_mirror0` is purely additive — no existing passing config should regress.

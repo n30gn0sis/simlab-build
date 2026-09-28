@@ -29,26 +29,33 @@ GNS3SCN_STATE_DIR="${GNS3SCN_STATE_DIR:-/var/lib/r770-gns3-scenario}"
 
 die() { echo "r770-gns3-scenario-reference: $*" >&2; exit 1; }
 
-creds() {
-    [ -f "$GNS3SCN_CREDFILE" ] || die "no credentials file at $GNS3SCN_CREDFILE"
-    local u p
-    { read -r u; read -r p; } < "$GNS3SCN_CREDFILE"
-    printf '%s:%s' "$u" "$p"
-}
+check_creds() { [ -f "$GNS3SCN_CREDFILE" ] || die "no credentials file at $GNS3SCN_CREDFILE"; }
 
-api() {  # api METHOD PATH [DATA]
-    local method="$1" path="$2" data="${3:-}"
+# api METHOD PATH [DATA] -- credentials never touch argv, env, or a log: read
+# into local shell variables (never exported) and handed to curl only via a
+# -K - config heredoc, which the shell writes to curl's stdin directly. Do
+# NOT refactor this to `-u "$(creds)"` or any other form that puts the
+# user:pass string into a command's own argv (visible via ps/proc) -- that
+# was Task 4's one real review finding, fixed here.
+api() {
+    local method="$1" path="$2" data="${3:-}" u p
+    check_creds
+    { read -r u; read -r p; } < "$GNS3SCN_CREDFILE"
     if [ -n "$data" ]; then
-        curl -sf -k -u "$(creds)" -X "$method" -H 'Content-Type: application/json' -d "$data" "$GNS3SCN_API$path"
+        curl -sf -k -K - -X "$method" -H 'Content-Type: application/json' -d "$data" "$GNS3SCN_API$path" <<CURLCFG
+user = "$u:$p"
+CURLCFG
     else
-        curl -sf -k -u "$(creds)" -X "$method" "$GNS3SCN_API$path"
+        curl -sf -k -K - -X "$method" "$GNS3SCN_API$path" <<CURLCFG
+user = "$u:$p"
+CURLCFG
     fi
 }
 
 json_get() { python3 -c "import json,sys; print(json.load(sys.stdin)$1)"; }
 
 cmd_build() {
-    creds >/dev/null
+    check_creds
     mkdir -p "$GNS3SCN_STATE_DIR" || die "could not create $GNS3SCN_STATE_DIR"
 
     if [ -f "$GNS3SCN_STATE_DIR/project_id" ]; then

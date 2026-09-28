@@ -110,7 +110,7 @@ WantedBy=multi-user.target" > "$GNS3_SERVICE_TEMPLATE"
 
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$BIN/$1"; chmod +x "$BIN/$1"; }
 run_gns3() { PATH="$TEST_PATH" "$SCRIPT" "$@"; }
-touch_wheel() { : > "$GNS3_WHEELHOUSE/gns3_server-3.0.6-py3-none-any.whl"; }
+touch_wheel() { : > "$GNS3_WHEELHOUSE/gns3_server-0.0.0-test-py3-none-any.whl"; }
 
 @test "refuses to run as a non-root user" {
     FAKE_UID=1000 run run_gns3 plan

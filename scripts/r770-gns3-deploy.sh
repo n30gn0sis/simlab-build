@@ -258,12 +258,14 @@ except Exception as e:
     sys.exit(1)
 d['configuration']['captureLiveNetworkTraffic'] = True
 d['configuration']['pcapIface'] = ['$GNS3_VETH_CAPTURE_SIDE']
+d['configuration']['liveZeek'] = True
+d['configuration']['liveArkime'] = True
 with open('$out.tmp', 'w') as f:
     json.dump(d, f, indent=2, sort_keys=False)
     f.write('\n')
 " || { rm -f "$out.tmp"; die "could not parse $GNS3_MALCOLM_CONFIG (see above)"; }
     mv -f "$out.tmp" "$out" || die "could not write $out"
-    echo "PASS    wrote $out (captureLiveNetworkTraffic=true, pcapIface=[$GNS3_VETH_CAPTURE_SIDE])"
+    echo "PASS    wrote $out (captureLiveNetworkTraffic=true, pcapIface=[$GNS3_VETH_CAPTURE_SIDE], liveZeek=true, liveArkime=true)"
 }
 
 # Dispatch labnet subcommand

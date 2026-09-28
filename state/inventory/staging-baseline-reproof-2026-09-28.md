@@ -9,10 +9,10 @@ baseline the GNS3/mirror work (Tasks 1–6, already merged into this branch) bui
 
 - Cut from branch `claude/gns3-malcolm-mirror` (started at commit `2a01d11`, later amended in
   place to include the `r770-airgap-sim.sh` fix below — final commit `1462298`).
-- `bundle-20260928` on VM 9771: 15 GB, 1641 files. Seeded from `bundle-20260926` (docs/gns3
-  server-docs tarball reused, manifest-verified) — only `site/` (this repo's scripts/config/
-  analyst-wiki), `apt/`, and `enrichment/` fetched fresh, per the fetch script's own seeding
-  design. `site/` carries 42 files, confirmed from commit `1462298` (includes
+- `bundle-20260928` on VM 9771: 15 GB, 1641 files. Seeded from `bundle-20260926` (the GNS3
+  server's own upstream docs tarball reused, manifest-verified) — only `site/` (this repo's
+  `scripts/`, `config/`, and `docs/analyst-wiki/`), `apt/`, and `enrichment/` fetched fresh, per
+  the fetch script's own seeding design. `site/` carries 42 files, confirmed from commit `1462298` (includes
   `r770-gns3-deploy.sh`, `r770-gns3-scenario-reference.sh`, the fixed `r770-airgap-sim.sh`).
 - `./r770-bundle.sh verify . --strict` → **PASS** (exit 0), on both the build location
   (`~/simlab-build/bundle-20260928`) and the deployed copy (`/data/staging/bundle-20260928`),

@@ -291,17 +291,17 @@ setup_labnet_ip_stub() {
 
 # ── labnet malcolm-config ────────────────────────────────────────────────────
 
-@test "malcolm-config patches captureLiveNetworkTraffic and pcapIface, nothing else" {
+@test "malcolm-config patches captureLiveNetworkTraffic, pcapIface, liveZeek and liveArkime, nothing else" {
     mkdir -p "$GNS3_SITE/config/malcolm"
     cat > "$GNS3_SITE/config/malcolm/malcolm-config.json" <<'JSON'
-{"configuration": {"captureLiveNetworkTraffic": false, "pcapIface": [], "autoZeek": true}}
+{"configuration": {"captureLiveNetworkTraffic": false, "pcapIface": [], "liveZeek": false, "liveArkime": false, "autoZeek": true}}
 JSON
     out="$BATS_TEST_TMPDIR/patched.json"
     run run_gns3 labnet malcolm-config "$out"
     echo "$output"
     [ "$status" -eq 0 ]
-    run python3 -c "import json; d=json.load(open('$out'))['configuration']; print(d['captureLiveNetworkTraffic'], d['pcapIface'], d['autoZeek'])"
-    [ "$output" = "True ['lab-mirror0'] True" ]
+    run python3 -c "import json; d=json.load(open('$out'))['configuration']; print(d['captureLiveNetworkTraffic'], d['pcapIface'], d['liveZeek'], d['liveArkime'], d['autoZeek'])"
+    [ "$output" = "True ['lab-mirror0'] True True True" ]
 }
 
 @test "malcolm-config refuses on a source file that isn't valid JSON" {

@@ -193,3 +193,98 @@ touch_wheel() { : > "$GNS3_WHEELHOUSE/gns3_server-3.0.6-py3-none-any.whl"; }
     [ "$status" -eq 1 ]
     [[ "$output" == *"FAIL"*"not active"* ]]
 }
+
+# ── labnet ───────────────────────────────────────────────────────────────────
+#
+# ip is a stub logging every invocation to $S/ip_calls and modeling bridge/
+# link state in $S/links (one name per line, "up" or "down" suffix), so
+# "does br-lab exist" and "is lab-mirror0 up" are real state, not guesses.
+
+setup_labnet_ip_stub() {
+    : > "$S/links"
+    # Export S so the stub script can use it
+    export S="$S"
+    stub ip '
+        printf "%s\n" "$*" >> "$S/ip_calls"
+        case "$1 $2" in
+            "link add") shift 2; name=""
+                for a; do case "$prev" in name) name="$a";; esac; prev="$a"; done
+                echo "${name} down" >> "$S/links" ;;
+        esac
+        case "$*" in
+            *"link show"*)
+                name="${*##*link show }"; name="${name%% *}"
+                grep -q "^${name} " "$S/links" || exit 1
+                exit 0 ;;
+            *"link set"*"up"*)
+                name=""
+                set -- $*
+                shift 2
+                for a; do [ "$a" != "up" ] && [ "$a" != "dev" ] && [ "$a" != "promisc" ] && [ "$a" != "on" ] && [ "$a" != "type" ] && [ "$a" != "veth" ] && [ "$a" != "peer" ] && [ "$a" != "name" ] && name="$a"; done
+                echo "${name} up" >> "$S/links"
+                exit 0 ;;
+            *"link add name br-lab type bridge"*) echo "br-lab down" >> "$S/links"; exit 0 ;;
+            *"link add"*"type veth peer name"*)
+                a="${*#*name }"; a="${a%% *}"
+                b="${*##*peer name }"
+                echo "$a down" >> "$S/links"
+                echo "$b down" >> "$S/links"
+                exit 0 ;;
+            *"link set"*"master br-lab"*) exit 0 ;;
+            *"link set br-lab type bridge"*) exit 0 ;;
+            *"link set"*"promisc on"*) exit 0 ;;
+            *) exit 0 ;;
+        esac
+    '
+}
+
+@test "labnet plan on empty state proposes creating br-lab and the veth pair" {
+    setup_labnet_ip_stub
+    run run_gns3 labnet plan
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"CREATE  bridge br-lab"* ]]
+    [[ "$output" == *"CREATE  veth lab-mon0 / lab-mirror0"* ]]
+}
+
+@test "labnet apply creates the bridge in hub mode and brings both veth ends up" {
+    setup_labnet_ip_stub
+    run run_gns3 labnet apply
+    echo "$output"; cat "$S/ip_calls"
+    [ "$status" -eq 0 ]
+    grep -q "link add name br-lab type bridge" "$S/ip_calls"
+    grep -q "br-lab type bridge ageing_time 0" "$S/ip_calls"
+    grep -q "br-lab type bridge mcast_snooping 0" "$S/ip_calls"
+    grep -q "link add name lab-mon0 type veth peer name lab-mirror0" "$S/ip_calls"
+    grep -q "lab-mon0.*master br-lab" "$S/ip_calls"
+    grep -q "lab-mirror0.*promisc on" "$S/ip_calls"
+    [[ "$output" == *"PASS"* ]]
+}
+
+@test "a second labnet apply is a no-op" {
+    setup_labnet_ip_stub
+    run_gns3 labnet apply
+    : > "$S/ip_calls"
+    run run_gns3 labnet apply
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"KEEP    bridge br-lab already exists"* ]]
+    [[ "$output" == *"KEEP    veth lab-mon0/lab-mirror0 already exist"* ]]
+    ! grep -q "link add" "$S/ip_calls"
+}
+
+@test "labnet verify fails when lab-mirror0 does not exist" {
+    setup_labnet_ip_stub
+    run run_gns3 labnet verify
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL"*"lab-mirror0"* ]]
+}
+
+@test "labnet verify passes once applied" {
+    setup_labnet_ip_stub
+    run_gns3 labnet apply
+    run run_gns3 labnet verify
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^PASS' <<< "$output")" -ge 3 ]
+}

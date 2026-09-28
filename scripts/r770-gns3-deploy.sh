@@ -41,9 +41,15 @@ GNS3_USER="${GNS3_USER:-gns3}"
 GNS3_PROJECTS_DIR="${GNS3_PROJECTS_DIR:-/srv/gns3/projects}"
 GNS3_IMAGES_DIR="${GNS3_IMAGES_DIR:-/srv/gns3/images}"
 GNS3_APPLIANCES_DIR="${GNS3_APPLIANCES_DIR:-/srv/gns3/appliances}"
+GNS3_BRIDGE="${GNS3_BRIDGE:-br-lab}"
+GNS3_VETH_BRIDGE_SIDE="${GNS3_VETH_BRIDGE_SIDE:-lab-mon0}"
+GNS3_VETH_CAPTURE_SIDE="${GNS3_VETH_CAPTURE_SIDE:-lab-mirror0}"
 
 die()  { echo "r770-gns3-deploy: $*" >&2; exit 1; }
 require_root() { [ "$(id -u)" = 0 ] || die "must run as root"; }
+
+link_exists() { ip link show "$1" >/dev/null 2>&1; }
+link_up()     { ip link show "$1" 2>/dev/null | grep -q ' up'; }
 
 wheel_present() { ls "$GNS3_WHEELHOUSE"/gns3?server-*.whl >/dev/null 2>&1; }
 
@@ -186,6 +192,70 @@ cmd_verify() {
     fi
     return "$ok"
 }
+
+labnet_plan() {
+    echo "== r770-gns3-deploy labnet plan =="
+    if link_exists "$GNS3_BRIDGE"; then
+        echo "KEEP    bridge $GNS3_BRIDGE already exists"
+    else
+        echo "CREATE  bridge $GNS3_BRIDGE (hub mode: ageing_time 0, mcast_snooping 0)"
+    fi
+    if link_exists "$GNS3_VETH_BRIDGE_SIDE" && link_exists "$GNS3_VETH_CAPTURE_SIDE"; then
+        echo "KEEP    veth $GNS3_VETH_BRIDGE_SIDE/$GNS3_VETH_CAPTURE_SIDE already exist"
+    else
+        echo "CREATE  veth $GNS3_VETH_BRIDGE_SIDE / $GNS3_VETH_CAPTURE_SIDE"
+    fi
+    echo "== plan only -- no changes made =="
+}
+
+labnet_apply() {
+    require_root
+    [ $# -eq 0 ] || die "unknown argument: $1"
+    if link_exists "$GNS3_BRIDGE"; then
+        echo "KEEP    bridge $GNS3_BRIDGE already exists"
+    else
+        ip link add name "$GNS3_BRIDGE" type bridge || die "ip link add $GNS3_BRIDGE failed"
+        ip link set "$GNS3_BRIDGE" type bridge ageing_time 0 || die "ip link set $GNS3_BRIDGE ageing_time 0 failed"
+        ip link set "$GNS3_BRIDGE" type bridge mcast_snooping 0 || die "ip link set $GNS3_BRIDGE mcast_snooping 0 failed"
+        ip link set "$GNS3_BRIDGE" up || die "ip link set $GNS3_BRIDGE up failed"
+        echo "CREATE  bridge $GNS3_BRIDGE (hub mode)"
+    fi
+    if link_exists "$GNS3_VETH_BRIDGE_SIDE" && link_exists "$GNS3_VETH_CAPTURE_SIDE"; then
+        echo "KEEP    veth $GNS3_VETH_BRIDGE_SIDE/$GNS3_VETH_CAPTURE_SIDE already exist"
+    else
+        ip link add name "$GNS3_VETH_BRIDGE_SIDE" type veth peer name "$GNS3_VETH_CAPTURE_SIDE" ||
+            die "ip link add veth $GNS3_VETH_BRIDGE_SIDE/$GNS3_VETH_CAPTURE_SIDE failed"
+        ip link set "$GNS3_VETH_BRIDGE_SIDE" master "$GNS3_BRIDGE" || die "ip link set $GNS3_VETH_BRIDGE_SIDE master $GNS3_BRIDGE failed"
+        ip link set "$GNS3_VETH_BRIDGE_SIDE" up || die "ip link set $GNS3_VETH_BRIDGE_SIDE up failed"
+        ip link set "$GNS3_VETH_CAPTURE_SIDE" promisc on || die "ip link set $GNS3_VETH_CAPTURE_SIDE promisc on failed"
+        ip link set "$GNS3_VETH_CAPTURE_SIDE" up || die "ip link set $GNS3_VETH_CAPTURE_SIDE up failed"
+        echo "CREATE  veth $GNS3_VETH_BRIDGE_SIDE / $GNS3_VETH_CAPTURE_SIDE"
+    fi
+    echo "PASS    labnet applied ($GNS3_BRIDGE floods to $GNS3_VETH_CAPTURE_SIDE)"
+}
+
+labnet_verify() {
+    [ $# -eq 0 ] || die "unknown argument: $1"
+    local ok=0
+    if link_exists "$GNS3_BRIDGE"; then echo "PASS    bridge $GNS3_BRIDGE exists"; else echo "FAIL    bridge $GNS3_BRIDGE missing"; ok=1; fi
+    if link_exists "$GNS3_VETH_CAPTURE_SIDE"; then echo "PASS    $GNS3_VETH_CAPTURE_SIDE exists"; else echo "FAIL    $GNS3_VETH_CAPTURE_SIDE missing"; ok=1; fi
+    if link_up "$GNS3_VETH_CAPTURE_SIDE"; then echo "PASS    $GNS3_VETH_CAPTURE_SIDE is up"; else echo "FAIL    $GNS3_VETH_CAPTURE_SIDE is not up"; ok=1; fi
+    return "$ok"
+}
+
+# Dispatch labnet subcommand
+if [ "${1:-}" = "labnet" ]; then
+    shift
+    SUBVERB="${1:-plan}"
+    [ $# -eq 0 ] || shift
+    case "$SUBVERB" in
+        plan)   require_root; labnet_plan ;;
+        apply)  labnet_apply "$@" ;;
+        verify) labnet_verify "$@" ;;
+        *)      die "unknown labnet verb: $SUBVERB (expected plan, apply, verify)" ;;
+    esac
+    exit $?
+fi
 
 VERB="${1:-plan}"
 [ $# -eq 0 ] || shift

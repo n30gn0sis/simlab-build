@@ -35,8 +35,12 @@
 # 192.168.100.2) and GNS3SCN_CLIENT_IP (default 192.168.100.3) -- fixed
 # addresses `run` assigns to the two netshoot nodes via `ip addr replace`
 # at run time, since the switch segment has no DHCP.
-# `verify` additions: GNS3SCN_ARKIME_API (default http://127.0.0.1:8005 --
-# Arkime's own API, on-box), GNS3SCN_ARKIME_CREDFILE (same 2-line pattern as
+# `verify` additions: GNS3SCN_ARKIME_API (default
+# https://127.0.0.1:8443/arkime -- Arkime is not exposed on its own port;
+# Malcolm's nginx portal (r770-malcolm-deploy.sh's bind-loopback) fronts it
+# under /arkime/ on the same loopback HTTPS endpoint used for everything
+# else, confirmed live in Task 8 against r770-malcolm-deploy.sh's own
+# working cmd_verify), GNS3SCN_ARKIME_CREDFILE (same 2-line pattern as
 # GNS3SCN_CREDFILE, default /etc/r770-gns3-scenario/arkime-credentials),
 # GNS3SCN_ZEEK_CAPTURE_LOSS_LOG (default
 # /data/pcap/zeek-live/current/capture_loss.log), GNS3SCN_VERIFY_TIMEOUT
@@ -56,7 +60,7 @@ GNS3SCN_CURL_COUNT="${GNS3SCN_CURL_COUNT:-10}"
 GNS3SCN_DIG_COUNT="${GNS3SCN_DIG_COUNT:-5}"
 GNS3SCN_SERVER_IP="${GNS3SCN_SERVER_IP:-192.168.100.2}"
 GNS3SCN_CLIENT_IP="${GNS3SCN_CLIENT_IP:-192.168.100.3}"
-GNS3SCN_ARKIME_API="${GNS3SCN_ARKIME_API:-http://127.0.0.1:8005}"
+GNS3SCN_ARKIME_API="${GNS3SCN_ARKIME_API:-https://127.0.0.1:8443/arkime}"
 GNS3SCN_ARKIME_CREDFILE="${GNS3SCN_ARKIME_CREDFILE:-/etc/r770-gns3-scenario/arkime-credentials}"
 GNS3SCN_ZEEK_CAPTURE_LOSS_LOG="${GNS3SCN_ZEEK_CAPTURE_LOSS_LOG:-/data/pcap/zeek-live/current/capture_loss.log}"
 GNS3SCN_VERIFY_TIMEOUT="${GNS3SCN_VERIFY_TIMEOUT:-60}"
@@ -238,10 +242,11 @@ print(1 + d['curls'] + d['digs'] + d['iperf_transfers'])
 # (see Task 4's review finding): credentials go to curl only via a -K -
 # config heredoc, never `-u "$(...)"`.
 arkime_sessions() {
-    local start_ts="$1" u p
+    local start_ts="$1" stop_ts u p
     check_arkime_creds
     { read -r u; read -r p; } < "$GNS3SCN_ARKIME_CREDFILE"
-    curl -sf -k -K - "$GNS3SCN_ARKIME_API/api/sessions?startTime=$start_ts" <<CURLCFG
+    stop_ts=$(( $(date +%s) + 60 ))
+    curl -sf -k -K - "$GNS3SCN_ARKIME_API/api/sessions?startTime=$start_ts&stopTime=$stop_ts" <<CURLCFG
 user = "$u:$p"
 CURLCFG
 }
@@ -254,7 +259,10 @@ d=json.load(open('$GNS3SCN_STATE_DIR/evidence.json'))
 print(int(datetime.datetime.fromisoformat(d['started_at'].rstrip('Z')).timestamp()))
 ")
     while [ "$elapsed" -le "$GNS3SCN_VERIFY_TIMEOUT" ]; do
-        sessions=$(arkime_sessions "$start_ts" | python3 -c "import json,sys; print(json.load(sys.stdin).get('sessions', 0))" 2>/dev/null) || sessions=0
+        # Arkime's sessions API returns {"recordsFiltered": N, ...}, not
+        # {"sessions": N} -- confirmed against r770-malcolm-deploy.sh's own
+        # working cmd_verify (same endpoint) in Task 8.
+        sessions=$(arkime_sessions "$start_ts" | python3 -c "import json,sys; print(json.load(sys.stdin).get('recordsFiltered', 0))" 2>/dev/null) || sessions=0
         [ "${sessions:-0}" -ge "$(expected_sessions)" ] && { echo "$sessions"; return 0; }
         sleep "$GNS3SCN_VERIFY_POLL_INTERVAL"
         elapsed=$((elapsed + GNS3SCN_VERIFY_POLL_INTERVAL + 1))

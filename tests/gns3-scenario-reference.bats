@@ -226,7 +226,7 @@ JSON
     export GNS3SCN_ZEEK_CAPTURE_LOSS_LOG="$BATS_TEST_TMPDIR/capture_loss.log"
     export GNS3SCN_VERIFY_TIMEOUT=1
     export GNS3SCN_VERIFY_POLL_INTERVAL=0
-    echo '{"sessions": 36}' > "$S/arkime_sessions_response"
+    echo '{"recordsFiltered": 36}' > "$S/arkime_sessions_response"
     echo "1.5820000000	100	0.02" > "$GNS3SCN_ZEEK_CAPTURE_LOSS_LOG"
     sed -i "s#\*) echo \"stub-curl: unhandled#\"GET \"*\"/sessions\"*) cat \"\$S/arkime_sessions_response\" ;;\n    *) echo \"stub-curl: unhandled#" "$BIN/curl"
 }
@@ -257,7 +257,7 @@ JSON
 
 @test "verify retries within the timeout, then fails once Arkime's session count never arrives" {
     setup_verify_stubs
-    echo '{"sessions": 0}' > "$S/arkime_sessions_response"
+    echo '{"recordsFiltered": 0}' > "$S/arkime_sessions_response"
     run run_scn verify
     echo "$output"
     [ "$status" -eq 1 ]

@@ -185,10 +185,13 @@ cmd_run() {
     # Task 8's empirical confirmation (see Task 8's checklist).
     docker exec "$client_id" ip addr replace "$GNS3SCN_CLIENT_IP/24" dev eth0 || die "could not assign $GNS3SCN_CLIENT_IP to the client"
     docker exec "$server_id" ip addr replace "$GNS3SCN_SERVER_IP/24" dev eth0 || die "could not assign $GNS3SCN_SERVER_IP to the server"
-    # netshoot is Alpine-based, so busybox httpd should be present; without
-    # -f it daemonizes itself, so this returns once the listener is up.
-    # Also unverified against the real image -- Task 8 confirms or corrects.
-    docker exec "$server_id" busybox httpd -p 80 -h /tmp || die "could not start the HTTP listener on the server"
+    # busybox httpd was assumed present (netshoot is Alpine-based) but this
+    # image's busybox has no httpd applet at all (`busybox --list` omits it
+    # -- confirmed live in Task 8). python3 is present instead; `docker exec
+    # -d` runs it detached from this exec session, matching plain `docker
+    # exec` running it in the foreground failing to survive the call return.
+    docker exec -d "$server_id" python3 -m http.server 80 --directory /tmp || die "could not start the HTTP listener on the server"
+    sleep 1
 
     docker exec "$server_id" iperf3 -s -D || die "iperf3 -s on the server failed"
     docker exec "$client_id" ping -c "$GNS3SCN_PING_COUNT" "$GNS3SCN_SERVER_IP" || die "ping from the client failed"

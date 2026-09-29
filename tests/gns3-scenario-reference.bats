@@ -158,12 +158,12 @@ JSON
     [ "$(grep -c 'exec c-server iperf3 -s' "$S/docker_calls")" -eq 1 ]
     [ "$(grep -c 'exec c-client ip addr replace 192.168.100.3/24 dev eth0' "$S/docker_calls")" -eq 1 ]
     [ "$(grep -c 'exec c-server ip addr replace 192.168.100.2/24 dev eth0' "$S/docker_calls")" -eq 1 ]
-    [ "$(grep -c 'exec c-server busybox httpd -p 80 -h /tmp' "$S/docker_calls")" -eq 1 ]
+    [ "$(grep -c -- '-d c-server python3 -m http.server 80 --directory /tmp' "$S/docker_calls")" -eq 1 ]
     # IP assignment (client, then server) and the HTTP listener happen, in
     # that order, before any traffic-generating command.
     client_ip_line=$(grep -n 'exec c-client ip addr replace' "$S/docker_calls" | cut -d: -f1)
     server_ip_line=$(grep -n 'exec c-server ip addr replace' "$S/docker_calls" | cut -d: -f1)
-    httpd_line=$(grep -n 'busybox httpd' "$S/docker_calls" | cut -d: -f1)
+    httpd_line=$(grep -n 'http.server' "$S/docker_calls" | cut -d: -f1)
     iperf_s_line=$(grep -n 'exec c-server iperf3 -s' "$S/docker_calls" | cut -d: -f1)
     [ "$client_ip_line" -lt "$server_ip_line" ]
     [ "$server_ip_line" -lt "$httpd_line" ]

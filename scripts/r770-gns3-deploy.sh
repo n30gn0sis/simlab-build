@@ -255,20 +255,21 @@ labnet_malcolm_config() {
     [ -f "$GNS3_MALCOLM_CONFIG" ] || die "$GNS3_MALCOLM_CONFIG not found"
     python3 -c "
 import json, sys
+src_path, out_path, iface = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
-    with open('$GNS3_MALCOLM_CONFIG') as f:
+    with open(src_path) as f:
         d = json.load(f)
 except Exception as e:
-    print(f'could not parse $GNS3_MALCOLM_CONFIG: {e}', file=sys.stderr)
+    print(f'could not parse {src_path}: {e}', file=sys.stderr)
     sys.exit(1)
 d['configuration']['captureLiveNetworkTraffic'] = True
-d['configuration']['pcapIface'] = ['$GNS3_VETH_CAPTURE_SIDE']
+d['configuration']['pcapIface'] = [iface]
 d['configuration']['liveZeek'] = True
 d['configuration']['liveArkime'] = True
-with open('$out.tmp', 'w') as f:
+with open(out_path, 'w') as f:
     json.dump(d, f, indent=2, sort_keys=False)
     f.write('\n')
-" || { rm -f "$out.tmp"; die "could not parse $GNS3_MALCOLM_CONFIG (see above)"; }
+" "$GNS3_MALCOLM_CONFIG" "$out.tmp" "$GNS3_VETH_CAPTURE_SIDE" || { rm -f "$out.tmp"; die "could not parse $GNS3_MALCOLM_CONFIG (see above)"; }
     mv -f "$out.tmp" "$out" || die "could not write $out"
     echo "PASS    wrote $out (captureLiveNetworkTraffic=true, pcapIface=[$GNS3_VETH_CAPTURE_SIDE], liveZeek=true, liveArkime=true)"
 }

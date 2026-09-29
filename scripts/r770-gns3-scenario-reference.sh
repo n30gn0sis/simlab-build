@@ -136,10 +136,16 @@ cmd_build() {
     alpine_id=$(api POST "/projects/$proj_id/nodes" "{\"name\":\"alpine1\",\"node_type\":\"qemu\",\"compute_id\":\"local\",\"properties\":{\"platform\":\"x86_64\",\"cdrom_image\":\"$GNS3SCN_ALPINE_ISO\",\"ram\":256,\"adapters\":1}}" | json_get "['node_id']") ||
         die "alpine node create failed"
 
-    local peer
+    # Each link uses a distinct port on the switch side (port_number
+    # incrementing per peer) -- an ethernet_switch has one port per
+    # connection, and reusing port 0 for every link leaves only the first
+    # one succeed; the rest 409 "Port is already used" (confirmed live
+    # against the real server in Task 8).
+    local peer switch_port=0
     for peer in "$cloud_id" "$client_id" "$server_id" "$alpine_id"; do
-        api POST "/projects/$proj_id/links" "{\"nodes\":[{\"node_id\":\"$switch_id\",\"adapter_number\":0,\"port_number\":0},{\"node_id\":\"$peer\",\"adapter_number\":0,\"port_number\":0}]}" >/dev/null ||
+        api POST "/projects/$proj_id/links" "{\"nodes\":[{\"node_id\":\"$switch_id\",\"adapter_number\":0,\"port_number\":$switch_port},{\"node_id\":\"$peer\",\"adapter_number\":0,\"port_number\":0}]}" >/dev/null ||
             die "link to $peer failed"
+        switch_port=$((switch_port + 1))
     done
 
     api POST "/projects/$proj_id/nodes/start" >/dev/null || die "project start failed"

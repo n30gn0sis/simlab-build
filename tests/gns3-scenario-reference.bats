@@ -77,6 +77,12 @@ run_scn() { PATH="$TEST_PATH" "$SCRIPT" "$@"; }
     [ "$(grep -c 'POST.*/nodes$' "$S/curl_calls")" -eq 5 ]
     [ "$(grep -c 'POST.*/links$' "$S/curl_calls")" -eq 4 ]
     [ "$(grep -c 'POST.*/start$' "$S/curl_calls")" -ge 1 ]
+    # Each link must use a distinct switch-side port_number (node-1 is
+    # switch1 in this stub's node counter) -- reusing port 0 for every link
+    # leaves the switch with only one working connection and GNS3 409s
+    # "Port is already used" on the rest (confirmed live in Task 8).
+    switch_ports=$(grep -oP '"node_id":"node-1","adapter_number":0,"port_number":\K[0-9]+' "$S/curl_calls" | sort -n | tr '\n' ',')
+    [ "$switch_ports" = "0,1,2,3," ]
     # GNS3 v3's EthernetPort schema requires an explicit "type":"ethernet" in
     # every ports_mapping entry (422 without it) -- confirmed empirically
     # against the live server in Task 8; pin it so it can't silently regress.

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 #
 # r770-gns3-scenario-reference.sh -- the one reference GNS3 topology proving
-# the virtual mirror feed: an Ethernet switch connecting two `netshoot`
-# Docker nodes and one `alpine-linux` QEMU node, with a Cloud node bound to
-# the host's br-lab bridge itself (GNS3SCN_BRIDGE_IFACE, default br-lab).
+# the virtual mirror feed: an Ethernet HUB (not a switch -- a real switch's
+# MAC learning stops forwarding unicast traffic to the cloud/mirror port
+# after the first exchange; confirmed live in Task 8) connecting two
+# `netshoot` Docker nodes and one `alpine-linux` QEMU node, with a Cloud
+# node bound to the host's br-lab bridge itself (GNS3SCN_BRIDGE_IFACE,
+# default br-lab).
 #
 #   build   create the project/nodes/links if absent, start it (no-op if the
 #           project already exists)
@@ -124,13 +127,22 @@ cmd_build() {
         return 0
     fi
 
-    local proj_id switch_id cloud_id client_id server_id alpine_id
+    local proj_id hub_id cloud_id client_id server_id alpine_id
     proj_id=$(api POST /projects "{\"name\":\"$GNS3SCN_PROJECT_NAME\"}" | json_get "['project_id']") ||
         die "project create failed"
     echo "$proj_id" > "$GNS3SCN_STATE_DIR/project_id"
 
-    switch_id=$(api POST "/projects/$proj_id/nodes" '{"name":"switch1","node_type":"ethernet_switch","compute_id":"local"}' | json_get "['node_id']") ||
-        die "switch node create failed"
+    # ethernet_hub, not ethernet_switch: a real switch learns MAC addresses
+    # and, once it has, forwards unicast traffic between the two netshoot
+    # nodes ONLY out the port it learned their MACs on -- never out the
+    # cloud/mirror-bound port -- so nothing but broadcast/ARP would ever
+    # reach Malcolm. Confirmed live in Task 8: tcpdump on lab_mirror0 caught
+    # a broadcast ARP request but zero packets of a directly-following ping.
+    # A hub floods every frame to every port, matching the exact "hub-mode"
+    # principle the host-level br-lab bridge already uses for the same
+    # reason (buildout §7.2) -- this node is that same tap, one layer in.
+    hub_id=$(api POST "/projects/$proj_id/nodes" '{"name":"hub1","node_type":"ethernet_hub","compute_id":"local"}' | json_get "['node_id']") ||
+        die "hub node create failed"
     cloud_id=$(api POST "/projects/$proj_id/nodes" "{\"name\":\"cloud1\",\"node_type\":\"cloud\",\"compute_id\":\"local\",\"properties\":{\"ports_mapping\":[{\"type\":\"ethernet\",\"interface\":\"$GNS3SCN_BRIDGE_IFACE\",\"name\":\"$GNS3SCN_BRIDGE_IFACE\",\"port_number\":0}]}}" | json_get "['node_id']") ||
         die "cloud node create failed"
     client_id=$(api POST "/projects/$proj_id/nodes" '{"name":"netshoot-client","node_type":"docker","compute_id":"local","properties":{"image":"nicolaka/netshoot:latest","start_command":"sleep infinity"}}' | json_get "['node_id']") ||
@@ -140,16 +152,15 @@ cmd_build() {
     alpine_id=$(api POST "/projects/$proj_id/nodes" "{\"name\":\"alpine1\",\"node_type\":\"qemu\",\"compute_id\":\"local\",\"properties\":{\"platform\":\"x86_64\",\"cdrom_image\":\"$GNS3SCN_ALPINE_ISO\",\"ram\":256,\"adapters\":1}}" | json_get "['node_id']") ||
         die "alpine node create failed"
 
-    # Each link uses a distinct port on the switch side (port_number
-    # incrementing per peer) -- an ethernet_switch has one port per
-    # connection, and reusing port 0 for every link leaves only the first
-    # one succeed; the rest 409 "Port is already used" (confirmed live
-    # against the real server in Task 8).
-    local peer switch_port=0
+    # Each link uses a distinct port on the hub side (port_number
+    # incrementing per peer) -- reusing port 0 for every link leaves only
+    # the first one succeed; the rest 409 "Port is already used" (confirmed
+    # live against the real server in Task 8).
+    local peer hub_port=0
     for peer in "$cloud_id" "$client_id" "$server_id" "$alpine_id"; do
-        api POST "/projects/$proj_id/links" "{\"nodes\":[{\"node_id\":\"$switch_id\",\"adapter_number\":0,\"port_number\":$switch_port},{\"node_id\":\"$peer\",\"adapter_number\":0,\"port_number\":0}]}" >/dev/null ||
+        api POST "/projects/$proj_id/links" "{\"nodes\":[{\"node_id\":\"$hub_id\",\"adapter_number\":0,\"port_number\":$hub_port},{\"node_id\":\"$peer\",\"adapter_number\":0,\"port_number\":0}]}" >/dev/null ||
             die "link to $peer failed"
-        switch_port=$((switch_port + 1))
+        hub_port=$((hub_port + 1))
     done
 
     api POST "/projects/$proj_id/nodes/start" >/dev/null || die "project start failed"

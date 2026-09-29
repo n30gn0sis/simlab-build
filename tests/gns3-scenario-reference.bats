@@ -66,23 +66,30 @@ run_scn() { PATH="$TEST_PATH" "$SCRIPT" "$@"; }
     [[ "$output" == *"credentials"* ]]
 }
 
-@test "build creates a project, an ethernet switch, a cloud node, 2 netshoot nodes, 1 alpine node, links them, and starts the project" {
+@test "build creates a project, an ethernet hub, a cloud node, 2 netshoot nodes, 1 alpine node, links them, and starts the project" {
     run run_scn build
     echo "$output"; cat "$S/curl_calls"
     [ "$status" -eq 0 ]
     [ "$(grep -c 'POST.*/projects$' "$S/curl_calls")" -eq 1 ]
-    # 5 node objects: switch1, cloud1 (bound to GNS3SCN_BRIDGE_IFACE), netshoot-client,
+    # 5 node objects: hub1, cloud1 (bound to GNS3SCN_BRIDGE_IFACE), netshoot-client,
     # netshoot-server, alpine1 -- the Interfaces section's "4 nodes ... plus a Cloud
     # node" is 5 distinct GNS3 node-API objects, all created via POST .../nodes.
     [ "$(grep -c 'POST.*/nodes$' "$S/curl_calls")" -eq 5 ]
     [ "$(grep -c 'POST.*/links$' "$S/curl_calls")" -eq 4 ]
     [ "$(grep -c 'POST.*/start$' "$S/curl_calls")" -ge 1 ]
-    # Each link must use a distinct switch-side port_number (node-1 is
-    # switch1 in this stub's node counter) -- reusing port 0 for every link
-    # leaves the switch with only one working connection and GNS3 409s
+    # ethernet_hub, not ethernet_switch: a real switch's MAC learning stops
+    # forwarding unicast traffic to the cloud/mirror port after the first
+    # exchange between the two directly-connected netshoot nodes -- proven
+    # live in Task 8 via tcpdump on lab_mirror0 (broadcast ARP arrived,
+    # ping traffic never did). Pin it so it can't silently regress.
+    [ "$(grep -c 'hub1.*"node_type":"ethernet_hub"' "$S/curl_calls")" -eq 1 ]
+    [ "$(grep -c '"node_type":"ethernet_switch"' "$S/curl_calls")" -eq 0 ]
+    # Each link must use a distinct hub-side port_number (node-1 is
+    # hub1 in this stub's node counter) -- reusing port 0 for every link
+    # leaves the hub with only one working connection and GNS3 409s
     # "Port is already used" on the rest (confirmed live in Task 8).
-    switch_ports=$(grep -oP '"node_id":"node-1","adapter_number":0,"port_number":\K[0-9]+' "$S/curl_calls" | sort -n | tr '\n' ',')
-    [ "$switch_ports" = "0,1,2,3," ]
+    hub_ports=$(grep -oP '"node_id":"node-1","adapter_number":0,"port_number":\K[0-9]+' "$S/curl_calls" | sort -n | tr '\n' ',')
+    [ "$hub_ports" = "0,1,2,3," ]
     # GNS3 v3's EthernetPort schema requires an explicit "type":"ethernet" in
     # every ports_mapping entry (422 without it) -- confirmed empirically
     # against the live server in Task 8; pin it so it can't silently regress.

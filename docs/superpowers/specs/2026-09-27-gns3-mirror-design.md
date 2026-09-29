@@ -55,7 +55,7 @@ Every verb is idempotent and reports "already done" instead of repeating work, m
 
 Not a phase-gating script — a GNS3 project definition plus a small traffic-driver:
 
-- **Topology:** one GNS3 Ethernet switch connecting two `netshoot` Docker nodes (client/server) and one QEMU node (Alpine or CirrOS); the switch's uplink goes to a Cloud node bound to `br-lab`.
+- **Topology:** one GNS3 Ethernet **hub** (not a switch -- MAC learning stops a switch from forwarding unicast traffic to the mirror-bound port after the first exchange, confirmed live in Task 8) connecting two `netshoot` Docker nodes (client/server) and one QEMU node (Alpine or CirrOS); the hub's uplink goes to a Cloud node bound to `br-lab`.
 - **Traffic driver** (`scripts/r770-gns3-scenario-reference.sh run`): resolves the netshoot nodes' container IDs via the GNS3 API's node list, then runs a fixed, logged sequence — N pings, M `curl` requests against a simple HTTP listener on the peer, K `dig` queries, one short `iperf3` transfer — and writes the expected counts to an evidence file.
 - **QEMU node's role:** boot and answer a ping on the shared switch — satisfies buildout §13's Phase 8 line without adding a router appliance.
 

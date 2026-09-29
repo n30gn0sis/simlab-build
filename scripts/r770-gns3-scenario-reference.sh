@@ -199,8 +199,14 @@ cmd_run() {
     for ((i = 0; i < GNS3SCN_CURL_COUNT; i++)); do
         docker exec "$client_id" curl -s "http://$GNS3SCN_SERVER_IP/" -o /dev/null || die "curl #$((i+1)) from the client failed"
     done
+    # Nothing in this reference topology runs a DNS server -- there is none
+    # to add without real added complexity, and none is needed: the point is
+    # the DNS-shaped UDP query hitting the wire for Malcolm to capture and
+    # log, not that it gets answered. dig always exits non-zero here (no
+    # server ever replies), confirmed live in Task 8 -- warn, don't die.
     for ((i = 0; i < GNS3SCN_DIG_COUNT; i++)); do
-        docker exec "$client_id" dig "@$GNS3SCN_SERVER_IP" example.lab || die "dig #$((i+1)) from the client failed"
+        docker exec "$client_id" dig "@$GNS3SCN_SERVER_IP" example.lab ||
+            echo "WARN    dig #$((i+1)) got no answer (expected -- no DNS server in this topology; the query itself is the point)"
     done
     docker exec "$client_id" iperf3 -c "$GNS3SCN_SERVER_IP" -t 2 || die "iperf3 -c from the client failed"
 

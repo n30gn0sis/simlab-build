@@ -199,6 +199,22 @@ JSON
     [ ! -f "$GNS3SCN_STATE_DIR/evidence.json" ]
 }
 
+@test "run tolerates a dig failure (no DNS server exists in this topology) and still writes evidence" {
+    setup_run_stubs
+    stub docker '
+        printf "%s\n" "$*" >> "'"$S"'/docker_calls"
+        case "$*" in
+            "exec c-client dig"*) exit 9 ;;
+            *) exit 0 ;;
+        esac'
+    GNS3SCN_DIG_COUNT=2 run run_scn run
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARN"*"dig #1"* ]]
+    [[ "$output" == *"WARN"*"dig #2"* ]]
+    [ -f "$GNS3SCN_STATE_DIR/evidence.json" ]
+}
+
 # ── verify ───────────────────────────────────────────────────────────────────
 
 setup_verify_stubs() {

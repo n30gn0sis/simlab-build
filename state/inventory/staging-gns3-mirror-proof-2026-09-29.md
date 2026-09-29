@@ -137,3 +137,14 @@ Every traffic type `run` drove is independently visible in Malcolm's own live ca
 with counts matching or closely matching (DNS retry multiplication is dig's own expected
 behavior, not a bug) what was actually generated. This is the proof this sub-project set out to
 produce: **a GNS3 lab's traffic appears in Malcolm.**
+
+## Wrap-up: an operational near-miss, corrected
+
+`r770-staging-vm.sh stop` was run without `STAGING_VMID=9771` at the end of this proof, which
+defaults to VM **9770** (a different, unrelated staging VM) rather than 9771 (the one this entire
+session ran on). This stopped 9770, not 9771, for a few seconds before being caught. Corrected
+immediately: 9770 was started back up (confirmed running again, `onboot 0` so this is a normal,
+reversible state for it between sessions), then 9771 was stopped correctly with the explicit
+`STAGING_VMID=9771`. No evidence any concurrent work was disrupted on 9770, but this was not
+positively confirmed either way. Final state, verified: 9770 running, 9771 stopped. Credentials
+(`/tmp/gns3-creds` and other temp files on 9771) were deleted before the stop.

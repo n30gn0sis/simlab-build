@@ -1,6 +1,6 @@
 # Sub-project 4 — GNS3, virtual mirror feed, and one reference scenario
 
-**Date:** 2026-09-27 · **Status:** design approved by operator, not yet implemented
+**Date:** 2026-09-27 · **Status:** implemented and proven offline on staging VM 9771, 2026-09-29 (`state/inventory/staging-gns3-mirror-proof-2026-09-29.md`) — done: a GNS3 lab's traffic appears in Malcolm. Not yet run on real R770 hardware (none available). Branch `claude/gns3-malcolm-mirror`, not yet merged.
 **Part of:** "deploy and configure the analyst stack" (`docs/superpowers/specs/2026-09-24-bundle-to-r770-design.md` §"The larger goal") — sub-project 4: "Lab bridges/NAT, GNS3 behind `gns3.lab`, virtual mirror feed" (Phases 7 [partial], 8, 11). Done when: **a GNS3 lab's traffic appears in Malcolm.**
 
 ## Why now, and what "done" proves

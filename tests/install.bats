@@ -64,3 +64,43 @@ EOF
     [ "$status" -eq 1 ]
     [[ "$output" == *"unrecognized status"* ]]
 }
+
+@test "STEP_IDS lists storage before the sub-project 2 steps, in dependency order" {
+    run bash -c "source '$SCRIPT' --source-only; echo \"\${STEP_IDS[@]}\""
+    [ "$status" -eq 0 ]
+    [ "$output" = "storage labca malcolm portal ufw" ]
+}
+
+@test "step_gated is true for storage and ufw, false for labca/malcolm/portal" {
+    run bash -c "source '$SCRIPT' --source-only; step_gated storage"
+    [ "$status" -eq 0 ]
+    run bash -c "source '$SCRIPT' --source-only; step_gated ufw"
+    [ "$status" -eq 0 ]
+    run bash -c "source '$SCRIPT' --source-only; step_gated labca"
+    [ "$status" -eq 1 ]
+    run bash -c "source '$SCRIPT' --source-only; step_gated malcolm"
+    [ "$status" -eq 1 ]
+    run bash -c "source '$SCRIPT' --source-only; step_gated portal"
+    [ "$status" -eq 1 ]
+}
+
+@test "step_build_state_phase resolves storage to phase 3 and fails for labca" {
+    run bash -c "source '$SCRIPT' --source-only; step_build_state_phase storage"
+    [ "$status" -eq 0 ]
+    [ "$output" = "3" ]
+    run bash -c "source '$SCRIPT' --source-only; step_build_state_phase labca"
+    [ "$status" -eq 1 ]
+}
+
+@test "step_registered is false before any adapter is defined" {
+    run bash -c "source '$SCRIPT' --source-only; step_registered storage"
+    [ "$status" -eq 1 ]
+}
+
+@test "step_registered is true once the four verb functions exist" {
+    run bash -c "source '$SCRIPT' --source-only
+        storage_check() { :; }; storage_plan() { :; }
+        storage_apply() { :; }; storage_verify() { :; }
+        step_registered storage"
+    [ "$status" -eq 0 ]
+}

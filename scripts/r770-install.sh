@@ -48,6 +48,32 @@ phase_status() {
     printf '%s\n' "$status"
 }
 
+STEP_IDS=(storage labca malcolm portal ufw)
+
+step_gated() {
+    case "$1" in
+        storage|ufw) return 0 ;;
+        labca|malcolm|portal) return 1 ;;
+        *) die "step_gated: unknown step '$1'" ;;
+    esac
+}
+
+step_build_state_phase() {
+    case "$1" in
+        storage) printf '3\n'; return 0 ;;
+        labca|malcolm|portal|ufw) return 1 ;;
+        *) die "step_build_state_phase: unknown step '$1'" ;;
+    esac
+}
+
+step_registered() {
+    local id=$1
+    declare -F "${id}_check" >/dev/null \
+        && declare -F "${id}_plan" >/dev/null \
+        && declare -F "${id}_apply" >/dev/null \
+        && declare -F "${id}_verify" >/dev/null
+}
+
 if [ "${1:-}" = "--source-only" ]; then
     return 0 2>/dev/null || exit 0
 fi

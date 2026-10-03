@@ -74,6 +74,79 @@ step_registered() {
         && declare -F "${id}_verify" >/dev/null
 }
 
+# run_step <id> <build_state_file> [--confirm]
+run_step() {
+    local id=$1 bsfile=$2 confirm=${3:-}
+
+    if ! step_registered "$id"; then
+        printf 'run_step: %s — not yet implemented, stopping here\n' "$id" >&2
+        return 3
+    fi
+
+    local phase
+    if phase=$(step_build_state_phase "$id" 2>/dev/null); then
+        local st
+        st=$(phase_status "$phase" "$bsfile")
+        if [ "$st" = APPLIED ] || [ "$st" = VERIFIED ]; then
+            return 0
+        fi
+    fi
+
+    local check_rc
+    if "${id}_check"; then
+        check_rc=0
+    else
+        check_rc=$?
+    fi
+    if [ "$check_rc" -eq 2 ]; then
+        printf 'run_step: %s — unmet dependency, stopping here\n' "$id" >&2
+        return 2
+    elif [ "$check_rc" -ne 0 ]; then
+        return 1
+    fi
+
+    if step_gated "$id"; then
+        if [ "$confirm" != "--confirm" ]; then
+            "${id}_plan"
+            printf 'run_step: %s is gated — review the plan above, then re-run with --confirm\n' "$id" >&2
+            return 2
+        fi
+    fi
+
+    "${id}_apply" || return $?
+    "${id}_verify"
+}
+
+# main [--only id1,id2,...] [--confirm]
+main() {
+    local only="" confirm=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --only) only=$2; shift 2 ;;
+            --confirm) confirm=--confirm; shift ;;
+            *) die "main: unknown argument '$1'" ;;
+        esac
+    done
+
+    local ids=("${STEP_IDS[@]}")
+    if [ -n "$only" ]; then
+        IFS=',' read -r -a ids <<< "$only"
+    fi
+
+    local id rc
+    for id in "${ids[@]}"; do
+        if run_step "$id" "${INSTALL_BUILD_STATE:-state/BUILD-STATE.md}" "$confirm"; then
+            rc=0
+        else
+            rc=$?
+        fi
+        if [ "$rc" -ne 0 ]; then
+            return "$rc"
+        fi
+    done
+    return 0
+}
+
 if [ "${1:-}" = "--source-only" ]; then
     return 0 2>/dev/null || exit 0
 fi

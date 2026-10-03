@@ -8,7 +8,7 @@
 
 setup() {
     SCRIPT="$BATS_TEST_DIRNAME/../scripts/r770-install.sh"
-    T="$BATS_TEST_TMPDIR"
+    export T="$BATS_TEST_TMPDIR"
     export BS="$T/BUILD-STATE.md"
 }
 
@@ -103,4 +103,115 @@ EOF
         storage_apply() { :; }; storage_verify() { :; }
         step_registered storage"
     [ "$status" -eq 0 ]
+}
+
+fake_adapter() {
+    # fake_adapter <id> <check_exit> <apply_exit> <verify_exit>
+    local id=$1
+    eval "${id}_check() { echo \"${id}_check\" >> \"$T/calls\"; return $2; }"
+    eval "${id}_plan()  { echo \"${id}_plan\"  >> \"$T/calls\"; return 0; }"
+    eval "${id}_apply() { echo \"${id}_apply\" >> \"$T/calls\"; return $3; }"
+    eval "${id}_verify(){ echo \"${id}_verify\" >> \"$T/calls\"; return $4; }"
+}
+
+@test "run_step skips a step whose mapped BUILD-STATE phase is already VERIFIED" {
+    make_build_state   # phase 1 is VERIFIED in the fixture; alias storage to it for this test
+    run bash -c "
+        source '$SCRIPT' --source-only
+        step_build_state_phase() { [ \"\$1\" = storage ] && echo 1 || return 1; }
+        $(declare -f fake_adapter); fake_adapter storage 0 0 0
+        run_step storage '$BS'"
+    [ "$status" -eq 0 ]
+    [ ! -f "$T/calls" ]   # never even called check — BUILD-STATE already says VERIFIED
+}
+
+@test "run_step halts with exit 3 on the first unregistered step" {
+    run bash -c "source '$SCRIPT' --source-only; run_step labca '$BS'"
+    [ "$status" -eq 3 ]
+    [[ "$output" == *"not yet implemented"* ]]
+}
+
+@test "run_step halts with exit 2 at a gated step with no --confirm, printing the plan" {
+    run bash -c "
+        source '$SCRIPT' --source-only
+        step_build_state_phase() { return 1; }
+        $(declare -f fake_adapter); fake_adapter storage 0 0 0
+        run_step storage '$BS'"
+    [ "$status" -eq 2 ]
+    grep -q storage_plan "$T/calls"
+    ! grep -q storage_apply "$T/calls"
+}
+
+@test "run_step proceeds through apply+verify at a gated step when --confirm is given" {
+    run bash -c "
+        source '$SCRIPT' --source-only
+        step_build_state_phase() { return 1; }
+        $(declare -f fake_adapter); fake_adapter storage 0 0 0
+        run_step storage '$BS' --confirm"
+    [ "$status" -eq 0 ]
+    grep -q storage_check "$T/calls"
+    grep -q storage_apply "$T/calls"
+    grep -q storage_verify "$T/calls"
+}
+
+@test "run_step prints the unmet-dependency message rather than silently dying to errexit" {
+    run bash -c "
+        source '$SCRIPT' --source-only
+        step_build_state_phase() { return 1; }
+        storage_check() { return 2; }; storage_plan() { :; }; storage_apply() { :; }; storage_verify() { :; }
+        run_step storage '$BS'"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"unmet dependency"* ]]
+}
+
+@test "run_step re-checks before apply across two separate invocations (not trusting an earlier plan)" {
+    # Each CLI invocation of r770-install.sh is its own process; this
+    # exercises that reality directly rather than two bare calls in one
+    # process (which set -e would short-circuit after the first failure).
+    run bash -c "
+        source '$SCRIPT' --source-only
+        step_build_state_phase() { return 1; }
+        storage_check() { echo storage_check >> '$T/calls'; return 0; }
+        storage_plan() { :; }; storage_apply() { :; return 0; }; storage_verify() { :; return 0; }
+        run_step storage '$BS'"
+    [ "$status" -eq 2 ]
+    run bash -c "
+        source '$SCRIPT' --source-only
+        step_build_state_phase() { return 1; }
+        storage_check() { echo storage_check >> '$T/calls'; return 0; }
+        storage_plan() { :; }; storage_apply() { :; return 0; }; storage_verify() { :; return 0; }
+        run_step storage '$BS' --confirm"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c storage_check "$T/calls")" -eq 2 ]
+}
+
+@test "run_step surfaces a non-gated step's apply failure as exit 1 with real output" {
+    run bash -c "
+        source '$SCRIPT' --source-only
+        step_build_state_phase() { return 1; }
+        $(declare -f fake_adapter); fake_adapter labca 0 1 0
+        run_step labca '$BS'"
+    [ "$status" -eq 1 ]
+}
+
+@test "run_step passes through exit 4 from an adapter (ufw-style armed state) unchanged" {
+    run bash -c "
+        source '$SCRIPT' --source-only
+        step_build_state_phase() { return 1; }
+        ufw_check() { return 0; }; ufw_plan() { :; }
+        ufw_apply() { echo 'armed — needs a new-session confirm' >&2; return 4; }
+        ufw_verify() { :; }
+        run_step ufw '$BS' --confirm"
+    [ "$status" -eq 4 ]
+}
+
+@test "main stops the whole run at the first halting step and does not run later ones" {
+    run bash -c "
+        source '$SCRIPT' --source-only
+        step_build_state_phase() { return 1; }
+        $(declare -f fake_adapter)
+        fake_adapter storage 0 0 0
+        main --only storage,labca --confirm"
+    [ "$status" -eq 3 ]   # labca has no real adapter defined in this test
+    grep -q storage_apply "$T/calls"
 }

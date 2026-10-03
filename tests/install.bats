@@ -92,8 +92,8 @@ EOF
     [ "$status" -eq 1 ]
 }
 
-@test "step_registered is false before any adapter is defined" {
-    run bash -c "source '$SCRIPT' --source-only; step_registered storage"
+@test "step_registered is false for a step with no adapter functions defined" {
+    run bash -c "source '$SCRIPT' --source-only; step_registered notreal"
     [ "$status" -eq 1 ]
 }
 
@@ -126,7 +126,9 @@ fake_adapter() {
 }
 
 @test "run_step halts with exit 3 on the first unregistered step" {
-    run bash -c "source '$SCRIPT' --source-only; run_step labca '$BS'"
+    # "notreal" stands in for a future sub-project (e.g. docker) that has a
+    # STEP_IDS entry but no script yet — every real step today is registered.
+    run bash -c "source '$SCRIPT' --source-only; run_step notreal '$BS'"
     [ "$status" -eq 3 ]
     [[ "$output" == *"not yet implemented"* ]]
 }
@@ -205,13 +207,26 @@ fake_adapter() {
     [ "$status" -eq 4 ]
 }
 
+@test "--list prints every step with its gated and registered status" {
+    run bash "$SCRIPT" --list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"storage"*"gated"* ]]
+    [[ "$output" == *"labca"*"not gated"* ]]
+}
+
+@test "an unknown flag exits 1 with a usage message" {
+    run bash "$SCRIPT" --bogus
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"usage"* ]]
+}
+
 @test "main stops the whole run at the first halting step and does not run later ones" {
     run bash -c "
         source '$SCRIPT' --source-only
         step_build_state_phase() { return 1; }
         $(declare -f fake_adapter)
         fake_adapter storage 0 0 0
-        main --only storage,labca --confirm"
-    [ "$status" -eq 3 ]   # labca has no real adapter defined in this test
+        main --only storage,notreal --confirm"
+    [ "$status" -eq 3 ]   # notreal has no adapter — stands in for a future sub-project
     grep -q storage_apply "$T/calls"
 }

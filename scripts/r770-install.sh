@@ -14,6 +14,10 @@
 # verifies — that's the record, not the input.
 set -euo pipefail
 
+adapters="$(dirname "${BASH_SOURCE[0]}")/r770-install-adapters.sh"
+# shellcheck disable=SC1090
+[ -r "$adapters" ] && source "$adapters"
+
 die()  { printf 'REFUSE  %s\n' "$*" >&2; exit 1; }
 
 # phase_status <phase_num> <build_state_file>
@@ -147,8 +151,25 @@ main() {
     return 0
 }
 
+usage() {
+    die "usage: r770-install.sh [--list | --only id1,id2,... ] [--confirm]"
+}
+
+cmd_list() {
+    local id gated reg
+    for id in "${STEP_IDS[@]}"; do
+        step_gated "$id" && gated=gated || gated="not gated"
+        step_registered "$id" && reg=registered || reg="not yet implemented"
+        printf '%-10s %-10s %s\n' "$id" "$gated" "$reg"
+    done
+}
+
 if [ "${1:-}" = "--source-only" ]; then
     return 0 2>/dev/null || exit 0
 fi
 
-die "scripts/r770-install.sh: no further CLI yet — later tasks add --list/--only/--confirm"
+case "${1:-}" in
+    --list) cmd_list ;;
+    --only|--confirm|"") main "$@" ;;
+    *) usage ;;
+esac

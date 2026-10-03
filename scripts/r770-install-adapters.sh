@@ -63,3 +63,30 @@ portal_apply() {
 portal_verify() {
     "$PORTAL" verify "$@"
 }
+
+MALCOLM_DEPLOY=${MALCOLM_DEPLOY:-"$(dirname "${BASH_SOURCE[0]}")/r770-malcolm-deploy.sh"}
+
+malcolm_check() {
+    "$MALCOLM_DEPLOY" health
+}
+
+malcolm_plan() {
+    # No native dry-run verb; health is the closest read-only view of
+    # current state. Known limitation, not a true diff — see the design
+    # spec's "contract mismatch" risk.
+    "$MALCOLM_DEPLOY" health
+}
+
+malcolm_apply() {
+    local verb
+    for verb in load assert-tags install configure auth bind-loopback start health; do
+        if ! "$MALCOLM_DEPLOY" "$verb"; then
+            printf 'malcolm_apply: halted — %s failed\n' "$verb" >&2
+            return 1
+        fi
+    done
+}
+
+malcolm_verify() {
+    "$MALCOLM_DEPLOY" verify
+}

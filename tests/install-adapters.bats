@@ -130,3 +130,50 @@ EOF
     APPLY_EXIT=1 run bash -c "source '$ADAPTERS'; portal_apply"
     [ "$status" -eq 1 ]
 }
+
+stub_malcolm() {
+    cat > "$MALCOLM_DEPLOY" <<EOF
+#!/usr/bin/env bash
+echo "malcolm \$1" >> "$T/calls"
+if [ -n "\${FAIL_AT:-}" ] && [ "\$1" = "\$FAIL_AT" ]; then exit 1; fi
+case "\$1" in
+    health) exit "\${HEALTH_EXIT:-0}" ;;
+    verify) exit "\${VERIFY_EXIT:-0}" ;;
+esac
+exit 0
+EOF
+    chmod +x "$MALCOLM_DEPLOY"
+}
+
+@test "malcolm_check runs health as a read-only proxy for current state" {
+    export MALCOLM_DEPLOY="$T/malcolm.sh"; stub_malcolm
+    run bash -c "source '$ADAPTERS'; malcolm_check"
+    [ "$status" -eq 0 ]
+    grep -q "malcolm health" "$T/calls"
+}
+
+@test "malcolm_apply runs every sub-verb in order on a clean run" {
+    export MALCOLM_DEPLOY="$T/malcolm.sh"; stub_malcolm
+    run bash -c "source '$ADAPTERS'; malcolm_apply"
+    [ "$status" -eq 0 ]
+    for v in load assert-tags install configure auth bind-loopback start health; do
+        grep -q "malcolm $v" "$T/calls"
+    done
+}
+
+@test "malcolm_apply halts at the first sub-verb that fails and runs nothing after it" {
+    export MALCOLM_DEPLOY="$T/malcolm.sh"; stub_malcolm
+    FAIL_AT=auth run bash -c "source '$ADAPTERS'; malcolm_apply"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"auth"* ]]
+    grep -q "malcolm configure" "$T/calls"
+    ! grep -q "malcolm bind-loopback" "$T/calls"
+    ! grep -q "malcolm start" "$T/calls"
+}
+
+@test "malcolm_verify calls the real verify verb" {
+    export MALCOLM_DEPLOY="$T/malcolm.sh"; stub_malcolm
+    VERIFY_EXIT=0 run bash -c "source '$ADAPTERS'; malcolm_verify"
+    [ "$status" -eq 0 ]
+    grep -q "malcolm verify" "$T/calls"
+}

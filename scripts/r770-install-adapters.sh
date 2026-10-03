@@ -25,3 +25,23 @@ storage_verify() {
     # the sub-project 0 spec's Part 2.2 step 4 runs by hand after apply.
     "$PHASE3_RUN" check
 }
+
+LAB_CA=${LAB_CA:-"$(dirname "${BASH_SOURCE[0]}")/r770-lab-ca.sh"}
+
+labca_check() {
+    # r770-lab-ca.sh never regenerates an existing CA, so apply is always
+    # safe to invoke — check has nothing to block on.
+    return 0
+}
+
+labca_plan() {
+    "$LAB_CA" plan
+}
+
+labca_apply() {
+    "$LAB_CA" apply "$@"
+}
+
+labca_verify() {
+    "$LAB_CA" verify
+}

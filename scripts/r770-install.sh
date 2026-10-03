@@ -164,12 +164,10 @@ cmd_list() {
     done
 }
 
-if [ "${1:-}" = "--source-only" ]; then
-    return 0 2>/dev/null || exit 0
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    case "${1:-}" in
+        --list) cmd_list ;;
+        --only|--confirm|"") main "$@" ;;
+        *) usage ;;
+    esac
 fi
-
-case "${1:-}" in
-    --list) cmd_list ;;
-    --only|--confirm|"") main "$@" ;;
-    *) usage ;;
-esac

@@ -177,3 +177,44 @@ EOF
     [ "$status" -eq 0 ]
     grep -q "malcolm verify" "$T/calls"
 }
+
+stub_ufw() {
+    cat > "$UFW_SCRIPT" <<EOF
+#!/usr/bin/env bash
+echo "ufw \$*" >> "$T/calls"
+case "\$1" in
+    plan)   exit "\${PLAN_EXIT:-0}" ;;
+    apply)  exit "\${APPLY_EXIT:-0}" ;;
+    verify) exit "\${VERIFY_EXIT:-0}" ;;
+    confirm) exit "\${CONFIRM_EXIT:-0}" ;;
+esac
+EOF
+    chmod +x "$UFW_SCRIPT"
+}
+
+@test "ufw_check exits 0 (plan shows SKIP rows when nothing changed)" {
+    export UFW_SCRIPT="$T/ufw.sh"; stub_ufw
+    run bash -c "source '$ADAPTERS'; ufw_check"
+    [ "$status" -eq 0 ]
+}
+
+@test "ufw_apply exits 4 on a successful arm, never calling confirm itself" {
+    export UFW_SCRIPT="$T/ufw.sh"; stub_ufw
+    APPLY_EXIT=0 run bash -c "source '$ADAPTERS'; ufw_apply"
+    [ "$status" -eq 4 ]
+    [[ "$output" == *"new"*"session"* ]] || [[ "$output" == *"confirm"* ]]
+    ! grep -q "ufw confirm" "$T/calls"
+}
+
+@test "ufw_apply exits 1, not 4, when the real apply itself failed" {
+    export UFW_SCRIPT="$T/ufw.sh"; stub_ufw
+    APPLY_EXIT=1 run bash -c "source '$ADAPTERS'; ufw_apply"
+    [ "$status" -eq 1 ]
+}
+
+@test "ufw_verify calls the real verify verb" {
+    export UFW_SCRIPT="$T/ufw.sh"; stub_ufw
+    VERIFY_EXIT=0 run bash -c "source '$ADAPTERS'; ufw_verify"
+    [ "$status" -eq 0 ]
+    grep -q "ufw verify" "$T/calls"
+}

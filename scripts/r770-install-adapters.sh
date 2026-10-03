@@ -90,3 +90,28 @@ malcolm_apply() {
 malcolm_verify() {
     "$MALCOLM_DEPLOY" verify
 }
+
+UFW_SCRIPT=${UFW_SCRIPT:-"$(dirname "${BASH_SOURCE[0]}")/r770-ufw.sh"}
+
+ufw_check() {
+    "$UFW_SCRIPT" plan
+}
+
+ufw_plan() {
+    "$UFW_SCRIPT" plan
+}
+
+ufw_apply() {
+    local rc
+    "$UFW_SCRIPT" apply "$@"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        printf 'ufw_apply: armed — open a NEW ssh session and run "r770-ufw.sh confirm" to keep it, or it auto-disables\n' >&2
+        return 4
+    fi
+    return "$rc"
+}
+
+ufw_verify() {
+    "$UFW_SCRIPT" verify
+}

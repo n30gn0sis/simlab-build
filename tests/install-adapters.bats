@@ -92,3 +92,41 @@ EOF
     [ "$status" -eq 0 ]
     grep -q "lab-ca verify" "$T/calls"
 }
+
+stub_portal() {
+    cat > "$PORTAL" <<EOF
+#!/usr/bin/env bash
+echo "portal \$*" >> "$T/calls"
+case "\$1" in
+    plan)   exit "\${PLAN_EXIT:-0}" ;;
+    apply)  exit "\${APPLY_EXIT:-0}" ;;
+    verify) exit "\${VERIFY_EXIT:-0}" ;;
+esac
+EOF
+    chmod +x "$PORTAL"
+}
+
+@test "portal_check exits 0 (apply re-applies config idempotently)" {
+    export PORTAL="$T/portal.sh"; stub_portal
+    run bash -c "source '$ADAPTERS'; portal_check"
+    [ "$status" -eq 0 ]
+}
+
+@test "portal_plan, apply and verify call the matching real verb" {
+    export PORTAL="$T/portal.sh"; stub_portal
+    run bash -c "source '$ADAPTERS'; portal_plan"
+    [ "$status" -eq 0 ]
+    run bash -c "source '$ADAPTERS'; portal_apply"
+    [ "$status" -eq 0 ]
+    run bash -c "source '$ADAPTERS'; portal_verify"
+    [ "$status" -eq 0 ]
+    grep -q "portal plan" "$T/calls"
+    grep -q "portal apply" "$T/calls"
+    grep -q "portal verify" "$T/calls"
+}
+
+@test "portal_apply propagates failure" {
+    export PORTAL="$T/portal.sh"; stub_portal
+    APPLY_EXIT=1 run bash -c "source '$ADAPTERS'; portal_apply"
+    [ "$status" -eq 1 ]
+}

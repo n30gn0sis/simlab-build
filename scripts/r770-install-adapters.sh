@@ -45,3 +45,21 @@ labca_apply() {
 labca_verify() {
     "$LAB_CA" verify
 }
+
+PORTAL=${PORTAL:-"$(dirname "${BASH_SOURCE[0]}")/r770-portal.sh"}
+
+portal_check() {
+    return 0
+}
+
+portal_plan() {
+    "$PORTAL" plan "$@"
+}
+
+portal_apply() {
+    "$PORTAL" apply "$@"
+}
+
+portal_verify() {
+    "$PORTAL" verify "$@"
+}

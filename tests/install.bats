@@ -193,25 +193,32 @@ fake_adapter() {
     [[ "$output" == *"unmet dependency"* ]]
 }
 
-@test "run_step re-checks before apply across two separate invocations (not trusting an earlier plan)" {
-    # Each CLI invocation of r770-install.sh is its own process; this
-    # exercises that reality directly rather than two bare calls in one
-    # process (which set -e would short-circuit after the first failure).
+@test "run_step re-checks before apply across two separate invocations, reacting to changed state" {
+    # Each CLI invocation of r770-install.sh is its own process. The stub's
+    # check reads a sentinel file so its answer can legitimately change
+    # between the plan-review invocation and the --confirm invocation —
+    # simulating real system state changing in between (e.g. a dependency
+    # that was ready at plan time is gone by confirm time). If run_step
+    # ever trusted the first invocation's plan instead of re-checking,
+    # this would wrongly proceed to apply on the second call.
+    echo ready > "$T/check_state"
     run bash -c "
         source '$SCRIPT' --source-only
         step_build_state_phase() { return 1; }
-        storage_check() { echo storage_check >> '$T/calls'; return 0; }
-        storage_plan() { :; }; storage_apply() { :; return 0; }; storage_verify() { :; return 0; }
+        storage_check() { [ \"\$(cat '$T/check_state')\" = ready ] && return 0 || return 2; }
+        storage_plan() { :; }; storage_apply() { echo storage_apply >> '$T/calls'; return 0; }; storage_verify() { :; return 0; }
         run_step storage '$BS'"
     [ "$status" -eq 2 ]
+
+    echo gone > "$T/check_state"   # state changed after the plan was shown
     run bash -c "
         source '$SCRIPT' --source-only
         step_build_state_phase() { return 1; }
-        storage_check() { echo storage_check >> '$T/calls'; return 0; }
-        storage_plan() { :; }; storage_apply() { :; return 0; }; storage_verify() { :; return 0; }
+        storage_check() { [ \"\$(cat '$T/check_state')\" = ready ] && return 0 || return 2; }
+        storage_plan() { :; }; storage_apply() { echo storage_apply >> '$T/calls'; return 0; }; storage_verify() { :; return 0; }
         run_step storage '$BS' --confirm"
-    [ "$status" -eq 0 ]
-    [ "$(grep -c storage_check "$T/calls")" -eq 2 ]
+    [ "$status" -eq 2 ]
+    [ ! -f "$T/calls" ]   # must not have applied against now-stale information
 }
 
 @test "run_step surfaces a non-gated step's apply failure as exit 1 with real output" {

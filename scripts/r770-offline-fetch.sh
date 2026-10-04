@@ -89,14 +89,14 @@ PYTHON_BUILD_IMG="docker.io/library/python:3.12-slim"
 
 # ── stages: run all, or a selection ──────────────────────────────────────────
 # Fixed order. --only picks from it (given in any order), --skip removes from it.
-STAGES=(preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site manifest)
+STAGES=(preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site kit manifest)
 ONLY=""; SKIP=""; LIST=0; DRY_RUN=0
 usage() {
     cat <<'USAGE'
 usage: r770-offline-fetch.sh [--only s1,s2,...] [--skip s1,s2,...] [--list] [--dry-run] [-h]
 
 Runs every stage in order unless told otherwise. The stages, in run order:
-  preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site manifest
+  preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site kit manifest
 
   --only s,s   run just these (fixed order applies). NEVER implies manifest:
                finish with  --only manifest  or let r770-build-bundle.sh do it
@@ -106,6 +106,7 @@ Runs every stage in order unless told otherwise. The stages, in run order:
 
 Environment: BUNDLE_DIR  FORCE=1  SEED_FROM=<dir|none>  STAGING_CTR=<runtime>  HTTP(S)_PROXY
              SITE_SRC_ROOT=<dir>  (a git checkout of this repo the "site" stage copies from; default: this script's own repo. Refused if it isn't one.)
+             KIT_SRC_ROOT=<dir>   (a sim-lab-basic checkout the "kit" stage copies the R770 installer from. No default: a real run refuses without it, or without KIT_ARCHIVE + KIT_COMMIT.)
 A sectioned run appends to BUNDLE_NOTES.md; a full run starts it over.
 USAGE
 }
@@ -186,6 +187,35 @@ site_validate_source() {  # EITHER a git work tree OR SITE_ARCHIVE+SITE_COMMIT
     fi
 }
 want site && site_validate_source
+# The "kit" stage ships sim-lab-basic (the R770 installer) as bundle-*/kit/.
+# Unlike site/, it has NO default source: which kit checkout ships is a
+# release decision, so a real run refuses rather than guess (2026-10-03).
+# --list/--dry-run touch nothing, so there it is only a note.
+KIT_MODE=""
+kit_validate_source() {
+    if [ -n "${KIT_ARCHIVE:-}" ]; then
+        [ -s "$KIT_ARCHIVE" ] || { echo "FATAL: KIT_ARCHIVE ($KIT_ARCHIVE) is missing or empty" >&2; exit 1; }
+        [ -n "${KIT_COMMIT:-}" ] || { echo "FATAL: KIT_ARCHIVE is set but KIT_COMMIT is empty -- both travel together" >&2; exit 1; }
+        KIT_MODE="archive"; return 0
+    fi
+    [ -n "${KIT_SRC_ROOT:-}" ] || {
+        echo "FATAL: KIT_SRC_ROOT is not set -- the kit stage ships the R770 installer from a sim-lab-basic checkout and will not guess which. Set KIT_SRC_ROOT=<checkout> (or KIT_ARCHIVE + KIT_COMMIT), or leave the stage out with --skip kit." >&2
+        exit 1
+    }
+    local raw="$KIT_SRC_ROOT"
+    KIT_SRC_ROOT="$(cd -- "$raw" 2>/dev/null && pwd -P)" || { echo "FATAL: KIT_SRC_ROOT ($raw) is not a directory that can be entered" >&2; exit 1; }
+    [ -f "$KIT_SRC_ROOT/scripts/r770-install.sh" ] || { echo "FATAL: KIT_SRC_ROOT ($KIT_SRC_ROOT) doesn't look like sim-lab-basic -- scripts/r770-install.sh not found there" >&2; exit 1; }
+    git -c safe.directory="$KIT_SRC_ROOT" -C "$KIT_SRC_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+        echo "FATAL: KIT_SRC_ROOT ($KIT_SRC_ROOT) is not a git work tree -- kit/ ships tracked, committed content only" >&2; exit 1; }
+    KIT_MODE="worktree"
+}
+if want kit; then
+    if [ "$LIST" = "1" ] || [ "$DRY_RUN" = "1" ]; then
+        [ -n "${KIT_SRC_ROOT:-}${KIT_ARCHIVE:-}" ] || echo "NOTE: the kit stage will need KIT_SRC_ROOT (or KIT_ARCHIVE + KIT_COMMIT) on a real run"
+    else
+        kit_validate_source
+    fi
+fi
 # ─────────────────────────────────────────────────────────────────────────────
 
 TS="$(date +%Y%m%d)"
@@ -227,6 +257,7 @@ stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker fo
         docs)       [ "$(ls "$B/.stamps"/08-docs-*.done 2>/dev/null | wc -l)" -ge 3 ] ;;
         manual)     [ -s "$B/dell/README.txt" ] ;;
         site)       return 1 ;;   # always refreshed — never "done", see stage_site()
+        kit)        return 1 ;;   # always refreshed, like site
         manifest)   [ -s "$B/MANIFEST.sha256" ] ;;
         *)          return 1 ;;
     esac
@@ -234,7 +265,7 @@ stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker fo
 if [ "$LIST" = "1" ]; then
     echo "== stages in $B  (marker = looks complete; proof is r770-bundle.sh verify) =="
     for s in "${STAGES[@]}"; do
-        if stage_marker "$s"; then m="done"; elif [ "$s" = "preflight" ] || [ "$s" = "site" ]; then m="runs every time"; else m="-"; fi
+        if stage_marker "$s"; then m="done"; elif [ "$s" = "preflight" ] || [ "$s" = "site" ] || [ "$s" = "kit" ]; then m="runs every time"; else m="-"; fi
         printf '  %-11s %s\n' "$s" "$m"
     done
     exit 0
@@ -939,88 +970,79 @@ sitegit() {
     git -c safe.directory="$s" -C "$s" "$@"
 }
 
-# site_refuse <message...> -- the one way stage_site() gives up: log why,
-# remove any half-built site.tmp, leave a previous good site/ completely
-# alone, and exit non-zero. Never touches $B/site itself.
-site_refuse() {
-    echo "FATAL: $*" >&2
-    rm -rf "$B/site.tmp"
-    exit 1
-}
-
 # site_validate_source() itself lives up near the BUNDLE_TOOL check (~l.148),
 # ahead of its own call -- see the comment there. It sets SITE_MODE and
 # normalizes SITE_SRC_ROOT so stage_site() below never repeats that work.
 
+# ship_trees <name> <mode> <src-root> <archive> <commit> <tree...> — the one
+# implementation behind site/ and kit/: committed content only (HEAD via
+# ls-tree + cat-file, or the archive's own entries), symlinks and submodules
+# refused, secret-looking files excluded (site_excluded), built in
+# $B/<name>.tmp and moved into place only on full success. Sets SHIPPED_COMMIT.
+SHIPPED_COMMIT=""
+tree_refuse() {  # tree_refuse <name> <message...>
+    local name=$1; shift
+    echo "FATAL: $*" >&2
+    rm -rf "$B/$name.tmp"
+    exit 1
+}
+ship_trees() {
+    local name=$1 mode=$2 src=$3 archive=$4 commit=$5; shift 5
+    local trees=("$@") top rel dest fmode oid n=0 dirty="" tmp meta shown label
+    label="$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')_ARCHIVE"   # SITE_ARCHIVE / KIT_ARCHIVE, as the operator set it
+    shown="$commit"
+    rm -rf "$B/$name.tmp"; mkdir -p "$B/$name.tmp"
+    if [ "$mode" = "archive" ]; then
+        tmp="$(mktemp -d)" || tree_refuse "$name" "mktemp failed while extracting $label"
+        tar xf "$archive" -C "$tmp" || { rm -rf "$tmp"; tree_refuse "$name" "could not extract $label ($archive)"; }
+        for top in "${trees[@]}"; do
+            [ -d "$tmp/$top" ] || { rm -rf "$tmp"; tree_refuse "$name" "$top is missing from $label -- $name/ needs all of: ${trees[*]}"; }
+        done
+        while IFS= read -r -d '' rel; do
+            rel="${rel#./}"
+            if [ -L "$tmp/$rel" ]; then rm -rf "$tmp"; tree_refuse "$name" "$rel is a symlink in $label -- refusing; a symlink in $name/ could point outside the manifest"; fi
+            site_excluded "$rel" && continue
+            dest="$B/$name.tmp/$rel"; mkdir -p "$(dirname "$dest")"; cp -p "$tmp/$rel" "$dest"; n=$((n + 1))
+        done < <(cd "$tmp" && find . \( -type f -o -type l \) -print0)
+        rm -rf "$tmp"
+    else
+        commit="$(sitegit "$src" rev-parse HEAD 2>/dev/null || echo unknown)"
+        shown="$(sitegit "$src" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+        [ -n "$(sitegit "$src" status --porcelain -- "${trees[@]}" 2>/dev/null)" ] && dirty=1
+        for top in "${trees[@]}"; do
+            [ -d "$src/$top" ] || tree_refuse "$name" "$src/$top is missing -- $name/ needs all of: ${trees[*]}"
+        done
+        while IFS=$'\t' read -r -d '' meta rel; do
+            fmode="${meta%% *}"
+            case "$fmode" in
+                120000) tree_refuse "$name" "$rel is a symlink (mode 120000) -- refusing; a symlink in $name/ could point outside the manifest" ;;
+                160000) tree_refuse "$name" "$rel is a submodule (mode 160000) -- refusing; $name/ ships plain tracked files only" ;;
+            esac
+            site_excluded "$rel" && continue
+            dest="$B/$name.tmp/$rel"; mkdir -p "$(dirname "$dest")"
+            oid="${meta##* }"
+            sitegit "$src" cat-file blob "$oid" > "$dest" || tree_refuse "$name" "$rel ($oid) is tracked but unreadable via cat-file -- committed content only ships"
+            [ "$fmode" = "100755" ] && chmod +x "$dest"
+            n=$((n + 1))
+        done < <(sitegit "$src" ls-tree -r -z --full-tree HEAD -- "${trees[@]}")
+    fi
+    [ "$n" -gt 0 ] || tree_refuse "$name" "$name/ would ship 0 files -- refusing an empty $name/"
+    rm -rf "${B:?}/${name:?}"; mv "$B/$name.tmp" "$B/$name"
+    [ -n "$dirty" ] && note "WARN: $name/ built from a dirty tree; uncommitted edits NOT shipped"
+    note "$name/: $n files from $shown copied"
+    SHIPPED_COMMIT="$commit"
+}
+
 stage_site() {
 echo "==== [10/11] site/ (this repo's scripts, config, docs/analyst-wiki) ===="
-local top rel dest mode oid n commit dirty tmp
+ship_trees site "$SITE_MODE" "${SITE_SRC_ROOT:-}" "${SITE_ARCHIVE:-}" "${SITE_COMMIT:-}" "${SITE_TREES[@]}"
+}
 
-rm -rf "$B/site.tmp"
-mkdir -p "$B/site.tmp"
-n=0
-dirty=""
-
-if [ "$SITE_MODE" = "archive" ]; then
-    commit="$SITE_COMMIT"    # a pack refuses a dirty tree at pack time (cmd_pack) -- nothing to detect here
-    tmp="$(mktemp -d)" || site_refuse "mktemp failed while extracting SITE_ARCHIVE"
-    if ! tar xf "$SITE_ARCHIVE" -C "$tmp"; then
-        rm -rf "$tmp"
-        site_refuse "could not extract SITE_ARCHIVE ($SITE_ARCHIVE)"
-    fi
-    for top in "${SITE_TREES[@]}"; do
-        [ -d "$tmp/$top" ] || { rm -rf "$tmp"; site_refuse "$top is missing from SITE_ARCHIVE -- site/ needs all of: ${SITE_TREES[*]}"; }
-    done
-    while IFS= read -r -d '' rel; do
-        rel="${rel#./}"
-        if [ -L "$tmp/$rel" ]; then
-            rm -rf "$tmp"
-            site_refuse "$rel is a symlink in SITE_ARCHIVE -- refusing; a symlink in site/ could point outside the manifest"
-        fi
-        site_excluded "$rel" && continue
-        dest="$B/site.tmp/$rel"
-        mkdir -p "$(dirname "$dest")"
-        cp -p "$tmp/$rel" "$dest"
-        n=$((n + 1))
-    done < <(cd "$tmp" && find . \( -type f -o -type l \) -print0)
-    rm -rf "$tmp"
-else
-    commit="$(sitegit "$SITE_SRC_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-    [ -n "$(sitegit "$SITE_SRC_ROOT" status --porcelain -- "${SITE_TREES[@]}" 2>/dev/null)" ] && dirty=1
-
-    for top in "${SITE_TREES[@]}"; do
-        [ -d "$SITE_SRC_ROOT/$top" ] || site_refuse "$SITE_SRC_ROOT/$top is missing -- site/ needs all of: ${SITE_TREES[*]}"
-    done
-
-    # ls-tree -r -z --full-tree HEAD: mode, type, object and path in ONE call,
-    # straight from the committed tree -- never the working tree or a merely-
-    # staged index, so a `git add`ed-but-uncommitted new file is simply absent
-    # here (HEAD doesn't have it yet) rather than fatally unreadable, and a
-    # `git rm --cached` path that is still in HEAD is unaffected and ships.
-    while IFS=$'\t' read -r -d '' meta rel; do
-        mode="${meta%% *}"      # "<mode> <type> <object>" -- first token
-        case "$mode" in
-            120000) site_refuse "$rel is a symlink (mode 120000) -- refusing; a symlink in site/ could point outside the manifest" ;;
-            160000) site_refuse "$rel is a submodule (mode 160000) -- refusing; site/ ships plain tracked files only" ;;
-        esac
-        site_excluded "$rel" && continue
-        dest="$B/site.tmp/$rel"
-        mkdir -p "$(dirname "$dest")"
-        oid="${meta##* }"       # last token -- the blob object id
-        sitegit "$SITE_SRC_ROOT" cat-file blob "$oid" > "$dest" ||
-            site_refuse "$rel ($oid) is tracked but unreadable via cat-file -- committed content only ships"
-        [ "$mode" = "100755" ] && chmod +x "$dest"
-        n=$((n + 1))
-    done < <(sitegit "$SITE_SRC_ROOT" ls-tree -r -z --full-tree HEAD -- "${SITE_TREES[@]}")
-fi
-
-[ "$n" -gt 0 ] || site_refuse "site/ would ship 0 files -- refusing an empty site/"
-
-rm -rf "$B/site"
-mv "$B/site.tmp" "$B/site"
-
-[ -n "$dirty" ] && note "WARN: site/ built from a dirty tree; uncommitted edits NOT shipped"
-note "site/: $n files from $commit copied"
+KIT_TREES=(scripts config scenarios docs)
+stage_kit() {
+echo "==== [10b/11] kit/ (sim-lab-basic: the R770 installer) ===="
+ship_trees kit "$KIT_MODE" "${KIT_SRC_ROOT:-}" "${KIT_ARCHIVE:-}" "${KIT_COMMIT:-}" "${KIT_TREES[@]}"
+printf '%s\n' "$SHIPPED_COMMIT" > "$B/kit/KIT_COMMIT"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════

@@ -9,9 +9,15 @@
 # state/BUILD-STATE.md's Phase 3 row directly (one step, one phase). The
 # lab-CA/Malcolm/portal/UFW steps map to phases 10 and 13 at a coarser grain
 # than BUILD-STATE can resolve per-step, so their skip decision instead comes
-# from each script's own idempotent plan/health/verify output. BUILD-STATE
-# Phase 10/13 rows are still written once every step mapping to that phase
-# verifies — that's the record, not the input.
+# from each script's own idempotent plan/health/verify output.
+#
+# This script does NOT write state/BUILD-STATE.md itself — it only reads
+# the storage step's phase row. Recording Phase 10/13 as APPLIED/VERIFIED
+# once sub-project 2 verifies, and writing state/inventory/ evidence files,
+# stays a manual operator step (same as today) until a future task takes
+# that on with its own design — mutating a hand-maintained markdown table
+# safely wasn't in scope here and deserves its own review, not a quick
+# addition during a fix pass.
 set -euo pipefail
 
 adapters="$(dirname "${BASH_SOURCE[0]}")/r770-install-adapters.sh"

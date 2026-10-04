@@ -132,37 +132,63 @@ EOF
 }
 
 stub_malcolm() {
+    # Validates arguments the way the real r770-malcolm-deploy.sh does:
+    # load/assert-tags/install need a bundle-dir, configure needs a config
+    # path, auth/verify need --password-file. A call missing what the real
+    # script requires fails here too, so a wrong adapter can't pass by
+    # accident.
     cat > "$MALCOLM_DEPLOY" <<EOF
 #!/usr/bin/env bash
-echo "malcolm \$1" >> "$T/calls"
+echo "malcolm \$*" >> "$T/calls"
 if [ -n "\${FAIL_AT:-}" ] && [ "\$1" = "\$FAIL_AT" ]; then exit 1; fi
 case "\$1" in
-    health) exit "\${HEALTH_EXIT:-0}" ;;
-    verify) exit "\${VERIFY_EXIT:-0}" ;;
+    load|assert-tags|install)
+        [ -n "\${2:-}" ] || { echo "usage: \$1 <bundle-dir>" >&2; exit 1; } ;;
+    configure)
+        [ -n "\${2:-}" ] || { echo "usage: configure <config-json>" >&2; exit 1; } ;;
+    auth)
+        [ -n "\${2:-}" ] && [[ " \$* " == *" --password-file "* ]] \
+            || { echo "usage: auth <bundle-dir> --password-file FILE" >&2; exit 1; } ;;
+    verify)
+        [[ " \$* " == *" --password-file "* ]] \
+            || { echo "usage: verify --password-file FILE" >&2; exit 1; } ;;
 esac
 exit 0
 EOF
     chmod +x "$MALCOLM_DEPLOY"
 }
 
-@test "malcolm_check runs health as a read-only proxy for current state" {
+@test "malcolm_check never blocks — it must not fail before Malcolm is even installed" {
     export MALCOLM_DEPLOY="$T/malcolm.sh"; stub_malcolm
     run bash -c "source '$ADAPTERS'; malcolm_check"
     [ "$status" -eq 0 ]
-    grep -q "malcolm health" "$T/calls"
 }
 
-@test "malcolm_apply runs every sub-verb in order on a clean run" {
+@test "malcolm_apply refuses to run without the bundle dir, config and password-file env vars set" {
     export MALCOLM_DEPLOY="$T/malcolm.sh"; stub_malcolm
     run bash -c "source '$ADAPTERS'; malcolm_apply"
+    [ "$status" -eq 1 ]
+    [ ! -f "$T/calls" ]
+}
+
+@test "malcolm_apply passes each verb the real arguments it needs, in order" {
+    export MALCOLM_DEPLOY="$T/malcolm.sh"; stub_malcolm
+    export MALCOLM_BUNDLE_DIR="$T/bundle" MALCOLM_CONFIG_JSON="$T/config.json" MALCOLM_PASSWORD_FILE="$T/pw"
+    run bash -c "source '$ADAPTERS'; malcolm_apply"
     [ "$status" -eq 0 ]
-    for v in load assert-tags install configure auth bind-loopback start health; do
-        grep -q "malcolm $v" "$T/calls"
-    done
+    grep -q "malcolm load $T/bundle" "$T/calls"
+    grep -q "malcolm assert-tags $T/bundle" "$T/calls"
+    grep -q "malcolm install $T/bundle" "$T/calls"
+    grep -q "malcolm configure $T/config.json" "$T/calls"
+    grep -q "malcolm auth $T/bundle --password-file $T/pw --user analyst" "$T/calls"
+    grep -q "malcolm bind-loopback" "$T/calls"
+    grep -q "malcolm start" "$T/calls"
+    grep -q "malcolm health" "$T/calls"
 }
 
 @test "malcolm_apply halts at the first sub-verb that fails and runs nothing after it" {
     export MALCOLM_DEPLOY="$T/malcolm.sh"; stub_malcolm
+    export MALCOLM_BUNDLE_DIR="$T/bundle" MALCOLM_CONFIG_JSON="$T/config.json" MALCOLM_PASSWORD_FILE="$T/pw"
     FAIL_AT=auth run bash -c "source '$ADAPTERS'; malcolm_apply"
     [ "$status" -eq 1 ]
     [[ "$output" == *"auth"* ]]
@@ -171,11 +197,12 @@ EOF
     ! grep -q "malcolm start" "$T/calls"
 }
 
-@test "malcolm_verify calls the real verify verb" {
+@test "malcolm_verify requires MALCOLM_PASSWORD_FILE and calls verify with it" {
     export MALCOLM_DEPLOY="$T/malcolm.sh"; stub_malcolm
-    VERIFY_EXIT=0 run bash -c "source '$ADAPTERS'; malcolm_verify"
+    export MALCOLM_PASSWORD_FILE="$T/pw"
+    run bash -c "source '$ADAPTERS'; malcolm_verify"
     [ "$status" -eq 0 ]
-    grep -q "malcolm verify" "$T/calls"
+    grep -q "malcolm verify --password-file $T/pw --user analyst" "$T/calls"
 }
 
 stub_ufw() {

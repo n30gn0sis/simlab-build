@@ -67,28 +67,51 @@ portal_verify() {
 MALCOLM_DEPLOY=${MALCOLM_DEPLOY:-"$(dirname "${BASH_SOURCE[0]}")/r770-malcolm-deploy.sh"}
 
 malcolm_check() {
-    "$MALCOLM_DEPLOY" health
+    # health fails hard before Malcolm is even installed (no compose file
+    # yet) — that is expected on a fresh system, not a blocking dependency.
+    # check has nothing real to block on; apply does the actual install.
+    return 0
 }
 
 malcolm_plan() {
     # No native dry-run verb; health is the closest read-only view of
-    # current state. Known limitation, not a true diff — see the design
-    # spec's "contract mismatch" risk.
-    "$MALCOLM_DEPLOY" health
+    # current state, best-effort (it may legitimately fail before install).
+    "$MALCOLM_DEPLOY" health || true
 }
 
 malcolm_apply() {
-    local verb
-    for verb in load assert-tags install configure auth bind-loopback start health; do
-        if ! "$MALCOLM_DEPLOY" "$verb"; then
-            printf 'malcolm_apply: halted — %s failed\n' "$verb" >&2
-            return 1
-        fi
-    done
+    local dir=${MALCOLM_BUNDLE_DIR:-} config=${MALCOLM_CONFIG_JSON:-} \
+        pwfile=${MALCOLM_PASSWORD_FILE:-} user=${MALCOLM_USER:-analyst}
+    if [ -z "$dir" ] || [ -z "$config" ] || [ -z "$pwfile" ]; then
+        printf 'malcolm_apply: MALCOLM_BUNDLE_DIR, MALCOLM_CONFIG_JSON and MALCOLM_PASSWORD_FILE must all be set\n' >&2
+        return 1
+    fi
+
+    "$MALCOLM_DEPLOY" load "$dir" \
+        || { printf 'malcolm_apply: halted — load failed\n' >&2; return 1; }
+    "$MALCOLM_DEPLOY" assert-tags "$dir" \
+        || { printf 'malcolm_apply: halted — assert-tags failed\n' >&2; return 1; }
+    "$MALCOLM_DEPLOY" install "$dir" \
+        || { printf 'malcolm_apply: halted — install failed\n' >&2; return 1; }
+    "$MALCOLM_DEPLOY" configure "$config" \
+        || { printf 'malcolm_apply: halted — configure failed\n' >&2; return 1; }
+    "$MALCOLM_DEPLOY" auth "$dir" --password-file "$pwfile" --user "$user" \
+        || { printf 'malcolm_apply: halted — auth failed\n' >&2; return 1; }
+    "$MALCOLM_DEPLOY" bind-loopback \
+        || { printf 'malcolm_apply: halted — bind-loopback failed\n' >&2; return 1; }
+    "$MALCOLM_DEPLOY" start \
+        || { printf 'malcolm_apply: halted — start failed\n' >&2; return 1; }
+    "$MALCOLM_DEPLOY" health \
+        || { printf 'malcolm_apply: halted — health failed\n' >&2; return 1; }
 }
 
 malcolm_verify() {
-    "$MALCOLM_DEPLOY" verify
+    local pwfile=${MALCOLM_PASSWORD_FILE:-} user=${MALCOLM_USER:-analyst}
+    if [ -z "$pwfile" ]; then
+        printf 'malcolm_verify: MALCOLM_PASSWORD_FILE must be set\n' >&2
+        return 1
+    fi
+    "$MALCOLM_DEPLOY" verify --password-file "$pwfile" --user "$user"
 }
 
 UFW_SCRIPT=${UFW_SCRIPT:-"$(dirname "${BASH_SOURCE[0]}")/r770-ufw.sh"}

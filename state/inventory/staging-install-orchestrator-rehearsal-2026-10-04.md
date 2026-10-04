@@ -39,8 +39,22 @@ VM 9771 was stopped then restarted fresh (10Gi free, 0 swap used, 0 containers r
 
 **Not proven here:** a full clean `labca → malcolm → portal → ufw` pass to completion. Every verify/health failure encountered traces to this specific VM's accumulated state (my own `--force` auth interventions, and before that, memory pressure from repeated heavy operations) rather than to the orchestrator. Storage was out of scope for this VM entirely (no LVM).
 
+## Fifth attempt: full Malcolm teardown and reinstall — complete success
+
+Per operator instruction, did a true teardown: `docker compose down -v` (removed all 27 containers, 20 volumes, the `malcolm_default` network) then `rm -rf /opt/malcolm`. This eliminates every legacy credential from prior rehearsal attempts — the next `auth` call sets every password once, consistently, with nothing left to desync.
+
+Re-ran `--only labca,malcolm,portal,ufw --confirm ufw` from this genuinely clean state (after recovering from two more rehearsal-setup snags: the VM's earlier snapshot rollback had also reverted the copied orchestrator scripts and the rehearsal password file — both recreated):
+
+- `labca`: passed.
+- `malcolm` apply: a real first-time `install`/`configure`/`auth` (not idempotent-skip) — all passed. `bind-loopback`/`start`/`health`: all 27 containers came up healthy.
+- `malcolm_verify`: **all checks passed** — `arkime: 4 session(s) on port 8443 since the capture started`, `zeek: new log files`, container healthy. The first fully clean verify in this entire rehearsal.
+- `portal`: failed once on `REFUSE mkdocs image unknown` — traced to a rehearsal-setup artifact (running `r770-portal.sh` from the git checkout directly rather than from inside a bundle's `site/scripts/` layout, where the script's relative path to `docker/monitoring-image-list.txt` assumes a sibling `site/` wrapper that doesn't exist in this ad-hoc setup). Fixed by setting `PORTAL_MKDOCS_IMAGE=docker.io/squidfunk/mkdocs-material:latest` directly, exactly as the script's own error message suggests. Re-run: `portal` apply and verify **both passed** — portal.lab/malcolm.lab/docs.lab all correctly return 401 without credentials, only nginx listens on :443.
+- `ufw`: first attempt refused correctly — `SSH_CONNECTION is empty under sudo (env_reset strips it)`, because the orchestrator was launched via `nohup sudo bash -c '...'` in a way that both stripped the env var and let the SSH session close before `ufw.sh`'s own live-session check could run; this is `r770-ufw.sh` correctly refusing to guess the management path, not a defect. Re-ran in the foreground, in one persistent SSH session, with `sudo --preserve-env=SSH_CONNECTION`: `ufw` apply reported "armed" (exit 4) even though the real script's own output said `already applied: ... no auto-revert pending` and left no new backup directory or pending-switch marker — a **real adapter defect**, fixed (see commit `d08eea1`): `ufw_apply` now inspects the real script's output and only claims "armed" when something was actually armed. Re-ran with the fix: `ufw_apply` correctly returned 0 (nothing to confirm), and `ufw_verify` passed its full check list — `RESULT: PASS`.
+
+**`labca → malcolm → portal → ufw` all passed, end to end, for real**, with one genuine adapter defect found and fixed along the way (the UFW false-"armed" report, now covered by a regression test) — every other failure traced to this rehearsal's own ad-hoc invocation setup (missing password file after a rollback, running scripts outside their assumed bundle layout, an SSH env var stripped by `nohup sudo`), not to the orchestrator or its adapters.
+
 ## Next steps
 
-- A fully clean end-to-end rehearsal needs either: (a) a fresh snapshot rollback followed by a run that **never** calls `auth --force` (only possible if the rehearsal's password file is set *before* Malcolm's first-ever `auth` call, not after), or (b) a full teardown and reinstall of Malcolm on this VM so auth runs once, cleanly, with no legacy credentials anywhere to desync.
-- Storage needs a rehearsal on a VM (or the real R770) with an actual `ubuntu-vg0`-shaped LVM layout to mean anything beyond the existing stub coverage.
-- This VM (9771) now has lingering credential corruption (netbox/postgres) from this rehearsal's own remediation attempts. It should be rolled back to a known snapshot before any other session relies on it.
+- **Storage remains unrehearsed** — this VM has no LVM volume group; a rehearsal needs a VM (or the real R770) with an actual `ubuntu-vg0`-shaped layout. Storage's proof stays the stub-level bats coverage from Task 3.
+- Sub-projects 1 (Docker), 3 (capture ports), 4 (bridges/GNS3/mirror), and 5 (dnsmasq/chrony) still need their own design/plan/execution before they can plug into this orchestrator, per the original 2026-09-24 decomposition.
+- VM 9771 should be rolled back to a clean snapshot and stopped after this rehearsal, consistent with the repo's convention.

@@ -38,6 +38,13 @@ make_bundle() {
     chmod +x "$d/site/scripts/r770-ufw.sh"
     echo "server { }" > "$d/site/config/nginx.conf"
     echo "# wiki"      > "$d/site/docs/analyst-wiki/index.md"
+    # kit/ — sim-lab-basic's R770 installer, as r770-offline-fetch.sh's
+    # stage_kit() ships it: the installer, its shared library, and the commit.
+    mkdir -p "$d/kit/scripts/lib"
+    printf '#!/usr/bin/env bash\necho fixture-install\n' > "$d/kit/scripts/r770-install.sh"
+    chmod +x "$d/kit/scripts/r770-install.sh"
+    echo "# fixture common" > "$d/kit/scripts/lib/common.sh"
+    echo "0000000fixture" > "$d/kit/KIT_COMMIT"
     echo "fake malcolm images"  > "$d/malcolm/malcolm-images-0.0.0-fixture.tar.gz"
     echo "fake monitoring"      > "$d/docker/monitoring-images.tar.gz"
     # Every image tarball the fetch script writes has a companion image-list.txt

@@ -50,7 +50,7 @@ load_seed_fns() {
     note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
 }
 
-ALL="preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site manifest"
+ALL="preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site kit manifest"
 
 # selected <output> -- the stage names the dry run says it would execute, in order
 selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print $NF}' | tr '\n' ' ' | sed 's/ $//'; }
@@ -93,7 +93,7 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
     run "$SCRIPT" --skip docs,manifest,preflight --dry-run
     echo "$output"
     [ "$status" -eq 0 ]
-    [ "$(selected "$output")" = "apt iso malcolm monitoring gns3 appliances enrichment manual site" ]
+    [ "$(selected "$output")" = "apt iso malcolm monitoring gns3 appliances enrichment manual site kit" ]
 }
 
 @test "an unknown stage name is rejected by name, before anything runs" {
@@ -939,4 +939,78 @@ load_node_fns() {
     [ "$output" -eq 1 ]
     run grep -cE 'appliances\) +\[ -s "\$B/gns3/docker-nodes/gns3-node-images.tar.gz" \] && node_list_matches' "$SCRIPT"
     [ "$output" -eq 1 ]
+}
+
+# ── kit/ — the R770 installer (sim-lab-basic) delivered inside the bundle ──
+setup_kit_repo() {
+    local src="$1"
+    mkdir -p "$src/scripts/lib" "$src/config" "$src/scenarios/demo" "$src/docs/wiki" "$src/tests" "$src/staging"
+    printf '#!/usr/bin/env bash\necho install\n' > "$src/scripts/r770-install.sh"; chmod +x "$src/scripts/r770-install.sh"
+    echo "# lib" > "$src/scripts/lib/common.sh"
+    echo "tpl"   > "$src/config/x.template"
+    echo "name=demo" > "$src/scenarios/demo/scenario.conf"
+    echo "# page" > "$src/docs/wiki/index.md"
+    echo "@test" > "$src/tests/never.bats"            # tests/ never ships
+    echo "fetch" > "$src/staging/never.sh"            # staging/ never ships
+    echo "SECRET=1" > "$src/config/leak.env"          # excluded, as for site/
+    git -C "$src" init -q; gitc -C "$src" add -A; gitc -C "$src" commit -q -m init
+}
+
+@test "--only kit ships the kit's tracked scripts/config/scenarios/docs and its commit, never tests/ or staging/" {
+    KSRC="$BATS_TEST_TMPDIR/kit-src"; setup_kit_repo "$KSRC"; export KIT_SRC_ROOT="$KSRC"
+    run "$SCRIPT" --only kit
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ -x "$BUNDLE_DIR/kit/scripts/r770-install.sh" ]
+    [ -s "$BUNDLE_DIR/kit/scripts/lib/common.sh" ]
+    [ -s "$BUNDLE_DIR/kit/scenarios/demo/scenario.conf" ]
+    [ -s "$BUNDLE_DIR/kit/docs/wiki/index.md" ]
+    [ ! -e "$BUNDLE_DIR/kit/tests" ]; [ ! -e "$BUNDLE_DIR/kit/staging" ]
+    [ ! -e "$BUNDLE_DIR/kit/config/leak.env" ]
+    [ "$(cat "$BUNDLE_DIR/kit/KIT_COMMIT")" = "$(git -C "$KSRC" rev-parse HEAD)" ]
+    grep -qE 'kit/: 5 files from [0-9a-f]{7,40} copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+    [ ! -s "$NET" ]
+}
+
+@test "a real fetch that includes the kit stage refuses at startup without KIT_SRC_ROOT — there is no default" {
+    unset KIT_SRC_ROOT KIT_ARCHIVE KIT_COMMIT
+    run "$SCRIPT"
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"KIT_SRC_ROOT is not set"* ]]
+    [[ "$output" != *"[0/11]"* ]]
+    [ ! -s "$NET" ]
+}
+
+@test "--list and --dry-run without KIT_SRC_ROOT only note that the kit stage will need one" {
+    unset KIT_SRC_ROOT KIT_ARCHIVE KIT_COMMIT
+    run "$SCRIPT" --list
+    [ "$status" -eq 0 ]; [[ "$output" == *"kit"* ]]
+}
+
+@test "KIT_SRC_ROOT that is not sim-lab-basic is refused" {
+    mkdir -p "$BATS_TEST_TMPDIR/other"; export KIT_SRC_ROOT="$BATS_TEST_TMPDIR/other"
+    run "$SCRIPT" --only kit
+    [ "$status" -ne 0 ]; [[ "$output" == *"scripts/r770-install.sh not found"* ]]
+}
+
+@test "a tracked symlink in the kit refuses and leaves a previous kit/ untouched" {
+    KSRC="$BATS_TEST_TMPDIR/kit-src"; setup_kit_repo "$KSRC"; export KIT_SRC_ROOT="$KSRC"
+    run "$SCRIPT" --only kit; [ "$status" -eq 0 ]
+    ln -s /etc/passwd "$KSRC/scripts/evil"; gitc -C "$KSRC" add -A; gitc -C "$KSRC" commit -q -m evil
+    run "$SCRIPT" --only kit
+    [ "$status" -ne 0 ]; [[ "$output" == *"scripts/evil is a symlink"* ]]
+    [ -x "$BUNDLE_DIR/kit/scripts/r770-install.sh" ]; [ ! -e "$BUNDLE_DIR/kit.tmp" ]
+}
+
+@test "KIT_ARCHIVE + KIT_COMMIT (a packed builder, no checkout) builds kit/ and records the commit" {
+    KSRC="$BATS_TEST_TMPDIR/kit-src"; setup_kit_repo "$KSRC"
+    local commit; commit=$(git -C "$KSRC" rev-parse HEAD)
+    git -C "$KSRC" archive --format=tar HEAD -- scripts config scenarios docs > "$BATS_TEST_TMPDIR/kit.tar"
+    unset KIT_SRC_ROOT; export KIT_ARCHIVE="$BATS_TEST_TMPDIR/kit.tar" KIT_COMMIT="$commit"
+    run "$SCRIPT" --only kit
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ -x "$BUNDLE_DIR/kit/scripts/r770-install.sh" ]
+    [ "$(cat "$BUNDLE_DIR/kit/KIT_COMMIT")" = "$commit" ]
 }

@@ -219,6 +219,26 @@ check_site() {  # <dir>
     fi
 }
 
+# kit/ carries sim-lab-basic, the R770 installer (r770-offline-fetch.sh's
+# stage_kit). Missing is a WARN here and a FAIL under --strict — the same
+# severity rule, and the same reasoning, as check_site above: a bundle cut
+# before 2026-10 legitimately has none, and the build gate refuses one cut now.
+KIT_REQUIRED_FILES=(scripts/r770-install.sh scripts/lib/common.sh KIT_COMMIT)
+check_kit() {  # <dir>
+    local dir="$1" f missing=()
+    if [ ! -d "$dir/kit" ]; then
+        warn "kit/ is missing — no R770 installer in this bundle (cut without KIT_SRC_ROOT, or before the kit/ delivery path)"
+        return 0
+    fi
+    for f in "${KIT_REQUIRED_FILES[@]}"; do [ -s "$dir/kit/$f" ] || missing+=("$f"); done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        printf '      kit/%s\n' "${missing[@]}"
+        warn "kit/ is missing required file(s) above — the R770 installer cannot run from this bundle"
+    else
+        pass "kit/ carries the R770 installer (sim-lab-basic $(head -c 14 "$dir/kit/KIT_COMMIT"))"
+    fi
+}
+
 # A list file without its payload -- or a payload with no list file -- means the
 # bundle cannot be imported. import-bundle.md step 3b docker-loads the payload and
 # then verifies the loaded tags against the list; either half alone is useless.
@@ -307,6 +327,7 @@ cmd_verify() {
     check_notes    "$dir"
     check_manual   "$dir"
     check_site     "$dir"
+    check_kit      "$dir"
     summary "$strict"
 }
 

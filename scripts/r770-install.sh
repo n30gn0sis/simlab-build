@@ -42,12 +42,17 @@ phase_status() {
     raw=$(printf '%s' "$raw" | sed -E 's/\([^)]*\)//g')
     raw=$(printf '%s' "$raw" | sed -E 's/^ +| +$//g')
 
+    # Match the keyword as a prefix, not full equality — real BUILD-STATE.md
+    # rows commonly trail a keyword with an em-dash note (e.g.
+    # "NOT STARTED — Proven on staging VM 9771 ..."), which this function
+    # must still resolve to the plain keyword.
     case "$raw" in
-        "NOT STARTED"|READY|BLOCKED|APPLIED|VERIFIED*) status=$raw ;;
+        "NOT STARTED"*) status="NOT STARTED" ;;
+        READY*)         status=READY ;;
+        BLOCKED*)       status=BLOCKED ;;
+        APPLIED*)       status=APPLIED ;;
+        VERIFIED*)      status=VERIFIED ;;
         *) die "phase_status: unrecognized status '$raw' for phase $phase" ;;
-    esac
-    case "$status" in
-        VERIFIED*) status=VERIFIED ;;
     esac
     printf '%s\n' "$status"
 }

@@ -54,6 +54,17 @@ EOF
     [[ "$output" == *"no row for phase 99"* ]]
 }
 
+@test "phase_status accepts a keyword followed by an em-dash note, like the real BUILD-STATE.md" {
+    cat > "$BS" <<'EOF'
+| # | Phase | Depends on | Destructive? | Status | Evidence |
+|---|---|---|---|---|---|
+| 10 | Malcolm deployment | 6,9,3 | No | NOT STARTED — **Proven on staging VM 9771, 2026-09-26** (Malcolm deploy verbs, offline, 27 services healthy); R770 pending sub-projects 0–1 | — |
+EOF
+    run bash -c "source '$SCRIPT' --source-only; phase_status 10 '$BS'"
+    [ "$status" -eq 0 ]
+    [ "$output" = "NOT STARTED" ]
+}
+
 @test "phase_status fails loudly when the Status cell has no recognized keyword" {
     cat > "$BS" <<'EOF'
 | # | Phase | Depends on | Destructive? | Status | Evidence |

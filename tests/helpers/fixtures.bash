@@ -18,7 +18,7 @@ make_bundle() {
     echo "fake deb"             > "$d/apt/example_1.0_amd64.deb"
     # site/ — this repo's reviewed scripts/config/docs-analyst-wiki, as
     # r770-offline-fetch.sh's stage_site() copies them. Includes a stand-in
-    # for every script r770-bundle.sh's SITE_REQUIRED_SCRIPTS lists (all six
+    # for every script r770-bundle.sh's SITE_REQUIRED_SCRIPTS lists (all eight
     # exist in the repo), so this "complete bundle" fixture satisfies
     # check_site() with a plain pass, not a WARN. The missing-script WARN path
     # is exercised separately in bundle-verify.bats by deleting one stand-in.
@@ -36,6 +36,10 @@ make_bundle() {
     chmod +x "$d/site/scripts/r770-portal.sh"
     printf '#!/usr/bin/env bash\necho fixture-ufw\n' > "$d/site/scripts/r770-ufw.sh"
     chmod +x "$d/site/scripts/r770-ufw.sh"
+    printf '#!/usr/bin/env bash\necho fixture-install\n' > "$d/site/scripts/r770-install.sh"
+    chmod +x "$d/site/scripts/r770-install.sh"
+    printf '#!/usr/bin/env bash\necho fixture-install-adapters\n' > "$d/site/scripts/r770-install-adapters.sh"
+    chmod +x "$d/site/scripts/r770-install-adapters.sh"
     echo "server { }" > "$d/site/config/nginx.conf"
     echo "# wiki"      > "$d/site/docs/analyst-wiki/index.md"
     echo "fake malcolm images"  > "$d/malcolm/malcolm-images-0.0.0-fixture.tar.gz"

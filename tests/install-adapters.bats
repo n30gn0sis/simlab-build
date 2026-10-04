@@ -239,6 +239,26 @@ EOF
     [ "$status" -eq 1 ]
 }
 
+@test "ufw_apply exits 0, not 4, when the real apply says already applied (nothing armed)" {
+    # r770-ufw.sh's own idempotency: when the rules already match, apply
+    # prints "already applied" and exits 0 WITHOUT arming a new dead-man
+    # switch. Reporting "armed, run confirm" here would be real-world
+    # misleading — confirmed by running against the real script, which
+    # left no new backup dir and no pending-switch marker in this case.
+    export UFW_SCRIPT="$T/ufw.sh"
+    cat > "$UFW_SCRIPT" <<EOF
+#!/usr/bin/env bash
+echo "ufw \$*" >> "$T/calls"
+case "\$1" in
+    apply) echo "already applied: UFW active with exactly the management rules, no auto-revert pending"; exit 0 ;;
+esac
+EOF
+    chmod +x "$UFW_SCRIPT"
+    run bash -c "source '$ADAPTERS'; ufw_apply"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"confirm"* ]]
+}
+
 @test "ufw_verify calls the real verify verb" {
     export UFW_SCRIPT="$T/ufw.sh"; stub_ufw
     VERIFY_EXIT=0 run bash -c "source '$ADAPTERS'; ufw_verify"

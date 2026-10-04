@@ -125,14 +125,26 @@ ufw_plan() {
 }
 
 ufw_apply() {
-    local rc
-    "$UFW_SCRIPT" apply "$@"
-    rc=$?
-    if [ "$rc" -eq 0 ]; then
-        printf 'ufw_apply: armed — open a NEW ssh session and run "r770-ufw.sh confirm" to keep it, or it auto-disables\n' >&2
-        return 4
+    local rc tmp
+    tmp=$(mktemp)
+    "$UFW_SCRIPT" apply "$@" | tee "$tmp"
+    rc=${PIPESTATUS[0]}
+    if [ "$rc" -ne 0 ]; then
+        rm -f "$tmp"
+        return "$rc"
     fi
-    return "$rc"
+    # r770-ufw.sh's own idempotency: when the rules already match, apply
+    # prints "already applied" and exits 0 WITHOUT arming a new dead-man
+    # switch. Only report "armed, confirm needed" when something was
+    # actually armed — confirmed against the real script, which leaves no
+    # new backup dir or pending-switch marker in the already-applied case.
+    if grep -q "already applied" "$tmp"; then
+        rm -f "$tmp"
+        return 0
+    fi
+    rm -f "$tmp"
+    printf 'ufw_apply: armed — open a NEW ssh session and run "r770-ufw.sh confirm" to keep it, or it auto-disables\n' >&2
+    return 4
 }
 
 ufw_verify() {

@@ -251,3 +251,40 @@ extract_payload() {
     grep -q '^fetch --only apt,iso --skip docs$' "$ORDER"
     [ "$(order)" = "preflight fetch manifest verify " ]
 }
+
+make_kit_src() {  # make_kit_src <dir> — a tiny committed sim-lab-basic stand-in
+    mkdir -p "$1"/{scripts,config,scenarios,docs}
+    printf '#!/usr/bin/env bash\n' > "$1/scripts/r770-install.sh"
+    echo x > "$1/config/c"; echo x > "$1/scenarios/s"; echo x > "$1/docs/d"
+    git -C "$1" init -q
+    git -C "$1" -c user.name=t -c user.email=t@t.invalid add -A
+    git -C "$1" -c user.name=t -c user.email=t@t.invalid commit -q -m k
+}
+
+@test "--pack with KIT_SRC_ROOT embeds the kit archive and exports KIT_ARCHIVE/KIT_COMMIT" {
+    KSRC="$BATS_TEST_TMPDIR/kit-src"; make_kit_src "$KSRC"
+    export KIT_SRC_ROOT="$KSRC"
+    run "$SCRIPT" --pack
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" > "$BATS_TEST_TMPDIR/packed.sh"
+    grep -q 'export KIT_ARCHIVE="$D/kit.tar"' "$BATS_TEST_TMPDIR/packed.sh"
+    grep -q "export KIT_COMMIT=\"$(git -C "$KSRC" rev-parse HEAD)\"" "$BATS_TEST_TMPDIR/packed.sh"
+    mkdir -p "$BATS_TEST_TMPDIR/x"; extract_payload "$BATS_TEST_TMPDIR/packed.sh" "$BATS_TEST_TMPDIR/x"
+    tar tf "$BATS_TEST_TMPDIR/x/kit.tar" | grep -qx 'scripts/r770-install.sh'
+    run bash -n "$BATS_TEST_TMPDIR/packed.sh"; [ "$status" -eq 0 ]
+}
+
+@test "--pack without KIT_SRC_ROOT still packs and carries no kit" {
+    unset KIT_SRC_ROOT
+    run "$SCRIPT" --pack
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"export KIT_ARCHIVE="* ]]
+}
+
+@test "--pack refuses a dirty kit tree" {
+    KSRC="$BATS_TEST_TMPDIR/kit-src"; make_kit_src "$KSRC"
+    echo dirty >> "$KSRC/scripts/r770-install.sh"
+    export KIT_SRC_ROOT="$KSRC"
+    run "$SCRIPT" --pack
+    [ "$status" -ne 0 ]; [[ "$output" == *"dirty kit tree"* ]]
+}

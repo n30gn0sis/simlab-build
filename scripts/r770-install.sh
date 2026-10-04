@@ -90,7 +90,7 @@ run_step() {
     local phase
     if phase=$(step_build_state_phase "$id" 2>/dev/null); then
         local st
-        st=$(phase_status "$phase" "$bsfile")
+        st=$(phase_status "$phase" "$bsfile") || return 1
         if [ "$st" = APPLIED ] || [ "$st" = VERIFIED ]; then
             return 0
         fi
@@ -121,13 +121,25 @@ run_step() {
     "${id}_verify"
 }
 
-# main [--only id1,id2,...] [--confirm]
+# main [--only id1,id2,...] [--confirm <step_id>]
+#
+# --confirm names exactly one step. A bare --confirm (no value) is refused:
+# applying it to every gated step in the run would let one operator
+# confirmation silently also approve a later, unrelated gated step (e.g.
+# confirming storage must never also confirm UFW's firewall change) —
+# CLAUDE.md rule 3 requires a separate look at each gated step's own plan.
 main() {
-    local only="" confirm=""
+    local only="" confirm_step=""
     while [ $# -gt 0 ]; do
         case "$1" in
             --only) only=$2; shift 2 ;;
-            --confirm) confirm=--confirm; shift ;;
+            --confirm)
+                if [ $# -lt 2 ] || [ -z "$2" ]; then
+                    die "main: --confirm requires a step id (e.g. --confirm storage)"
+                fi
+                confirm_step=$2
+                shift 2
+                ;;
             *) die "main: unknown argument '$1'" ;;
         esac
     done
@@ -137,9 +149,11 @@ main() {
         IFS=',' read -r -a ids <<< "$only"
     fi
 
-    local id rc
+    local id rc this_confirm
     for id in "${ids[@]}"; do
-        if run_step "$id" "${INSTALL_BUILD_STATE:-state/BUILD-STATE.md}" "$confirm"; then
+        this_confirm=""
+        [ "$id" = "$confirm_step" ] && this_confirm="--confirm"
+        if run_step "$id" "${INSTALL_BUILD_STATE:-state/BUILD-STATE.md}" "$this_confirm"; then
             rc=0
         else
             rc=$?
@@ -152,7 +166,7 @@ main() {
 }
 
 usage() {
-    die "usage: r770-install.sh [--list | --only id1,id2,... ] [--confirm]"
+    die "usage: r770-install.sh [--list | --only id1,id2,... ] [--confirm step_id]"
 }
 
 cmd_list() {

@@ -156,6 +156,22 @@ fake_adapter() {
     grep -q storage_verify "$T/calls"
 }
 
+@test "main halts (does not apply) when the mapped BUILD-STATE phase row is missing" {
+    # Reproduces the real failure: main() calls run_step inside 'if', which
+    # suppresses errexit for run_step's whole execution, so phase_status's
+    # own die() (inside a command substitution) was being silently
+    # swallowed and the gated apply ran anyway on an unresolvable status.
+    rm -f "$BS"   # no BUILD-STATE file at all
+    run bash -c "
+        source '$SCRIPT' --source-only
+        storage_check() { echo storage_check >> '$T/calls'; return 0; }
+        storage_plan() { :; }; storage_apply() { echo storage_apply >> '$T/calls'; return 0; }
+        storage_verify() { :; return 0; }
+        INSTALL_BUILD_STATE='$BS' main --only storage --confirm storage"
+    [ "$status" -ne 0 ]
+    [ ! -f "$T/calls" ] || ! grep -q storage_apply "$T/calls"
+}
+
 @test "run_step prints the unmet-dependency message rather than silently dying to errexit" {
     run bash -c "
         source '$SCRIPT' --source-only
@@ -226,7 +242,29 @@ fake_adapter() {
         step_build_state_phase() { return 1; }
         $(declare -f fake_adapter)
         fake_adapter storage 0 0 0
-        main --only storage,notreal --confirm"
+        main --only storage,notreal --confirm storage"
     [ "$status" -eq 3 ]   # notreal has no adapter — stands in for a future sub-project
     grep -q storage_apply "$T/calls"
+}
+
+@test "--confirm names one step; a later gated step in the same run still stops for its own confirm" {
+    # Confirming storage must not also confirm ufw later in the same run —
+    # the operator never got a chance to review ufw's plan separately.
+    run bash -c "
+        source '$SCRIPT' --source-only
+        step_build_state_phase() { return 1; }
+        storage_check() { :; }; storage_plan() { :; }
+        storage_apply() { echo storage_apply >> '$T/calls'; }; storage_verify() { :; }
+        ufw_check() { :; }; ufw_plan() { echo ufw_plan >> '$T/calls'; }
+        ufw_apply() { echo ufw_apply >> '$T/calls'; }; ufw_verify() { :; }
+        main --only storage,ufw --confirm storage"
+    [ "$status" -eq 2 ]
+    grep -q storage_apply "$T/calls"
+    grep -q ufw_plan "$T/calls"
+    ! grep -q ufw_apply "$T/calls"
+}
+
+@test "--confirm with no value is refused rather than silently confirming nothing" {
+    run bash "$SCRIPT" --only storage --confirm
+    [ "$status" -eq 1 ]
 }

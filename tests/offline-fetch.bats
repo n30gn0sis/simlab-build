@@ -940,3 +940,126 @@ load_node_fns() {
     run grep -cE 'appliances\) +\[ -s "\$B/gns3/docker-nodes/gns3-node-images.tar.gz" \] && node_list_matches' "$SCRIPT"
     [ "$output" -eq 1 ]
 }
+
+# ── free QEMU images chosen by their own .gns3a ──────────────────────────────
+# The 2026-10-06 EC2 rehearsal: frr, tinycore-linux and openwrt definitions
+# were bundled with no image, so they appeared in GNS3 and failed at boot.
+
+# a registry-shaped definition: versions newest first, images keyed by filename
+write_gns3a() {  # write_gns3a <file> <filename> <md5> <url> [compression]
+    local comp=""
+    [ -n "${5:-}" ] && comp=", \"compression\": \"$5\""
+    cat > "$1" <<JSON
+{"name": "fixture", "status": "stable",
+ "images": [
+  {"filename": "old-1.0.qcow2", "version": "1.0", "md5sum": "00000000000000000000000000000000", "direct_download_url": "https://example.invalid/old-1.0.qcow2"},
+  {"filename": "$2", "version": "2.0", "md5sum": "$3", "direct_download_url": "$4"$comp}
+ ],
+ "versions": [
+  {"name": "2.0", "images": {"hda_disk_image": "$2"}},
+  {"name": "1.0", "images": {"hda_disk_image": "old-1.0.qcow2"}}
+ ]}
+JSON
+}
+
+load_gns3a_fns() {
+    load_fn "$SCRIPT" gns3a_newest_image || { echo "gns3a_newest_image not found in $SCRIPT"; return 1; }
+    load_fn "$SCRIPT" fetch_gns3a_image || { echo "fetch_gns3a_image not found in $SCRIPT"; return 1; }
+    GNS3A_PY=(python3)       # the shipped default runs python3 inside PYTHON_BUILD_IMG
+    B="$BUNDLE_DIR"; FORCE=0; NOTES="$BATS_TEST_TMPDIR/notes.log"; : > "$NOTES"
+    mkdir -p "$B/gns3/definitions" "$B/gns3/appliances"
+    have() { [ "${FORCE:-0}" = "0" ] && [ -s "$1" ]; }
+    note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
+    seed() { :; }
+    # fetch <out> <url>: serve the url's basename from $SRV, log the url
+    export SRV="$BATS_TEST_TMPDIR/srv"; mkdir -p "$SRV"
+    fetch() { echo "fetch $2" >> "$FETCH_NET_LOG"; cp "$SRV/$(basename "$2")" "$1"; }
+}
+
+@test "gns3a_newest_image: picks the newest version's disk image and prints filename, md5, url, compression" {
+    load_gns3a_fns
+    write_gns3a "$B/gns3/definitions/x.gns3a" new-2.0.qcow2 0123456789abcdef0123456789abcdef https://example.invalid/new-2.0.qcow2
+    run gns3a_newest_image "$B/gns3/definitions/x.gns3a"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$output" = "new-2.0.qcow2 0123456789abcdef0123456789abcdef https://example.invalid/new-2.0.qcow2 none" ]
+}
+
+@test "gns3a_newest_image: reports gzip compression, and a definition with no downloadable newest image fails" {
+    load_gns3a_fns
+    write_gns3a "$B/gns3/definitions/g.gns3a" new.img 0123456789abcdef0123456789abcdef https://example.invalid/new.img.gz gzip
+    run gns3a_newest_image "$B/gns3/definitions/g.gns3a"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *" gzip" ]]
+    write_gns3a "$B/gns3/definitions/n.gns3a" new.img 0123456789abcdef0123456789abcdef ""
+    run gns3a_newest_image "$B/gns3/definitions/n.gns3a"
+    echo "$output"
+    [ "$status" -ne 0 ]
+}
+
+@test "fetch_gns3a_image: keeps an image whose md5 matches its definition, upgrading http to https" {
+    load_gns3a_fns
+    printf 'qcow2-bytes' > "$SRV/new-2.0.qcow2"
+    md5=$(md5sum < "$SRV/new-2.0.qcow2" | cut -d' ' -f1)
+    write_gns3a "$B/gns3/definitions/x.gns3a" new-2.0.qcow2 "$md5" http://downloads.example.invalid/new-2.0.qcow2
+    run fetch_gns3a_image x
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ -s "$B/gns3/appliances/new-2.0.qcow2" ]
+    grep -qx 'fetch https://downloads.example.invalid/new-2.0.qcow2' "$NET"
+    grep -q "x: new-2.0.qcow2 .*md5 matches its definition" "$NOTES"
+    [ -z "$(ls "$B/gns3/appliances" | grep -vx 'new-2.0.qcow2')" ]
+}
+
+@test "fetch_gns3a_image: an md5 mismatch removes the image and WARNs" {
+    load_gns3a_fns
+    printf 'tampered' > "$SRV/new-2.0.qcow2"
+    write_gns3a "$B/gns3/definitions/x.gns3a" new-2.0.qcow2 0123456789abcdef0123456789abcdef https://example.invalid/new-2.0.qcow2
+    run fetch_gns3a_image x
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [ -z "$(ls -A "$B/gns3/appliances")" ]
+    grep -q "WARN: x: new-2.0.qcow2 md5 does not match its definition" "$NOTES"
+}
+
+@test "fetch_gns3a_image: a gzip image is unpacked (OpenWrt's trailing-signature exit 2 tolerated), verified, and no .gz is left" {
+    load_gns3a_fns
+    printf 'raw-disk-image' > "$BATS_TEST_TMPDIR/new.img"
+    md5=$(md5sum < "$BATS_TEST_TMPDIR/new.img" | cut -d' ' -f1)
+    gzip -c "$BATS_TEST_TMPDIR/new.img" > "$SRV/new.img.gz"
+    printf 'SIGNATURE-BLOCK' >> "$SRV/new.img.gz"      # what OpenWrt appends; gzip -d then exits 2
+    write_gns3a "$B/gns3/definitions/w.gns3a" new.img "$md5" https://example.invalid/new.img.gz gzip
+    run fetch_gns3a_image w
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$B/gns3/appliances/new.img")" = "raw-disk-image" ]
+    [ -z "$(ls "$B/gns3/appliances" | grep -vx 'new.img')" ]
+}
+
+@test "fetch_gns3a_image: an image already present with the right md5 is not fetched again" {
+    load_gns3a_fns
+    printf 'qcow2-bytes' > "$B/gns3/appliances/new-2.0.qcow2"
+    md5=$(md5sum < "$B/gns3/appliances/new-2.0.qcow2" | cut -d' ' -f1)
+    write_gns3a "$B/gns3/definitions/x.gns3a" new-2.0.qcow2 "$md5" https://example.invalid/new-2.0.qcow2
+    run fetch_gns3a_image x
+    [ "$status" -eq 0 ]
+    [ ! -s "$NET" ]
+}
+
+@test "fetch_gns3a_image: a definition that was not staged WARNs and fetches nothing" {
+    load_gns3a_fns
+    run fetch_gns3a_image missing
+    [ "$status" -ne 0 ]
+    grep -q "WARN: missing.gns3a not staged" "$NOTES"
+    [ ! -s "$NET" ]
+}
+
+@test "stage_appliances fetches the image for every free definition named in GNS3A_FREE_IMAGES, each one also in GNS3A_DEFS" {
+    run grep -cE '^ *fetch_gns3a_image "\$a"' "$SCRIPT"
+    [ "$output" -eq 1 ]
+    eval "$(sed -n '/^GNS3A_DEFS=(/,/^)/p' "$SCRIPT")"
+    eval "$(grep -E '^GNS3A_FREE_IMAGES=\([^)]*\)$' "$SCRIPT")"
+    [ "${#GNS3A_FREE_IMAGES[@]}" -ge 3 ]
+    for f in frr tinycore-linux openwrt; do [[ " ${GNS3A_FREE_IMAGES[*]} " == *" $f "* ]]; done
+    for f in "${GNS3A_FREE_IMAGES[@]}"; do [[ " ${GNS3A_DEFS[*]} " == *" $f "* ]]; done
+}

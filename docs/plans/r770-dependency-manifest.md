@@ -96,6 +96,7 @@ Fetched from the GNS3 registry (raw.githubusercontent.com/GNS3/gns3-registry) in
 | MikroTik CHR raw image | see pin block, `scripts/r770-offline-fetch.sh` | download.mikrotik.com/routeros/${CHR_VER}/chr-${CHR_VER}.img.zip | ~50 MB |
 | OPNsense dvd ISO (+ sha256 + sig) | see pin block, `scripts/r770-offline-fetch.sh` | pkg.opnsense.org/releases/mirror (OPNsense's own; was mirrors.dotsrc.org until 2026-09-25) | ~2.2 GB |
 | Alpine virt ISO | latest-stable at build time (parsed from `latest-releases.yaml`) | dl-cdn.alpinelinux.org | ~60 MB |
+| FRR, TinyCore, OpenWrt QEMU images (`GNS3A_FREE_IMAGES`) | the newest version each one's own `.gns3a` lists, at build time; kept only if its md5 matches that definition (added 2026-10-06: the EC2 rehearsal found these three definitions bundled with no image) | the definition's own `direct_download_url` (sourceforge `gns-3/Qemu Appliances`, upgraded to https; downloads.openwrt.org, gzip unpacked) | ~55 MB + ~35 MB + ~120 MB |
 | GNS3 docker-node images (alpine, debian:stable-slim, nicolaka/netshoot, quay.io/frrouting/frr — pin: see `scripts/r770-offline-fetch.sh`) | as listed | Docker Hub / quay.io | ~1.5 GB saved |
 
 ### 4.4 Licensed / account-gated images — **MANUAL** (`gns3/appliances/README.txt` in bundle)

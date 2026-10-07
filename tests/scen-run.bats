@@ -5,7 +5,7 @@ setup() {
     SCRIPT="$BATS_TEST_DIRNAME/../scripts/scenarios/scen-run"
     BIN="$BATS_TEST_TMPDIR/bin"; REAL="$BATS_TEST_TMPDIR/real"; S="$BATS_TEST_TMPDIR/s"; RUN="$BATS_TEST_TMPDIR/run"
     mkdir -p "$BIN" "$REAL" "$S" "$RUN/traffic" "$RUN/events"
-    for t in bash env python3 date mkdir cat grep sed awk printf dirname basename readlink paste sleep pgrep pkill chmod rm wc seq tail head cut; do
+    for t in bash env python3 date mkdir cat grep sed awk printf dirname basename readlink paste sleep pgrep pkill chmod rm wc seq tail head cut sha256sum uptime find sort touch mv; do
         p=$(type -P $t) && ln -sf "$p" "$REAL/$t"
     done
     export SCEN_REPO="$BATS_TEST_DIRNAME/.." SCEN_CAPTURE_SETTLE=0.3 S
@@ -18,6 +18,7 @@ setup() {
 #!/usr/bin/env python3
 import os, signal, sys, time
 a = sys.argv[1:]; n = os.path.basename(a[a.index('-w') + 1])[:-len('.pcapng')]; S = os.environ['S']
+open(a[a.index('-w') + 1], 'a').close()
 open(f'{S}/tcpdump.{n}', 'w').write(' '.join(a) + '\n')
 open(f'{S}/order', 'a').write(f'tcpdump-start {n}\n')
 def stop(*_):
@@ -29,7 +30,7 @@ STUB
     chmod +x "$BIN/tcpdump"
     stub wan-apply 'echo "wan-apply $*" >> "$S/calls"; echo "wan-apply $*" >> "$S/order"'
     stub wan-clear 'echo "wan-clear $*" >> "$S/calls"; echo "wan-clear $*" >> "$S/order"'
-    stub docker 'echo "docker $*" >> "$S/calls"; cat > "$S/traffic-stdin"'
+    stub docker 'echo "docker $*" >> "$S/calls"; case "$1" in exec) cat > "$S/traffic-stdin";; esac'
     cp "$BATS_TEST_DIRNAME/fixtures/run-s1.yaml" "$RUN/run.yaml"
     echo 'echo hello-traffic' > "$RUN/traffic/profile-basic.sh"
     echo 'events: []' > "$RUN/events/s1-baseline.yaml"
@@ -136,4 +137,85 @@ YAML
     grep -q '^ip link set veth-t01a down$' "$S/calls"
     grep -q '^ip link set veth-t01a up$' "$S/calls"
     run grep -q 'engine not present' "$RUN/events.log"; [ "$status" -ne 0 ]
+}
+
+# ---- Task 7c: ground truth, manifest actuals, sha256sums ----
+# docker stub for 7c: cp populates the destination dir, image inspect answers per $S/inspect-*.
+gt_docker() {
+    stub docker 'echo "docker $*" >> "$S/calls"
+case "$1" in
+  cp) src="${2%%:*}"; [ ! -f "$S/nogt-$src" ] || { echo "Error: no such path /gt in $src" >&2; exit 1; }
+      mkdir -p "${@: -1}"; touch "${@: -1}/keys";;
+  image) img="${@: -1}"; f="$S/inspect-$(basename "${img%%:*}")"
+      case "$*" in
+        *RepoDigests*) [ -f "$f.digest" ] && cat "$f.digest" || exit 1;;
+        *.Id*) [ -f "$f.id" ] && cat "$f.id" || exit 1;;
+      esac;;
+  *) cat > "$S/traffic-stdin";;
+esac'
+}
+@test "collects /gt from every endpoint node and skips the others" {
+    gt_docker
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    [ -e "$RUN/gt/gw-a/keys" ]; [ -e "$RUN/gt/gw-b/keys" ]
+    [ ! -e "$RUN/gt/gw-a/gt" ]
+    [ ! -d "$RUN/gt/isp1" ]; [ ! -d "$RUN/gt/host-a" ]
+    grep -q '^docker cp gw-a:/gt/\. ' "$S/calls"
+    run grep -q 'docker cp isp1' "$S/calls"; [ "$status" -ne 0 ]
+}
+@test "SCEN_CP overrides the copy command" {
+    gt_docker
+    stub mycp 'echo "mycp $*" >> "$S/calls"; mkdir -p "$2"; touch "$2/custom"'
+    SCEN_CP=mycp run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    [ -e "$RUN/gt/gw-a/custom" ]; [ -e "$RUN/gt/gw-b/custom" ]
+    grep -q "^mycp gw-a $RUN/gt/gw-a/\$" "$S/calls"
+}
+@test "a node without /gt yields a MISSING marker with the error, exit 0" {
+    gt_docker; touch "$S/nogt-gw-b"
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    [ -f "$RUN/gt/gw-b/MISSING" ]
+    grep -q 'no such path /gt' "$RUN/gt/gw-b/MISSING"
+    [ ! -e "$RUN/gt/gw-b/keys" ]; [ -e "$RUN/gt/gw-a/keys" ]
+    grep -q 'gt gw-b MISSING' "$RUN/events.log"
+    grep -q '^gt/gw-b/MISSING$\|  gt/gw-b/MISSING$' "$RUN/sha256sums"
+}
+@test "fills times_utc and writes sorted sha256sums covering pcaps and gt" {
+    gt_docker
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    st=$(python3 -I -c 'import sys,yaml; d=yaml.safe_load(open(sys.argv[1]))["times_utc"]; print(d["start"], d["end"])' "$RUN/run.yaml")
+    [[ "$st" =~ ^20[0-9-]+T[0-9:]+Z\ 20[0-9-]+T[0-9:]+Z$ ]]
+    grep -q 'outer-t01.pcapng$' "$RUN/sha256sums"
+    grep -q ' gt/gw-a/keys$' "$RUN/sha256sums"
+    grep -q ' run.yaml$' "$RUN/sha256sums"
+    run grep -E 'sha256sums$|\.pids|\.tcpdump' "$RUN/sha256sums"; [ "$status" -ne 0 ]
+    (cd "$RUN" && sha256sum -c --quiet sha256sums)
+    awk '{print $2}' "$RUN/sha256sums" > "$S/names"; LC_ALL=C sort -c "$S/names"
+}
+@test "records the image digest per node, falling back to .Id then unknown" {
+    gt_docker
+    echo 'localhost/lab/ipsec-ss@sha256:aaa' > "$S/inspect-ipsec-ss.digest"
+    echo 'sha256:bbb' > "$S/inspect-frr.id"
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    d() { python3 -I -c 'import sys,yaml; print({n["name"]: n.get("digest") for n in yaml.safe_load(open(sys.argv[1]))["nodes"]}[sys.argv[2]])' "$RUN/run.yaml" "$1"; }
+    [ "$(d gw-a)" = "localhost/lab/ipsec-ss@sha256:aaa" ]
+    [ "$(d gw-b)" = "localhost/lab/ipsec-ss@sha256:aaa" ]
+    [ "$(d isp1)" = "sha256:bbb" ]
+    [ "$(d host-a)" = "unknown" ]
+}
+@test "host load is appended to results.notes, keeping existing notes" {
+    gt_docker
+    stub uptime 'echo " 10:00:00 up 1 day, 1 user,  load average: 1.25, 0.90, 0.80"'
+    sed -i 's/notes: ""/notes: "operator note"/' "$RUN/run.yaml"
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    n=$(python3 -I -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["results"]["notes"])' "$RUN/run.yaml")
+    [[ "$n" == *"operator note"* ]]; [[ "$n" == *"host load (1m): 1.25"* ]]
+    [[ "$n" != *"not a clean reference"* ]]
+}
+@test "a traffic-failure run still collects, and its notes say not a clean reference" {
+    gt_docker
+    stub docker 'echo "docker $*" >> "$S/calls"; case "$1" in cp) mkdir -p "${@: -1}"; touch "${@: -1}/keys";; image) exit 1;; *) exit 7;; esac'
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 3 ]
+    [ -e "$RUN/gt/gw-a/keys" ]; [ -f "$RUN/sha256sums" ]
+    n=$(python3 -I -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["results"]["notes"])' "$RUN/run.yaml")
+    [[ "$n" == *"traffic rc=7 — not a clean reference"* ]]
 }

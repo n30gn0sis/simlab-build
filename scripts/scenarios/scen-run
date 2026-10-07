@@ -2,7 +2,7 @@
 # scen-run <run-dir>/run.yaml — execute one reference-PCAP run (spec §8).
 # Order: guard everything -> captures up -> host impairment -> traffic (+ timed
 # events) -> clear impairment -> stop captures -> drop stats.
-# Task 7c hook: ground-truth collection and manifest completion (see the end).
+# Then: ground truth from endpoint nodes, manifest actuals, sha256sums.
 # Any exit path (error, INT, TERM) stops captures, clears every iface this run
 # impaired, logs "aborted" and keeps the run directory.
 set -euo pipefail
@@ -13,6 +13,9 @@ source "$HERE/scen-lib.sh"
 # How traffic is run inside a node: $SCEN_EXEC <node> sh -s < script.
 # Deliberately word-split, so "docker exec -i" or "sudo docker exec -i" work.
 SCEN_EXEC="${SCEN_EXEC:-docker exec -i}"
+# How /gt is pulled from a node: $SCEN_CP <node> <dest-dir> (a command name; default below).
+scen_cp_default() { docker cp "$1:/gt/." "$2" </dev/null; }
+SCEN_CP="${SCEN_CP:-scen_cp_default}"
 SCEN_CAPTURE_SETTLE="${SCEN_CAPTURE_SETTLE:-1}"   # seconds before checking tcpdumps survived
 
 [ $# -eq 1 ] || die "usage: scen-run <run-dir>/run.yaml"
@@ -25,6 +28,8 @@ TRAFFIC_PID=''
 FINISHED=0
 TRAFFIC_RC=0        # non-zero: run completed but is not a clean reference (exit 3)
 CLEANED=0
+RUN_START=''        # UTC ISO-8601, when captures went up
+RUN_END=''          # UTC ISO-8601, when captures were stopped
 PIDS=()             # tcpdump PIDs
 NAMES=()            # capture point names, same order
 
@@ -102,6 +107,7 @@ start_captures() {
     for pid in "${PIDS[@]}"; do
         kill -0 "$pid" 2>/dev/null || die "a tcpdump exited at startup — see $D/.tcpdump-*.err"
     done
+    RUN_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     log "captures up (${#PIDS[@]} points)"
 }
 
@@ -153,6 +159,7 @@ stop_captures() {
     for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done
     for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null || true; done
     PIDS=()
+    RUN_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     log "captures stopped"
 }
 
@@ -170,6 +177,65 @@ write_capture_stats() {
     log "capture-stats.txt written"
 }
 
+# Ground truth: <run>/gt/<node>/ gets the endpoint's /gt contents. A node that cannot
+# deliver is marked MISSING (with the error) and the run carries on.
+collect_gt() {
+    local name role err
+    while IFS='|' read -r name role; do
+        [ "$role" = endpoint ] || continue
+        mkdir -p "$D/gt/$name"
+        # shellcheck disable=SC2086  # SCEN_CP may be a command with arguments
+        if err=$($SCEN_CP "$name" "$D/gt/$name/" 2>&1); then
+            log "gt $name collected"
+        else
+            printf '%s\n' "$err" > "$D/gt/$name/MISSING"
+            log "gt $name MISSING"
+        fi
+    done < <(paste -d'|' <(manifest_list "$M" nodes name) <(manifest_list "$M" nodes role))
+}
+
+# node_digest <image> — RepoDigest, else image id, else "unknown".
+node_digest() {
+    local out
+    if out=$(docker image inspect --format '{{index .RepoDigests 0}}' "$1" 2>/dev/null) && [ -n "$out" ]; then
+        echo "$out"
+    elif out=$(docker image inspect --format '{{.Id}}' "$1" 2>/dev/null) && [ -n "$out" ]; then
+        echo "$out"
+    else
+        echo unknown
+    fi
+}
+
+# Times, per-node image digests and host load into the run copy of run.yaml.
+finish_manifest() {
+    local name image digests='' load notes patch
+    while IFS='|' read -r name image; do
+        digests+="$name"$'\t'"$(node_digest "$image")"$'\n'
+    done < <(paste -d'|' <(manifest_list "$M" nodes name) <(manifest_list "$M" nodes image))
+    load=$(uptime | sed -E 's/.*load averages?: *//; s/[, ].*//')
+    notes=$(manifest_get "$M" results.notes) || notes=''
+    notes="${notes:+$notes; }host load (1m): $load"
+    if [ "$TRAFFIC_RC" -ne 0 ]; then notes="$notes; traffic rc=$TRAFFIC_RC — not a clean reference"; fi
+    patch=$(python3 -I -c '
+import json, sys
+dig = dict(l.split("\t", 1) for l in sys.argv[4].splitlines() if l)
+print(json.dumps({"times_utc": {"start": sys.argv[1], "end": sys.argv[2]},
+                  "results": {"notes": sys.argv[3]}, "node_digests": dig}))
+' "$RUN_START" "$RUN_END" "$notes" "$digests") || die "cannot build manifest patch"
+    manifest_set_json "$M" "$patch" || die "cannot update $M"
+    log "manifest completed"
+}
+
+# sha256sums: top-level files (no dot-files) and everything under gt/, paths relative to $D.
+write_sha256sums() {
+    (   cd "$D"
+        { find . -maxdepth 1 -type f ! -name '.*' ! -name sha256sums -printf '%P\n'
+          if [ -d gt ]; then find gt -type f; fi
+        } | LC_ALL=C sort | while IFS= read -r f; do sha256sum -- "$f"; done > .sha256sums.tmp
+        mv .sha256sums.tmp sha256sums
+    ) || die "cannot write sha256sums"
+}
+
 read_manifest
 guard_all
 start_captures
@@ -178,7 +244,10 @@ run_traffic
 clear_impairments
 stop_captures
 write_capture_stats
-# Task 7c hook: collect_gt / finish_manifest go here (ground truth, times_utc, manifest completion).
+collect_gt
+finish_manifest
+# The last log line goes in before sha256sums so events.log's digest stays valid.
+if [ "$TRAFFIC_RC" -ne 0 ]; then log "run complete with traffic failure (rc=$TRAFFIC_RC)"; else log "run complete"; fi
+write_sha256sums
 FINISHED=1
-if [ "$TRAFFIC_RC" -ne 0 ]; then log "run complete with traffic failure (rc=$TRAFFIC_RC)"; exit 3; fi
-log "run complete"
+if [ "$TRAFFIC_RC" -ne 0 ]; then exit 3; fi

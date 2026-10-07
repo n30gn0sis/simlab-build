@@ -66,6 +66,26 @@ d = yaml.safe_load(open(sys.argv[1])).get(sys.argv[2]) or []
 for item in d: print(item.get(sys.argv[3], ''))
 PY
 }
+# manifest_set_json <run.yaml> <json-patch> — merge a patch into the manifest in place.
+# Keys: times_utc / results (dicts, merged key by key) and node_digests ({node: digest},
+# set as nodes[].digest by name). Fails (and leaves the file untouched) on any error.
+manifest_set_json() {
+    python3 -I - "$1" "$2" <<'PY' || return 1
+import json, os, sys, yaml
+path, patch = sys.argv[1], json.loads(sys.argv[2])
+d = yaml.safe_load(open(path))
+for k, v in patch.items():
+    if k == 'node_digests':
+        for n in d.get('nodes') or []:
+            if n.get('name') in v: n['digest'] = v[n['name']]
+    else:
+        if not isinstance(d.get(k), dict): d[k] = {}
+        d[k].update(v)
+tmp = path + '.tmp'
+with open(tmp, 'w') as f: yaml.safe_dump(d, f, sort_keys=False)
+os.replace(tmp, path)
+PY
+}
 run_dir_for() {
     local sc id
     sc=$(manifest_get "$1" scenario) || return 1

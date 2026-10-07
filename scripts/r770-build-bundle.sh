@@ -43,7 +43,7 @@ VERIFY_CMD="${BUILD_VERIFY_CMD:-$BUNDLE_TOOL}"
 
 PACKED_NAME="r770-bundle-builder.sh"
 CONTENTS="r770-build-bundle.sh r770-staging-preflight.sh r770-offline-fetch.sh r770-bundle.sh"
-SITE_TREES=(scripts config docs/analyst-wiki)
+SITE_TREES=(scripts config docs/analyst-wiki scenarios)
 
 ASSUME_YES="${BUILD_ASSUME_YES:-0}"
 INTERACTIVE=1

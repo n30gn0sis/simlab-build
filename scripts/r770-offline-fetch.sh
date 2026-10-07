@@ -87,14 +87,14 @@ PYTHON_BUILD_IMG="docker.io/library/python:3.12-slim"
 
 # ── stages: run all, or a selection ──────────────────────────────────────────
 # Fixed order. --only picks from it (given in any order), --skip removes from it.
-STAGES=(preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site manifest)
+STAGES=(preflight apt iso malcolm monitoring gns3 labimages appliances enrichment docs manual site manifest)
 ONLY=""; SKIP=""; LIST=0; DRY_RUN=0
 usage() {
     cat <<'USAGE'
 usage: r770-offline-fetch.sh [--only s1,s2,...] [--skip s1,s2,...] [--list] [--dry-run] [-h]
 
 Runs every stage in order unless told otherwise. The stages, in run order:
-  preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site manifest
+  preflight apt iso malcolm monitoring gns3 labimages appliances enrichment docs manual site manifest
 
   --only s,s   run just these (fixed order applies). NEVER implies manifest:
                finish with  --only manifest  or let r770-build-bundle.sh do it
@@ -202,6 +202,20 @@ else
 fi
 note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
 
+# Lab scenario images (stage_labimages, below; --dry-run prints its plan before any runtime exists)
+LAB_IMAGES=(ipsec-ss wan-emu svc-targets)
+# labimages_root -- the checkout the images build from: the same one the site
+# stage uses (SITE_SRC_ROOT, set when "site" is selected), else this script's repo.
+labimages_root() { (cd -- "${SITE_SRC_ROOT:-$SCRIPT_DIR/..}" 2>/dev/null && pwd -P) || echo "${SITE_SRC_ROOT:-$SCRIPT_DIR/..}"; }
+# labimages_plan -- what --dry-run says stage_labimages would do (no runtime needed)
+labimages_plan() {
+    local img root; root="$(labimages_root)"
+    for img in "${LAB_IMAGES[@]}"; do
+        [ -f "$root/images/$img/Dockerfile" ] || { echo "  WARN: images/$img/Dockerfile missing -- would skip"; continue; }
+        echo "  ${CTR:-docker} build -f images/$img/Dockerfile -t lab/$img:$TS ."
+    done
+    echo "  save -> gns3/docker-nodes/lab-images.tar.gz (+ lab-images.list)"
+}
 # ── --list / --dry-run answer here, before any runtime is needed ─────────────
 stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker for --list; not proof
     case "$1" in
@@ -211,6 +225,7 @@ stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker fo
         malcolm)    ls "$B/malcolm"/malcolm-images-*.tar.gz >/dev/null 2>&1 ;;
         monitoring) [ -s "$B/docker/monitoring-images.tar.gz" ] ;;
         gns3)       [ -f "$B/.stamps/05-wheelhouse.done" ] && [ -s "$B/images/noble-server-cloudimg-amd64.img" ] ;;
+        labimages)  [ -s "$B/gns3/docker-nodes/lab-images.tar.gz" ] ;;
         appliances) [ -s "$B/gns3/docker-nodes/gns3-node-images.tar.gz" ] ;;
         enrichment) [ -s "$B/enrichment/oui.txt" ] ;;
         docs)       [ "$(ls "$B/.stamps"/08-docs-*.done 2>/dev/null | wc -l)" -ge 3 ] ;;
@@ -231,6 +246,7 @@ fi
 if [ "$DRY_RUN" = "1" ]; then
     echo "== dry run: stages this command line would run, in order =="
     for s in "${STAGES[@]}"; do want "$s" && printf '  would run  %s\n' "$s"; done
+    want labimages && labimages_plan
     exit 0
 fi
 
@@ -479,7 +495,8 @@ PKGS=(
     python3-venv python3-pip dpkg-dev rsync
     # Malcolm's install.py imports these and the cloud image ships neither;
     # found by the 2026-09-12 staging rehearsal after bundle-20260908 was cut
-    python3-ruamel.yaml python3-dotenv
+    # (python3-yaml: the scen-* harness parses run.yaml)
+    python3-ruamel.yaml python3-dotenv python3-yaml
     # kernel/security update tracking
     linux-generic-hwe-24.04
 )
@@ -635,6 +652,25 @@ fetch "$B/images/noble-server-cloudimg-amd64.img" \
 fetch "$B/images/cirros-0.6.3-x86_64-disk.img" \
     "https://download.cirros-cloud.net/0.6.3/cirros-0.6.3-x86_64-disk.img"
 note "VM base images: noble cloud image + cirros (validation-suite test VM)"
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 5b. Lab scenario images, built from this checkout (not pulled)
+# ═════════════════════════════════════════════════════════════════════════════
+stage_labimages() {
+echo "==== [5b] Lab scenario images ===="
+local img tag="$TS" root out="$B/gns3/docker-nodes/lab-images.tar.gz" tags=()
+root="$(labimages_root)"; out="$B/gns3/docker-nodes/lab-images.tar.gz"
+mkdir -p "$B/gns3/docker-nodes"
+for img in "${LAB_IMAGES[@]}"; do
+    [ -f "$root/images/$img/Dockerfile" ] || { note "WARN: images/$img/Dockerfile missing -- skipped"; continue; }
+    "$CTR" build -f "$root/images/$img/Dockerfile" -t "lab/$img:$tag" "$root" || { note "WARN: build of lab/$img failed -- skipped"; continue; }
+    tags+=("lab/$img:$tag")
+done
+[ "${#tags[@]}" -gt 0 ] || return 0
+ctr_save "$out" "${tags[@]}"
+printf '%s\n' "${tags[@]}" > "${out%.tar.gz}.list"
+note "Lab images saved: ${tags[*]}"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -886,7 +922,7 @@ note "Dell firmware: not a bundle item — handled on the R770 directly (dell/RE
 #     stamp-skipped): it is small, and it must always match the checkout (or
 #     archive) it was cut from.
 # ═════════════════════════════════════════════════════════════════════════════
-SITE_TREES=(scripts config docs/analyst-wiki)
+SITE_TREES=(scripts config docs/analyst-wiki scenarios)
 
 site_excluded() {  # site_excluded <path relative to the site source root>
     # Defence in depth on top of tracked-file enumeration: anything secret-

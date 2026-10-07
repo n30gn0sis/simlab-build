@@ -312,3 +312,20 @@ pair_bundle() {   # a bundle with all three list/payload pairs intact
     [ "$status" -eq 1 ]
     [[ "$output" == *"RESULT: FAIL (--strict)"* ]]
 }
+
+@test "SITE_REQUIRED_SCRIPTS names the scenario harness library" {
+    grep -q 'scripts/scenarios/scen-lib.sh' "$SCRIPT"
+}
+
+@test "a site/ lacking scenarios/profiles/branch-wan.conf warns, and --strict fails it" {
+    rm "$BUNDLE/site/scenarios/profiles/branch-wan.conf"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"site/scenarios/profiles/branch-wan.conf"* ]]
+    run "$SCRIPT" verify "$BUNDLE" --strict
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"site/scenarios/profiles/branch-wan.conf"* ]]
+}

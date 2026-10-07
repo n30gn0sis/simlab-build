@@ -50,7 +50,7 @@ load_seed_fns() {
     note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
 }
 
-ALL="preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site manifest"
+ALL="preflight apt iso malcolm monitoring gns3 labimages appliances enrichment docs manual site manifest"
 
 # selected <output> -- the stage names the dry run says it would execute, in order
 selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print $NF}' | tr '\n' ' ' | sed 's/ $//'; }
@@ -93,7 +93,7 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
     run "$SCRIPT" --skip docs,manifest,preflight --dry-run
     echo "$output"
     [ "$status" -eq 0 ]
-    [ "$(selected "$output")" = "apt iso malcolm monitoring gns3 appliances enrichment manual site" ]
+    [ "$(selected "$output")" = "apt iso malcolm monitoring gns3 labimages appliances enrichment manual site" ]
 }
 
 @test "an unknown stage name is rejected by name, before anything runs" {
@@ -171,7 +171,8 @@ gitc() { git -c user.name=test -c user.email=test@test.invalid "$@"; }
 # site_excluded() unit test below instead.
 setup_site_repo() {
     local src="$1"
-    mkdir -p "$src/scripts" "$src/config/nginx" "$src/docs/analyst-wiki"
+    mkdir -p "$src/scripts" "$src/config/nginx" "$src/docs/analyst-wiki" "$src/scenarios/profiles"
+    echo "WAN_DELAY=1" > "$src/scenarios/profiles/branch-wan.conf"
     printf '#!/usr/bin/env bash\n' > "$src/scripts/r770-offline-fetch.sh"
     printf '#!/usr/bin/env bash\necho hi\n' > "$src/scripts/hello.sh"
     chmod +x "$src/scripts/hello.sh"
@@ -201,13 +202,14 @@ setup_site_repo() {
     [ ! -x "$BUNDLE_DIR/site/scripts/README.txt" ]
     [ -s "$BUNDLE_DIR/site/config/nginx/site.conf" ]
     [ -s "$BUNDLE_DIR/site/docs/analyst-wiki/index.md" ]
+    [ -s "$BUNDLE_DIR/site/scenarios/profiles/branch-wan.conf" ]
     [ ! -e "$BUNDLE_DIR/site/config/x.env" ]
     [ ! -e "$BUNDLE_DIR/site/config/y.key" ]
     [ ! -e "$BUNDLE_DIR/site/scripts/outside.env" ]
     [ ! -e "$BUNDLE_DIR/site/docs/analyst-wiki/site.pem" ]
     [ ! -e "$BUNDLE_DIR/site/scripts/htpasswd" ]
     [ ! -e "$BUNDLE_DIR/site/docs/analyst-wiki/.htpasswd" ]
-    grep -qE 'site/: 5 files from [0-9a-f]{7,40} copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+    grep -qE 'site/: 6 files from [0-9a-f]{7,40} copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
     [ ! -e "$BUNDLE_DIR/MANIFEST.sha256" ]
     [ ! -s "$NET" ]
 }
@@ -298,7 +300,7 @@ setup_site_repo() {
 
 @test "a SITE_SRC_ROOT that looks like this repo but is not a git work tree refuses" {
     SRC="$BATS_TEST_TMPDIR/site-src"
-    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki"
+    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki" "$SRC/scenarios"
     touch "$SRC/scripts/r770-offline-fetch.sh"
     export SITE_SRC_ROOT="$SRC"
     run "$SCRIPT" --only site
@@ -319,9 +321,9 @@ setup_site_repo() {
     [[ "$output" == *"docs/analyst-wiki"* ]]
 }
 
-@test "0 tracked files under the three trees refuses, even though the identity marker exists" {
+@test "0 tracked files under the site trees refuses, even though the identity marker exists" {
     SRC="$BATS_TEST_TMPDIR/site-src"
-    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki"
+    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki" "$SRC/scenarios"
     touch "$SRC/scripts/r770-offline-fetch.sh"    # present, but UNTRACKED below
     git -C "$SRC" init -q
     gitc -C "$SRC" commit -q -m init --allow-empty
@@ -337,7 +339,7 @@ setup_site_repo() {
     setup_site_repo "$SRC"
     local commit; commit="$(git -C "$SRC" rev-parse HEAD)"
     ARCHIVE="$BATS_TEST_TMPDIR/site.tar"
-    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki > "$ARCHIVE"
+    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki scenarios > "$ARCHIVE"
     unset SITE_SRC_ROOT
     export SITE_ARCHIVE="$ARCHIVE" SITE_COMMIT="$commit"
     run "$SCRIPT" --only site
@@ -495,10 +497,10 @@ exec "'"$real"'" "$@"'
     setup_site_repo "$SRC"
     local stage="$BATS_TEST_TMPDIR/archive-src"
     mkdir -p "$stage"
-    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki | tar xf - -C "$stage"
+    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki scenarios | tar xf - -C "$stage"
     ln -s /etc/passwd "$stage/scripts/evil-link"
     ARCHIVE="$BATS_TEST_TMPDIR/site.tar"
-    tar cf "$ARCHIVE" -C "$stage" scripts config docs
+    tar cf "$ARCHIVE" -C "$stage" scripts config docs scenarios
     unset SITE_SRC_ROOT
     export SITE_ARCHIVE="$ARCHIVE" SITE_COMMIT=0123456789abcdef
     run "$SCRIPT" --only site
@@ -905,4 +907,52 @@ stub_docs_wget() {
     [[ "$output" != *"Skipping acquire"* ]]
     run apt-cache "${O[@]}" policy simlab-probe
     [[ "$output" == *"Candidate: 1.0"* ]]
+}
+
+# ── labimages: lab container images built from this checkout ──
+
+@test "--list names the labimages stage between gns3 and appliances" {
+    run "$SCRIPT" --list
+    echo "$output"
+    [ "$status" -eq 0 ]
+    local order
+    order="$(echo "$output" | grep -oE '^\s*[a-z0-9]+' | tr -d ' ' | tr '\n' ' ')"
+    [[ "$order" == *"gns3 labimages appliances"* ]]
+}
+
+@test "--dry-run --only labimages prints one build per lab image and one save, touching nothing" {
+    run "$SCRIPT" --only labimages --dry-run
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"would run  labimages"* ]]
+    [ "$(echo "$output" | grep -c 'build -f images/ipsec-ss/Dockerfile')" -eq 1 ]
+    [ "$(echo "$output" | grep -c 'build -f images/wan-emu/Dockerfile')" -eq 1 ]
+    [ "$(echo "$output" | grep -c 'build -f images/svc-targets/Dockerfile')" -eq 1 ]
+    [ "$(echo "$output" | grep -c 'gns3/docker-nodes/lab-images.tar.gz')" -eq 1 ]
+    [ ! -s "$NET" ]
+}
+
+@test "stage_labimages builds and saves each image, writes the .list, and WARNs+skips a missing Dockerfile" {
+    local B="$BATS_TEST_TMPDIR/b" R="$BATS_TEST_TMPDIR/repo" CALLS="$BATS_TEST_TMPDIR/calls"
+    mkdir -p "$B/gns3/docker-nodes" "$R/images/ipsec-ss" "$R/images/wan-emu" ; : > "$B/NOTES"
+    : > "$R/images/ipsec-ss/Dockerfile"; : > "$R/images/wan-emu/Dockerfile"   # svc-targets absent
+    load_fn "$SCRIPT" stage_labimages; load_fn "$SCRIPT" labimages_root; LAB_IMAGES=(ipsec-ss wan-emu svc-targets)
+    # shellcheck disable=SC2317
+    ctr_save() { echo "save $*" >> "$CALLS"; : > "$1"; }
+    note() { echo "- $*" >> "$B/NOTES"; }
+    TS=T1; SITE_SRC_ROOT="$R"
+    CTR=ctrstub; ctrstub() { echo "ctr $*" >> "$CALLS"; }
+    run stage_labimages
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q 'ctr build -f '"$R"'/images/ipsec-ss/Dockerfile -t lab/ipsec-ss:T1' "$CALLS"
+    grep -q 'ctr build -f '"$R"'/images/wan-emu/Dockerfile -t lab/wan-emu:T1' "$CALLS"
+    [ "$(grep -c '^save' "$CALLS")" -eq 1 ]
+    ! grep -q '^save.*svc-targets' "$CALLS"
+    [ "$(cat "$B/gns3/docker-nodes/lab-images.list")" = "$(printf 'lab/ipsec-ss:T1\nlab/wan-emu:T1')" ]
+    grep -q 'WARN: images/svc-targets/Dockerfile missing' "$B/NOTES"
+}
+
+@test "the curated apt list includes python3-yaml" {
+    grep -qE '^[[:space:]]+python3-ruamel\.yaml python3-dotenv python3-yaml' "$SCRIPT"
 }

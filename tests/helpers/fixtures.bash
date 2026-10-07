@@ -14,7 +14,7 @@ make_bundle() {
     local d=$1
     mkdir -p "$d"/{apt,malcolm,docker,images,enrichment,isos,dell} \
              "$d"/gns3/{appliances,definitions} "$d"/.stamps \
-             "$d"/site/{scripts,config,docs/analyst-wiki}
+             "$d"/site/{scripts/scenarios,config,docs/analyst-wiki,scenarios/profiles}
     echo "fake deb"             > "$d/apt/example_1.0_amd64.deb"
     # site/ — this repo's reviewed scripts/config/docs-analyst-wiki, as
     # r770-offline-fetch.sh's stage_site() copies them. Includes a stand-in
@@ -40,6 +40,8 @@ make_bundle() {
     chmod +x "$d/site/scripts/r770-install.sh"
     printf '#!/usr/bin/env bash\necho fixture-install-adapters\n' > "$d/site/scripts/r770-install-adapters.sh"
     chmod +x "$d/site/scripts/r770-install-adapters.sh"
+    printf '#!/usr/bin/env bash\necho fixture-scen-lib\n' > "$d/site/scripts/scenarios/scen-lib.sh"
+    echo "WAN_DELAY=1" > "$d/site/scenarios/profiles/branch-wan.conf"
     echo "server { }" > "$d/site/config/nginx.conf"
     echo "# wiki"      > "$d/site/docs/analyst-wiki/index.md"
     echo "fake malcolm images"  > "$d/malcolm/malcolm-images-0.0.0-fixture.tar.gz"

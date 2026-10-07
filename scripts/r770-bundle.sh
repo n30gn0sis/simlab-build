@@ -221,6 +221,27 @@ check_site() {  # <dir>
     else
         pass "site/ has the expected deploy script(s)"
     fi
+    check_lab_images "$dir"
+}
+
+# A site/ that ships images/ (the lab image build contexts) promises the built images
+# too: without lab-images.list naming each of them and lab-images.tar.gz, the scenario
+# harness has nothing to run on the R770. Missing any of it is a WARN (--strict fails).
+LAB_IMAGES_REQUIRED=(ipsec-ss wan-emu svc-targets)
+check_lab_images() {  # <dir>
+    local dir="$1" img missing=()
+    local list="$dir/gns3/docker-nodes/lab-images.list"
+    [ -d "$dir/site/images" ] || return 0
+    for img in "${LAB_IMAGES_REQUIRED[@]}"; do
+        if [ ! -s "$list" ] || ! grep -q "^localhost/lab/$img:" "$list"; then missing+=("$img"); fi
+    done
+    [ -s "$dir/gns3/docker-nodes/lab-images.tar.gz" ] || missing+=("lab-images.tar.gz")
+    if [ "${#missing[@]}" -gt 0 ]; then
+        printf '      %s\n' "${missing[@]}"
+        warn "site/ ships images/ but the built lab image(s) above are missing from gns3/docker-nodes/lab-images.list / lab-images.tar.gz"
+    else
+        pass "lab images listed and saved for the scenario harness"
+    fi
 }
 
 # A list file without its payload -- or a payload with no list file -- means the

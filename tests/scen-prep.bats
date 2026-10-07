@@ -95,3 +95,19 @@ setup() {
     run "$SCRIPT" --images "$S/nope.list" "$BATS_TEST_TMPDIR/S1"; [ "$status" -ne 0 ]
     [ ! -e "$SCEN_CASES/S1" ]
 }
+
+@test "--images given twice: the second list (real FRR tag) rewrites the FRR node too" {
+    printf 'localhost/lab/ipsec-ss:T9\n' > "$S/lab.list"
+    printf '# node images\ndocker.io/nicolaka/netshoot:latest\nquay.io/frrouting/frr:T9\n' > "$S/nodes.list"
+    run "$SCRIPT" --images "$S/lab.list" --images "$S/nodes.list" "$BATS_TEST_TMPDIR/S1"; [ "$status" -eq 0 ]
+    r="$SCEN_CASES/S1/S1-W1-ss-20261001T1400Z/run.yaml"
+    grep -q 'quay.io/frrouting/frr:T9' "$r"
+    [[ "$output" == *"fixture tags remaining: 0"* ]]
+    run grep -q ':0.0.0-fixture' "$r"; [ "$status" -ne 0 ]
+}
+@test "--images with one list warns about the fixture tag left on the FRR node" {
+    printf 'localhost/lab/ipsec-ss:T9\n' > "$S/lab.list"
+    run "$SCRIPT" --images "$S/lab.list" "$BATS_TEST_TMPDIR/S1"; [ "$status" -eq 0 ]
+    [[ "$output" == *"WARN: fixture tag left: quay.io/frrouting/frr:0.0.0-fixture (node isp1)"* ]]
+    [[ "$output" == *"fixture tags remaining: 1"* ]]
+}

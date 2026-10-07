@@ -91,18 +91,23 @@ except BaseException:
     raise
 PY
 }
-# manifest_rewrite_images <run.yaml> <list-file> — in place: every nodes[].image tagged
+# manifest_rewrite_images <run.yaml> <list-file>... — in place: every nodes[].image tagged
 # 0.0.0-fixture takes the list-file line with the same repo path (text before the last ':').
-# Unmatched images stay as they are; one status line per node goes to stdout.
+# Several lists may be given (the first to name a repo wins). Each list is one image
+# reference per line, '#' comments allowed — the format of the bundle's lab-images.list and
+# of gns3/docker-nodes/image-list.txt (the real FRR/netshoot tags), so both can be passed.
+# Unmatched images stay as they are; one status line per node goes to stdout, then a
+# WARN line for every fixture tag still left and a 'fixture tags remaining: N' summary.
 manifest_rewrite_images() {
-    python3 -I - "$1" "$2" <<'PY' || return 1
+    python3 -I - "$@" <<'PY' || return 1
 import os, sys, yaml
-path, lst = sys.argv[1], sys.argv[2]
+path = sys.argv[1]
 tags = {}
-for line in open(lst):
-    line = line.strip()
-    if line and not line.startswith('#') and ':' in line:
-        tags[line.rsplit(':', 1)[0]] = line
+for lst in sys.argv[2:]:
+    for line in open(lst):
+        line = line.strip()
+        if line and not line.startswith('#') and ':' in line:
+            tags.setdefault(line.rsplit(':', 1)[0], line)
 d = yaml.safe_load(open(path))
 for n in d.get('nodes') or []:
     img = str(n.get('image', ''))
@@ -113,6 +118,11 @@ for n in d.get('nodes') or []:
         print('image %s: %s -> %s' % (n['name'], img, tags[repo]))
     else:
         print('image %s: no list entry for %s, left as %s' % (n['name'], repo, img))
+left = [(str(n.get('image', '')), n['name']) for n in d.get('nodes') or []
+        if str(n.get('image', '')).endswith(':0.0.0-fixture')]
+for img, name in left:
+    print('WARN: fixture tag left: %s (node %s)' % (img, name))
+print('fixture tags remaining: %d' % len(left))
 d_, b_ = os.path.split(path)
 tmp = os.path.join(d_, '.' + b_ + '.tmp')
 try:

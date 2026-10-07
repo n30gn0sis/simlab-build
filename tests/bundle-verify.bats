@@ -353,3 +353,28 @@ pair_bundle() {   # a bundle with all three list/payload pairs intact
     [ "$status" -ne 0 ]
     [[ "$output" == *"lab-images.tar.gz"* ]]
 }
+
+@test "site/images present and the list lacks wan-emu: --strict fails naming it" {
+    printf 'localhost/lab/ipsec-ss:0.0.0-fixture\nlocalhost/lab/svc-targets:0.0.0-fixture\n' > "$BUNDLE/gns3/docker-nodes/lab-images.list"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE" --strict
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"wan-emu"* ]]
+    [[ "$output" == *"RESULT: FAIL (--strict)"* ]]
+}
+@test "site/images present and neither lab-images file exists: --strict fails naming the images" {
+    rm "$BUNDLE/gns3/docker-nodes/lab-images.list" "$BUNDLE/gns3/docker-nodes/lab-images.tar.gz"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE" --strict
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"ipsec-ss"* ]]; [[ "$output" == *"svc-targets"* ]]; [[ "$output" == *"lab-images.tar.gz"* ]]
+}
+@test "without site/images the lab images are not demanded" {
+    rm -rf "$BUNDLE/site/images" "$BUNDLE/gns3/docker-nodes/lab-images.list" "$BUNDLE/gns3/docker-nodes/lab-images.tar.gz"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE" --strict
+    echo "$output"
+    [ "$status" -eq 0 ]
+}

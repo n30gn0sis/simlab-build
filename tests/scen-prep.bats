@@ -55,3 +55,28 @@ setup() {
     echo $((100*1024*1024)) > "$S/free_kb"      # 100 GB free: fits the 8 GB run, below the floor
     SCEN_FREE_FLOOR_GB=200 run "$SCRIPT" "$BATS_TEST_TMPDIR/S1"; [ "$status" -eq 1 ]; [[ "$output" == *"floor"* ]]
 }
+@test "refuses a non-numeric cap_mb, naming the key" {
+    sed -i 's/cap_mb: 1024/cap_mb: abc/' "$BATS_TEST_TMPDIR/S1/run.yaml"
+    run "$SCRIPT" "$BATS_TEST_TMPDIR/S1"; [ "$status" -eq 1 ]; [[ "$output" == *"capture.cap_mb must be a positive integer"* ]]
+    [ ! -d "$SCEN_CASES" ]
+}
+@test "refuses ring 0" {
+    sed -i 's/ring: 2/ring: 0/' "$BATS_TEST_TMPDIR/S1/run.yaml"
+    run "$SCRIPT" "$BATS_TEST_TMPDIR/S1"; [ "$status" -eq 1 ]; [[ "$output" == *"capture.ring must be a positive integer"* ]]
+}
+@test "refuses a run_id that escapes the cases tree" {
+    sed -i 's|^run_id: .*|run_id: ../escape|' "$BATS_TEST_TMPDIR/S1/run.yaml"
+    run "$SCRIPT" "$BATS_TEST_TMPDIR/S1"; [ "$status" -eq 1 ]; [[ "$output" == *"run_id must match"* ]]
+    [ ! -d "$SCEN_CASES" ]
+}
+@test "refuses a manifest with no run_id" {
+    sed -i '/^run_id:/d' "$BATS_TEST_TMPDIR/S1/run.yaml"
+    run "$SCRIPT" "$BATS_TEST_TMPDIR/S1"; [ "$status" -eq 1 ]; [[ "$output" == *"run_id"* ]]
+    [ ! -d "$SCEN_CASES" ]
+}
+@test "refuses to re-run onto an existing run dir and leaves it unchanged" {
+    run "$SCRIPT" "$BATS_TEST_TMPDIR/S1"; [ "$status" -eq 0 ]
+    d="$SCEN_CASES/S1/S1-W1-ss-20261001T1400Z"; echo marker >> "$d/run.yaml"
+    run "$SCRIPT" "$BATS_TEST_TMPDIR/S1"; [ "$status" -eq 1 ]; [[ "$output" == *"run dir already exists"* ]]
+    grep -qx marker "$d/run.yaml"
+}

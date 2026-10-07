@@ -60,10 +60,15 @@ PY
 }
 # manifest_list <run.yaml> <list-key> <field> — one value per list item.
 manifest_list() {
-    python3 -I - "$1" "$2" "$3" <<'PY'
+    python3 -I - "$1" "$2" "$3" <<'PY' || return 1
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1])).get(sys.argv[2]) or []
 for item in d: print(item.get(sys.argv[3], ''))
 PY
 }
-run_dir_for() { echo "$SCEN_CASES/$(manifest_get "$1" scenario)/$(manifest_get "$1" run_id)"; }
+run_dir_for() {
+    local sc id
+    sc=$(manifest_get "$1" scenario) || return 1
+    id=$(manifest_get "$1" run_id) || return 1
+    echo "$SCEN_CASES/$sc/$id"
+}

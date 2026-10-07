@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+# scen-run <run-dir>/run.yaml — execute one reference-PCAP run (spec §8).
+# Order: guard everything -> captures up -> host impairment -> traffic (+ timed
+# events) -> clear impairment -> stop captures -> drop stats.
+# Task 7c hook: ground-truth collection and manifest completion (see the end).
+# Any exit path (error, INT, TERM) stops captures, clears every iface this run
+# impaired, logs "aborted" and keeps the run directory.
+set -euo pipefail
+HERE="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+# shellcheck source=/dev/null
+source "$HERE/scen-lib.sh"
+
+# How traffic is run inside a node: $SCEN_EXEC <node> sh -s < script.
+# Deliberately word-split, so "docker exec -i" or "sudo docker exec -i" work.
+SCEN_EXEC="${SCEN_EXEC:-docker exec -i}"
+SCEN_CAPTURE_SETTLE="${SCEN_CAPTURE_SETTLE:-1}"   # seconds before checking tcpdumps survived
+
+[ $# -eq 1 ] || die "usage: scen-run <run-dir>/run.yaml"
+M="$1"; [ -f "$M" ] || die "no such manifest: $M"
+D="$(cd "$(dirname "$M")" && pwd)"; M="$D/run.yaml"
+export SCEN_LOG="$D/events.log"
+
+APPLIED=''          # ifaces we impaired (M1), cleared by clear_impairments/cleanup
+TRAFFIC_PID=''
+FINISHED=0
+CLEANED=0
+PIDS=()             # tcpdump PIDs
+NAMES=()            # capture point names, same order
+
+cleanup() {
+    local rc=$? p i
+    set +e
+    [ "$CLEANED" = 0 ] || exit "$rc"
+    CLEANED=1
+    trap '' INT TERM
+    if [ -n "$TRAFFIC_PID" ] && kill -0 "$TRAFFIC_PID" 2>/dev/null; then
+        kill "$TRAFFIC_PID" 2>/dev/null; wait "$TRAFFIC_PID" 2>/dev/null
+    fi
+    for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null; done
+    for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null; done
+    for i in $APPLIED; do wan-clear "$i" || echo "WARNING: wan-clear $i failed — check wan-show" >&2; done
+    [ "$FINISHED" = 1 ] || log "aborted rc=$rc"
+    exit "$rc"
+}
+# A signal exits with the conventional code; the EXIT trap is the single cleanup pass.
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# ---- guards: nothing starts before every one passes ----
+read_manifest() {
+    BRIDGES=$(manifest_list "$M" capture_points bridge) || die "cannot read capture_points"
+    CNAMES=$(manifest_list "$M" capture_points name) || die "cannot read capture_points"
+    IMP_MECH=$(manifest_list "$M" impairment mechanism) || die "cannot read impairment"
+    IMP_PROF=$(manifest_list "$M" impairment profile) || die "cannot read impairment"
+    IMP_IFACE=$(manifest_list "$M" impairment iface) || die "cannot read impairment"
+    IMP_NODE=$(manifest_list "$M" impairment node) || die "cannot read impairment"
+    CAP_MB=$(manifest_get "$M" capture.cap_mb) || die "capture.cap_mb missing"
+    RING=$(manifest_get "$M" capture.ring) || die "capture.ring missing"
+    T_SCRIPT=$(manifest_get "$M" traffic.script) || die "traffic.script missing"
+    T_NODE=$(manifest_get "$M" traffic.node) || die "traffic.node missing"
+    EVENTS=$(manifest_get "$M" events) || EVENTS=''
+    [[ "$CAP_MB" =~ ^[1-9][0-9]*$ ]] || die "capture.cap_mb must be a positive integer"
+    [[ "$RING" =~ ^[1-9][0-9]*$ ]] || die "capture.ring must be a positive integer"
+    [ -n "$T_NODE" ] || die "traffic.node is empty"
+    [ -f "$D/$T_SCRIPT" ] || die "traffic script not found: $D/$T_SCRIPT"
+}
+guard_all() {
+    local b i m n=0
+    while IFS= read -r b; do
+        [ -n "$b" ] || continue; n=$((n + 1))
+        guard_iface "$b" || exit 1
+    done <<< "$BRIDGES"
+    [ "$n" -gt 0 ] || die "run.yaml has no capture_points"
+    while IFS= read -r i; do
+        [ -n "$i" ] || continue
+        guard_iface "$i" || exit 1
+    done <<< "$IMP_IFACE"
+    while IFS= read -r m; do
+        case "$m" in M1|M2|M3|'') ;; *) die "unknown impairment mechanism: $m" ;; esac
+    done <<< "$IMP_MECH"
+}
+
+start_captures() {
+    local name br pid
+    : > "$D/.pids"
+    # Job control on while spawning: a non-interactive shell starts `&` children with
+    # SIGINT ignored, and a tcpdump that ignores SIGINT would never flush on stop.
+    set -m
+    while IFS='|' read -r name br; do
+        tcpdump -i "$br" -w "$D/$name.pcapng" -C "$CAP_MB" -W "$RING" -s 0 -n -U \
+            > "$D/.tcpdump-$name.err" 2>&1 &
+        pid=$!
+        PIDS+=("$pid"); NAMES+=("$name")
+        echo "$pid" >> "$D/.pids"
+    done < <(paste -d'|' <(printf '%s\n' "$CNAMES") <(printf '%s\n' "$BRIDGES"))
+    set +m
+    sleep "$SCEN_CAPTURE_SETTLE"
+    for pid in "${PIDS[@]}"; do
+        kill -0 "$pid" 2>/dev/null || die "a tcpdump exited at startup — see $D/.tcpdump-*.err"
+    done
+    log "captures up (${#PIDS[@]} points)"
+}
+
+apply_impairments() {
+    local mech prof iface node
+    while IFS='|' read -r mech prof iface node; do
+        case "$mech" in
+            M1) guard_iface "$iface" && wan-apply "$prof" "$iface"
+                APPLIED="$APPLIED $iface"; log "impairment M1 $prof applied on $iface" ;;
+            M2) log "impairment M2 $prof on node $node — applied inside the node by the operator" ;;
+            M3) log "impairment M3 $prof — ad hoc, nothing applied" ;;
+        esac
+    done < <(paste -d'|' <(printf '%s\n' "$IMP_MECH") <(printf '%s\n' "$IMP_PROF") \
+                   <(printf '%s\n' "$IMP_IFACE") <(printf '%s\n' "$IMP_NODE"))
+}
+
+run_traffic() {
+    local t0
+    log "traffic start: $T_NODE $T_SCRIPT"
+    # shellcheck disable=SC2086  # SCEN_EXEC is word-split on purpose
+    $SCEN_EXEC "$T_NODE" sh -s < "$D/$T_SCRIPT" > "$D/traffic.out" 2>&1 &
+    TRAFFIC_PID=$!
+    t0=$(date +%s)
+    # Task 7b hook: the timed-event engine. The last event is an `end` note at/after traffic end.
+    if [ -f "$HERE/scen-events.sh" ]; then
+        # shellcheck source=/dev/null
+        source "$HERE/scen-events.sh"
+        events_run "$D/$EVENTS" "$t0"
+    else
+        log "events: engine not present, skipping"
+    fi
+    wait "$TRAFFIC_PID" || log "traffic exited non-zero"
+    TRAFFIC_PID=''
+    log "traffic done"
+}
+
+clear_impairments() {
+    local i
+    for i in $APPLIED; do wan-clear "$i"; log "impairment cleared on $i"; done
+    APPLIED=''
+}
+
+stop_captures() {
+    local p
+    for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done
+    for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null || true; done
+    PIDS=()
+    log "captures stopped"
+}
+
+write_capture_stats() {
+    local n line
+    : > "$D/capture-stats.txt"
+    for n in "${NAMES[@]}"; do
+        line=$(grep -E '[0-9]+ packets? dropped by kernel' "$D/.tcpdump-$n.err" 2>/dev/null | tail -1 || true)
+        if [ -n "$line" ]; then
+            printf '%s: %s\n' "$n" "$(sed -E 's/^[^0-9]*([0-9]+ packets? dropped by kernel).*/\1/' <<< "$line")"
+        else
+            printf '%s: UNKNOWN (no tcpdump summary)\n' "$n"
+        fi >> "$D/capture-stats.txt"
+    done
+    log "capture-stats.txt written"
+}
+
+read_manifest
+guard_all
+start_captures
+apply_impairments
+run_traffic
+clear_impairments
+stop_captures
+write_capture_stats
+# Task 7c hook: collect_gt / finish_manifest go here (ground truth, times_utc, manifest completion).
+FINISHED=1
+log "run complete"

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# scen-clear <run.yaml> — end-of-run cleanup: remove this run's host impairments,
+# stop this run's harness captures, check the baseline RTT is back, and fail if
+# any impairment is still present. M2/M3 impairments live inside the lab
+# nodes and are not touched here.
+set -euo pipefail
+HERE="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+# shellcheck source=/dev/null
+source "$HERE/scen-lib.sh"
+
+[ $# -eq 1 ] || die "usage: scen-clear <run.yaml>"
+M="$1"; [ -f "$M" ] || die "no such manifest: $M"
+D="$(cd "$(dirname "$M")" && pwd)"
+
+# 1. Host (M1) impairments: every manifest iface, guarded, warn-only.
+MECHS="$(manifest_list "$M" impairment mechanism)" || die "cannot read impairment"
+IFACES="$(manifest_list "$M" impairment iface)" || die "cannot read impairment"
+cleared=0
+while IFS= read -r mech <&3 && IFS= read -r iface <&4; do
+    if [ "$mech" != M1 ]; then log "$mech impairment: nothing to clear on host"; continue; fi
+    guard_iface "$iface" || die "manifest iface $iface refused"
+    if wan-clear "$iface"; then log "impairment cleared on $iface"
+    else log "WARN: wan-clear $iface failed — check wan-show"; fi
+    cleared=$((cleared + 1))
+done 3<<<"$MECHS" 4<<<"$IFACES"
+[ "$cleared" -gt 0 ] || log "no host impairments to clear"
+
+# 2. Harness captures belonging to this run only (no match is not an error).
+DRE="$(printf '%s' "$D" | sed 's/[][\.*^$+?(){}|]/\\&/g')"
+if pkill -INT -f -- "tcpdump .* -w $DRE/"; then log "stopped captures under $D"
+else log "no captures running under $D"; fi
+
+# 3. Baseline RTT (H5): drift is a finding, not a failure.
+TARGET="$(manifest_get "$M" baseline.target 2>/dev/null || true)"
+BASE="$(manifest_get "$M" baseline.rtt_ms 2>/dev/null || true)"
+if [ -n "$TARGET" ] && [ -n "$BASE" ]; then
+    avg=''
+    if out="$(ping -c 10 -q "$TARGET" 2>&1)"; then
+        avg="$(printf '%s\n' "$out" | awk -F'[=/ ]+' '/^rtt .*=/ {print $7}')"
+    fi
+    if [ -z "$avg" ]; then
+        echo "RTT UNKNOWN (ping failed)"
+    elif awk -v a="$avg" -v b="$BASE" 'BEGIN { d = a - b; if (d < 0) d = -d; exit !(d <= 1.0) }'; then
+        echo "RTT OK ($avg ms vs baseline $BASE)"
+    else
+        echo "RTT DRIFT ($avg ms vs baseline $BASE)"
+    fi
+fi
+
+# 4. Nothing may remain.
+left="$(wan-show)" || die "wan-show failed"
+if [ -n "$left" ]; then
+    printf '%s\n' "$left"
+    log "impairments still present"
+    exit 1
+fi
+log "all clear"

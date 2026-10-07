@@ -23,6 +23,7 @@ export SCEN_LOG="$D/events.log"
 APPLIED=''          # ifaces we impaired (M1), cleared by clear_impairments/cleanup
 TRAFFIC_PID=''
 FINISHED=0
+TRAFFIC_RC=0        # non-zero: run completed but is not a clean reference (exit 3)
 CLEANED=0
 PIDS=()             # tcpdump PIDs
 NAMES=()            # capture point names, same order
@@ -38,7 +39,7 @@ cleanup() {
     fi
     for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null; done
     for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null; done
-    for i in $APPLIED; do wan-clear "$i" || echo "WARNING: wan-clear $i failed — check wan-show" >&2; done
+    for i in $APPLIED; do wan-clear "$i" || log "wan-clear $i failed — check wan-show"; done
     [ "$FINISHED" = 1 ] || log "aborted rc=$rc"
     exit "$rc"
 }
@@ -84,8 +85,10 @@ guard_all() {
 start_captures() {
     local name br pid
     : > "$D/.pids"
-    # Job control on while spawning: a non-interactive shell starts `&` children with
-    # SIGINT ignored, and a tcpdump that ignores SIGINT would never flush on stop.
+    # Job control on while spawning: belt-and-braces so `&` children do not get SIGINT
+    # ignored by this shell (they would still inherit an ignore if scen-run itself
+    # inherited one). Real tcpdump installs its own SIGINT handler regardless.
+    # If scen-run is itself backgrounded its INT trap is a no-op; TERM/EXIT still clean up.
     set -m
     while IFS='|' read -r name br; do
         tcpdump -i "$br" -w "$D/$name.pcapng" -C "$CAP_MB" -W "$RING" -s 0 -n -U \
@@ -106,8 +109,12 @@ apply_impairments() {
     local mech prof iface node
     while IFS='|' read -r mech prof iface node; do
         case "$mech" in
-            M1) guard_iface "$iface" && wan-apply "$prof" "$iface"
-                APPLIED="$APPLIED $iface"; log "impairment M1 $prof applied on $iface" ;;
+            M1) guard_iface "$iface" || exit 1
+                # Recorded before the apply: a wan-apply that fails midway may have left a
+                # root qdisc behind, and cleanup must clear it.
+                APPLIED="$APPLIED $iface"
+                wan-apply "$prof" "$iface"
+                log "impairment M1 $prof applied on $iface" ;;
             M2) log "impairment M2 $prof on node $node — applied inside the node by the operator" ;;
             M3) log "impairment M3 $prof — ad hoc, nothing applied" ;;
         esac
@@ -130,9 +137,9 @@ run_traffic() {
     else
         log "events: engine not present, skipping"
     fi
-    wait "$TRAFFIC_PID" || log "traffic exited non-zero"
+    wait "$TRAFFIC_PID" || TRAFFIC_RC=$?
     TRAFFIC_PID=''
-    log "traffic done"
+    if [ "$TRAFFIC_RC" -ne 0 ]; then log "traffic rc=$TRAFFIC_RC"; else log "traffic done"; fi
 }
 
 clear_impairments() {
@@ -173,4 +180,5 @@ stop_captures
 write_capture_stats
 # Task 7c hook: collect_gt / finish_manifest go here (ground truth, times_utc, manifest completion).
 FINISHED=1
+if [ "$TRAFFIC_RC" -ne 0 ]; then log "run complete with traffic failure (rc=$TRAFFIC_RC)"; exit 3; fi
 log "run complete"

@@ -44,7 +44,7 @@ teardown() { pkill -f "$RUN" 2>/dev/null || true; }
     done
     [ "$(wc -l < "$RUN/.pids")" -eq 4 ]
     [[ "$output" == *"captures up"* ]]
-    ! pgrep -f "tcpdump.*$RUN"
+    run pgrep -f "tcpdump.*$RUN"; [ "$status" -ne 0 ]
 }
 @test "runs the traffic script through SCEN_EXEC on the traffic node" {
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
@@ -62,7 +62,7 @@ teardown() { pkill -f "$RUN" 2>/dev/null || true; }
 @test "M2 and M3 impairments are logged, never applied" {
     sed -i 's|^  - {mechanism: M1.*|  - {mechanism: M2, profile: lossy, node: gw-a, direction: "A->B"}\n  - {mechanism: M3, profile: adhoc, direction: "A->B"}|' "$RUN/run.yaml"
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
-    [ ! -f "$S/calls" ] || ! grep -q wan- "$S/calls"
+    [ ! -f "$S/calls" ] || { run grep -q wan- "$S/calls"; [ "$status" -ne 0 ]; }
     grep -q 'impairment M2 lossy on node gw-a' "$RUN/events.log"
     grep -q 'impairment M3 adhoc' "$RUN/events.log"
 }
@@ -87,18 +87,27 @@ teardown() { pkill -f "$RUN" 2>/dev/null || true; }
     for _ in $(seq 50); do grep -q 'wan-apply' "$S/calls" 2>/dev/null && break; sleep 0.1; done
     sleep 0.5; kill -TERM $pid; rc=0; wait $pid || rc=$?
     [ "$rc" -eq 143 ]
-    ! pgrep -f "tcpdump.*$RUN"
+    run pgrep -f "tcpdump.*$RUN"; [ "$status" -ne 0 ]
     grep -q 'wan-clear veth-t01a' "$S/calls"
     tail -1 "$RUN/events.log" | grep -q aborted
     [ -d "$RUN" ]
     [ "$(grep -c 'tcpdump-stop' "$S/order")" -eq 4 ]
 }
-@test "a failing wan-apply aborts, clears nothing it did not apply, stops captures" {
+@test "a wan-apply that fails midway is still cleared, captures stop, run aborts" {
     stub wan-apply 'echo "wan-apply $*" >> "$S/calls"; exit 1'
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -ne 0 ]
+    grep -q 'wan-clear veth-t01a' "$S/calls"
     [ "$(grep -c 'tcpdump-stop' "$S/order")" -eq 4 ]
-    ! grep -q wan-clear "$S/calls"
     tail -1 "$RUN/events.log" | grep -q aborted
+}
+@test "a failing traffic run still stops captures and clears impairment, exits 3, not aborted" {
+    stub docker 'echo "docker $*" >> "$S/calls"; exit 7'
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 3 ]
+    grep -q 'traffic rc=7' "$RUN/events.log"
+    grep -q 'wan-clear veth-t01a' "$S/calls"
+    [ "$(grep -c 'tcpdump-stop' "$S/order")" -eq 4 ]
+    [ "$(grep -c 'dropped by kernel' "$RUN/capture-stats.txt")" -eq 4 ]
+    run grep -q aborted "$RUN/events.log"; [ "$status" -ne 0 ]
 }
 @test "refuses to start when a capture point fails guard_iface" {
     sed -i 's/bridge: br-lab-t02/bridge: br-mirror/' "$RUN/run.yaml"

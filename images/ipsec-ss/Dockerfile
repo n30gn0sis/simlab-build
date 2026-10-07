@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # stage copies locally built .debs into images/ipsec-ss/debs/ and this line
 # installs them instead (see Task 14 for the conditional).
 COPY images/ipsec-ss/strongswan.d/save-keys.conf /etc/strongswan.d/charon/save-keys.conf
+COPY images/ipsec-ss/strongswan.d/logging.conf /etc/strongswan.d/charon-logging.conf
 COPY images/ipsec-ss/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN mkdir -p /gt /etc/swanctl/conf.d
 HEALTHCHECK --interval=10s --timeout=3s CMD swanctl --list-sas 2>/dev/null | grep -q INSTALLED || exit 1

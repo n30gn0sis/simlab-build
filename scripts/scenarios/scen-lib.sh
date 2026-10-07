@@ -46,3 +46,24 @@ guard_iface() {
         *) echo "refused: $i is not a lab transit/inner bridge or veth (mgmt, capture, mirror and host bridges are off limits)" >&2; return 1 ;;
     esac
 }
+
+# manifest_get <run.yaml> <a.b.c> — scalar on stdout; exit 1 if the path is absent, empty for null.
+manifest_get() {
+    python3 -I - "$1" "$2" <<'PY' || return 1
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+for k in sys.argv[2].split('.'):
+    if not isinstance(d, dict) or k not in d: sys.exit(1)
+    d = d[k]
+print('' if d is None else d)
+PY
+}
+# manifest_list <run.yaml> <list-key> <field> — one value per list item.
+manifest_list() {
+    python3 -I - "$1" "$2" "$3" <<'PY'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1])).get(sys.argv[2]) or []
+for item in d: print(item.get(sys.argv[3], ''))
+PY
+}
+run_dir_for() { echo "$SCEN_CASES/$(manifest_get "$1" scenario)/$(manifest_get "$1" run_id)"; }

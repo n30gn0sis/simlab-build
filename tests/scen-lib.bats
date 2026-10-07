@@ -4,6 +4,7 @@ setup() {
     LIB="$BATS_TEST_DIRNAME/../scripts/scenarios/scen-lib.sh"
     export SCEN_PROFILES="$BATS_TEST_DIRNAME/../scenarios/profiles"
     export T="$BATS_TEST_TMPDIR"
+    cp "$BATS_TEST_DIRNAME/fixtures/run-s1.yaml" "$T/run.yaml"
 }
 lib() { bash -c "source '$LIB'; $*"; }
 
@@ -41,4 +42,21 @@ lib() { bash -c "source '$LIB'; $*"; }
     SCEN_LOG="$T/events.log" run lib 'log "traffic start"'
     [[ "$output" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z\ traffic\ start$ ]]
     grep -q "traffic start" "$T/events.log"
+}
+
+@test "manifest_get reads scalars by dotted path" {
+    run lib "manifest_get '$T/run.yaml' run_id";          [ "$output" = "S1-W1-ss-20261001T1400Z" ]
+    run lib "manifest_get '$T/run.yaml' ipsec.child_rekey_s"; [ "$output" = "120" ]
+    run lib "manifest_get '$T/run.yaml' nope.nope"; [ "$status" -eq 1 ]
+}
+@test "manifest_get prints empty for a null value" {
+    run lib "manifest_get '$T/run.yaml' times_utc.start"; [ "$status" -eq 0 ]; [ -z "$output" ]
+}
+@test "manifest_list returns one field per list item" {
+    run lib "manifest_list '$T/run.yaml' capture_points bridge"
+    [ "$output" = $'br-lab-t01\nbr-lab-t02\nbr-lab-i01\nbr-lab-i02' ]
+    run lib "manifest_list '$T/run.yaml' impairment iface"; [ "$output" = "veth-t01a" ]
+}
+@test "run_dir_for is cases/scenario/run_id" {
+    SCEN_CASES=/x run lib "run_dir_for '$T/run.yaml'"; [ "$output" = "/x/S1/S1-W1-ss-20261001T1400Z" ]
 }

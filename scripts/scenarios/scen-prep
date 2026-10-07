@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# scen-prep <scenario-dir> — prerequisite gate for a reference-PCAP run (spec §8).
+# Reads <scenario-dir>/run.yaml; checks modules, capture bridges, interface
+# guards, wan-show and free space; only then creates the run directory.
+# Nothing is created before every check has passed.
+set -euo pipefail
+# shellcheck source=/dev/null
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/scen-lib.sh"
+
+SCEN_SYSNET="${SCEN_SYSNET:-/sys/class/net}"
+SCEN_MODULES_FILE="${SCEN_MODULES_FILE:-/proc/modules}"
+SCEN_FREE_FLOOR_GB="${SCEN_FREE_FLOOR_GB:-200}"
+
+[ $# -eq 1 ] || die "usage: scen-prep <scenario-dir>"
+SDIR="$1"; M="$SDIR/run.yaml"
+[ -f "$M" ] || die "no run.yaml in $SDIR"
+
+# 1. kernel modules
+missing=''
+for m in xfrm_user xfrm_interface esp4; do
+    grep -q "^$m " "$SCEN_MODULES_FILE" || missing="$missing $m"
+done
+[ -z "$missing" ] || die "modules not loaded:$missing ($SCEN_MODULES_FILE)"
+
+# 2. capture bridges exist and are lab bridges; 3. impairment ifaces are lab-only
+points=0
+while IFS= read -r br; do
+    points=$((points + 1))
+    [ -e "$SCEN_SYSNET/$br" ] || die "capture bridge $br does not exist"
+    guard_iface "$br" || exit 1
+done < <(manifest_list "$M" capture_points bridge)
+[ "$points" -gt 0 ] || die "run.yaml has no capture_points"
+while IFS= read -r ifc; do
+    guard_iface "$ifc" || exit 1
+done < <(manifest_list "$M" impairment iface)
+
+# 4. no impairment left over from an earlier run
+left=$(wan-show) || die "wan-show failed"
+[ -z "$left" ] || die "wan-show not clean: $left"
+
+# 5. free space: floor, then cap_mb x ring x points
+cap=$(manifest_get "$M" capture.cap_mb) || die "run.yaml has no capture.cap_mb"
+ring=$(manifest_get "$M" capture.ring) || die "run.yaml has no capture.ring"
+probe="$SCEN_CASES"
+while [ ! -d "$probe" ] && [ "$probe" != "/" ]; do probe=$(dirname "$probe"); done
+free_kb=$(df -Pk "$probe" | awk 'NR==2{print $4}')
+free_mb=$((free_kb / 1024))
+need_mb=$((cap * ring * points))
+[ "$free_mb" -ge $((SCEN_FREE_FLOOR_GB * 1024)) ] ||
+    die "free space below the ${SCEN_FREE_FLOOR_GB} GB floor: ${free_mb} MB free on $probe"
+[ "$free_mb" -ge "$need_mb" ] ||
+    die "${need_mb} MB needed (${cap} MB x ring ${ring} x ${points} points), ${free_mb} MB free on $probe"
+
+# 6. create the run dir; later commands get only <run-dir>/run.yaml
+dir=$(run_dir_for "$M")
+mkdir -p "$dir"
+cp "$M" "$dir/run.yaml"
+for x in traffic events expected.md; do
+    if [ -e "$SDIR/$x" ]; then cp -R "$SDIR/$x" "$dir/$x"; fi
+done
+echo "$dir"

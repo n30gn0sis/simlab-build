@@ -41,6 +41,10 @@ make_bundle() {
     printf '#!/usr/bin/env bash\necho fixture-install-adapters\n' > "$d/site/scripts/r770-install-adapters.sh"
     chmod +x "$d/site/scripts/r770-install-adapters.sh"
     printf '#!/usr/bin/env bash\necho fixture-scen-lib\n' > "$d/site/scripts/scenarios/scen-lib.sh"
+    for sc in scen-prep scen-run scen-events.sh scen-check scen-ingest scen-clear scen-bridges.sh; do
+        printf '#!/usr/bin/env bash\necho fixture-%s\n' "$sc" > "$d/site/scripts/scenarios/$sc"
+        chmod +x "$d/site/scripts/scenarios/$sc"
+    done
     echo "WAN_DELAY=1" > "$d/site/scenarios/profiles/branch-wan.conf"
     echo "server { }" > "$d/site/config/nginx.conf"
     echo "# wiki"      > "$d/site/docs/analyst-wiki/index.md"

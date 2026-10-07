@@ -313,8 +313,21 @@ pair_bundle() {   # a bundle with all three list/payload pairs intact
     [[ "$output" == *"RESULT: FAIL (--strict)"* ]]
 }
 
-@test "SITE_REQUIRED_SCRIPTS names the scenario harness library" {
-    grep -q 'scripts/scenarios/scen-lib.sh' "$SCRIPT"
+@test "SITE_REQUIRED_SCRIPTS names the whole scenario harness" {
+    for s in scen-lib.sh scen-prep scen-run scen-events.sh scen-check scen-ingest scen-clear scen-bridges.sh; do
+        grep -q "scripts/scenarios/$s" "$SCRIPT"
+    done
+}
+
+@test "a site/ lacking a scenario harness script warns, and --strict fails it" {
+    rm "$BUNDLE/site/scripts/scenarios/scen-check"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"scripts/scenarios/scen-check"* ]]
+    run "$SCRIPT" verify "$BUNDLE" --strict
+    [ "$status" -eq 1 ]
 }
 
 @test "a site/ lacking scenarios/profiles/branch-wan.conf warns, and --strict fails it" {

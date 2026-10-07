@@ -200,8 +200,7 @@ check_manual() {  # <dir>
 #     given script landed (r770-install.sh and r770-install-adapters.sh are
 #     the latest) will legitimately lack it. In a bundle cut from the current
 #     repo, a missing script is a genuine defect to disposition.
-SITE_REQUIRED_SCRIPTS=(scripts/r770-bundle.sh scripts/r770-malcolm-deploy.sh scripts/r770-airgap-sim.sh scripts/r770-lab-ca.sh scripts/r770-portal.sh scripts/r770-ufw.sh scripts/r770-install.sh scripts/r770-install-adapters.sh scripts/scenarios/scen-lib.sh)
-# The other scripts/scenarios/scen-* entries are appended here as each lands (the list is completed with the harness).
+SITE_REQUIRED_SCRIPTS=(scripts/r770-bundle.sh scripts/r770-malcolm-deploy.sh scripts/r770-airgap-sim.sh scripts/r770-lab-ca.sh scripts/r770-portal.sh scripts/r770-ufw.sh scripts/r770-install.sh scripts/r770-install-adapters.sh scripts/scenarios/scen-lib.sh scripts/scenarios/scen-prep scripts/scenarios/scen-run scripts/scenarios/scen-events.sh scripts/scenarios/scen-check scripts/scenarios/scen-ingest scripts/scenarios/scen-clear scripts/scenarios/scen-bridges.sh)
 SITE_REQUIRED_FILES=(scenarios/profiles/branch-wan.conf)
 
 check_site() {  # <dir>

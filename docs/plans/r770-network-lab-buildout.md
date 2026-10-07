@@ -194,12 +194,18 @@ Start with Linux bridges (libvirt-managed):
 | `br-lab-nat` | Lab internet access when explicitly needed | Yes | NAT via the mgmt bond (`lacp-trunk.10`), firewalled |
 | `br-lab-tXX` | GNS3/lab transit segments, created per topology | No | none |
 | `br-mirror` | Virtual mirror feed → Malcolm capture (see §7) | No | none |
+| `br-lab-iNN` | Inner / protected-LAN segment of an IPsec scenario (upload-only to Malcolm, never mirrored) | No | none |
+| `br-lab-ext` | Lane-C physical ingress: one Slot-4 port as member, untrusted | No | none |
+
+The `iNN` and `ext` bridges belong to the IPsec/WAN scenario track; their rules are in the scenario spec §3 (`docs/superpowers/specs/2026-10-07-ipsec-scenarios-design.md`).
 
 **OVS decision:** not installed at initial build. Adopt OVS later *only if* a concrete need appears — port mirroring of many lab segments at once, 802.1Q trunk manipulation inside the fabric, or OpenFlow experiments. Linux bridges + `tc-mirred` cover the initial mirror-to-Malcolm requirement. This decision is recorded and reversible.
 
 ### 4.4 WAN emulation
 
 `tc`/`netem` on GNS3 link endpoints or dedicated impairment namespaces. Reusable profile scripts in the config repo (`wan-apply <profile> <iface>`, `wan-show`, `wan-clear`), with profiles for branch WAN (20 Mbps/40 ms/5 ms jitter/0.2% loss), satellite (25 Mbps/600 ms), poor broadband (10 Mbps/80 ms/2% loss), and asymmetric variants (HTB for rate + netem for delay; IFB for ingress where needed). Every profile has apply/show/clear. Impairments never touch the management bond/VLAN (`lacp-trunk`, `lacp-trunk.10`) or capture ports.
+
+Profile files are the library at `scenarios/profiles/*.conf` (format: `RATE_DOWN RATE_UP DELAY JITTER LOSS NOTE`, `tc` syntax); Phase 12's `wan-apply` reads them and installs a copy to the config repo; the in-topology `wan-emu` node reads the same files. New profiles (`lte-good`, `lte-poor`, `leo`, `mpls-metro`, `congested-uplink`) are defined there — see the IPsec scenario spec §6.2.
 
 ### 4.5 Internal DNS / names
 

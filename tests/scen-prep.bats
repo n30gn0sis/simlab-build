@@ -80,3 +80,18 @@ setup() {
     run "$SCRIPT" "$BATS_TEST_TMPDIR/S1"; [ "$status" -eq 1 ]; [[ "$output" == *"run dir already exists"* ]]
     grep -qx marker "$d/run.yaml"
 }
+@test "--images rewrites fixture tags from the list file, leaves unmatched images alone" {
+    printf 'localhost/lab/ipsec-ss:20261015\nlocalhost/lab/svc-targets:20261015\n' > "$S/images.list"
+    run "$SCRIPT" --images "$S/images.list" "$BATS_TEST_TMPDIR/S1"; [ "$status" -eq 0 ]
+    r="$SCEN_CASES/S1/S1-W1-ss-20261001T1400Z/run.yaml"
+    [ "$(grep -c 'localhost/lab/ipsec-ss:20261015' "$r")" -eq 2 ]
+    grep -q 'quay.io/frrouting/frr:0.0.0-fixture' "$r"
+    grep -q 'docker.io/nicolaka/netshoot:latest' "$r"
+    ! grep -q 'ipsec-ss:0.0.0-fixture' "$r"
+    [[ "$output" == *"no list entry for quay.io/frrouting/frr"* ]]
+    grep -q 'ipsec-ss:0.0.0-fixture' "$BATS_TEST_TMPDIR/S1/run.yaml"
+}
+@test "--images with a missing list file fails before creating the run dir" {
+    run "$SCRIPT" --images "$S/nope.list" "$BATS_TEST_TMPDIR/S1"; [ "$status" -ne 0 ]
+    [ ! -e "$SCEN_CASES/S1" ]
+}

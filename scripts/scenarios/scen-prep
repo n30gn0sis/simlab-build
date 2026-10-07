@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # scen-prep <scenario-dir> — prerequisite gate for a reference-PCAP run (spec §8).
+# --images <list-file> rewrites nodes[].image tags ending 0.0.0-fixture in the run copy.
 # Reads <scenario-dir>/run.yaml; checks modules, capture bridges, interface
 # guards, wan-show and free space; only then creates the run directory.
 # Nothing is created before every check has passed.
@@ -11,7 +12,13 @@ SCEN_SYSNET="${SCEN_SYSNET:-/sys/class/net}"
 SCEN_MODULES_FILE="${SCEN_MODULES_FILE:-/proc/modules}"
 SCEN_FREE_FLOOR_GB="${SCEN_FREE_FLOOR_GB:-200}"
 
-[ $# -eq 1 ] || die "usage: scen-prep <scenario-dir>"
+IMAGES_LIST=''
+if [ "${1:-}" = "--images" ]; then
+    [ $# -ge 2 ] || die "usage: scen-prep [--images <list-file>] <scenario-dir>"
+    IMAGES_LIST="$2"; shift 2
+    [ -f "$IMAGES_LIST" ] || die "images list not found: $IMAGES_LIST"
+fi
+[ $# -eq 1 ] || die "usage: scen-prep [--images <list-file>] <scenario-dir>"
 SDIR="$1"; M="$SDIR/run.yaml"
 [ -f "$M" ] || die "no run.yaml in $SDIR"
 
@@ -73,6 +80,9 @@ dir=$(run_dir_for "$M") || die "cannot derive the run directory"
 [ ! -e "$dir" ] || die "run dir already exists: $dir — remove it deliberately before re-running scen-prep (cases/ is retention-exempt evidence)"
 mkdir -p "$dir"
 cp "$M" "$dir/run.yaml"
+if [ -n "$IMAGES_LIST" ]; then
+    manifest_rewrite_images "$dir/run.yaml" "$IMAGES_LIST" | while IFS= read -r l; do log "$l"; done
+fi
 for x in traffic events expected.md; do
     if [ -e "$SDIR/$x" ]; then cp -R "$SDIR/$x" "$dir/$x"; fi
 done

@@ -91,6 +91,38 @@ except BaseException:
     raise
 PY
 }
+# manifest_rewrite_images <run.yaml> <list-file> — in place: every nodes[].image tagged
+# 0.0.0-fixture takes the list-file line with the same repo path (text before the last ':').
+# Unmatched images stay as they are; one status line per node goes to stdout.
+manifest_rewrite_images() {
+    python3 -I - "$1" "$2" <<'PY' || return 1
+import os, sys, yaml
+path, lst = sys.argv[1], sys.argv[2]
+tags = {}
+for line in open(lst):
+    line = line.strip()
+    if line and not line.startswith('#') and ':' in line:
+        tags[line.rsplit(':', 1)[0]] = line
+d = yaml.safe_load(open(path))
+for n in d.get('nodes') or []:
+    img = str(n.get('image', ''))
+    if not img.endswith(':0.0.0-fixture'): continue
+    repo = img.rsplit(':', 1)[0]
+    if repo in tags:
+        n['image'] = tags[repo]
+        print('image %s: %s -> %s' % (n['name'], img, tags[repo]))
+    else:
+        print('image %s: no list entry for %s, left as %s' % (n['name'], repo, img))
+d_, b_ = os.path.split(path)
+tmp = os.path.join(d_, '.' + b_ + '.tmp')
+try:
+    with open(tmp, 'w') as f: yaml.safe_dump(d, f, sort_keys=False, allow_unicode=True)
+    os.replace(tmp, path)
+except BaseException:
+    if os.path.exists(tmp): os.remove(tmp)
+    raise
+PY
+}
 run_dir_for() {
     local sc id
     sc=$(manifest_get "$1" scenario) || return 1

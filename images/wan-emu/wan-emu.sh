@@ -16,22 +16,22 @@ netem_args() {  # from P_* → "delay 40ms 5ms loss 0.2%" or empty
     echo "$a"
 }
 shape() {  # shape <dev> <rate>
-    run tc qdisc add dev "$1" root handle 1: htb default 10
-    run tc class add dev "$1" parent 1: classid 1:10 htb rate "$2"
+    run tc qdisc replace dev "$1" root handle 1: htb default 10
+    run tc class replace dev "$1" parent 1: classid 1:10 htb rate "$2"
     local n; n=$(netem_args)
     # shellcheck disable=SC2086
-    [ -n "$n" ] && run tc qdisc add dev "$1" parent 1:10 handle 10: netem $n
+    [ -n "$n" ] && run tc qdisc replace dev "$1" parent 1:10 handle 10: netem $n
     return 0
 }
 bridge_up() {
-    run ip link add br0 type bridge
+    run ip link add br0 type bridge || true   # tolerate an existing bridge (re-apply)
     run ip link set eth0 master br0; run ip link set eth1 master br0
     run ip link set br0 up
 }
 case "${1:-}" in
     apply) profile_load "$2"; bridge_up
            shape eth1 "${P_RATE_DOWN:-1000mbit}"; shape eth0 "${P_RATE_UP:-1000mbit}" ;;
-    clear) run tc qdisc del dev eth1 root; run tc qdisc del dev eth0 root ;;
+    clear) run tc qdisc del dev eth1 root || true; run tc qdisc del dev eth0 root || true ;;  # missing qdisc is fine
     show)  tc qdisc show dev eth1; tc qdisc show dev eth0 ;;
     *) die "usage: wan-emu.sh [--dry-run] apply <profile> | show | clear" ;;
 esac

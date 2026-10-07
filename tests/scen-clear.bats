@@ -127,3 +127,35 @@ add_baseline() { printf 'baseline: {target: 198.18.2.2, rtt_ms: %s}\n' "$1" >> "
     [ "$status" -eq 0 ]
     [[ "$output" != *RTT* ]]
 }
+
+@test "pkill failure (rc 2) warns and exits 1" {
+    PKILL_RC=2 run "$SCRIPT" "$RUN/run.yaml"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"WARN: pkill failed rc=2"* ]]
+}
+
+@test "RTT OK survives a decimal-comma locale" {
+    add_baseline 0.4
+    export LC_ALL=de_DE.UTF-8
+    PING_OUT=$'rtt min/avg/max/mdev = 0.300/1.100/1.900/0.200 ms\n' run "$SCRIPT" "$RUN/run.yaml"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"RTT OK (1.100 ms vs baseline 0.4)"* ]]
+}
+
+@test "a refused iface later in the list clears nothing" {
+    sed -i 's|^impairment:.*|impairment:\n  - {mechanism: M1, profile: p, iface: veth-t01a, direction: "A->B"}\n  - {mechanism: M1, profile: p, iface: eno1, direction: "B->A"}|; /^  - {mechanism: M1, profile: branch-wan/d' "$RUN/run.yaml"
+    run "$SCRIPT" "$RUN/run.yaml"
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [ "$(grep -c '^wan-clear' "$CALLS")" -eq 0 ]
+}
+
+@test "empty impairment list is fine" {
+    sed -i 's|^impairment:.*|impairment: []|; /^  - {mechanism: M1, profile: branch-wan/d' "$RUN/run.yaml"
+    run "$SCRIPT" "$RUN/run.yaml"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^wan-clear' "$CALLS")" -eq 0 ]
+}

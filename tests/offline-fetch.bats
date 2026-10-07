@@ -171,7 +171,8 @@ gitc() { git -c user.name=test -c user.email=test@test.invalid "$@"; }
 # site_excluded() unit test below instead.
 setup_site_repo() {
     local src="$1"
-    mkdir -p "$src/scripts" "$src/config/nginx" "$src/docs/analyst-wiki" "$src/scenarios/profiles"
+    mkdir -p "$src/scripts" "$src/config/nginx" "$src/docs/analyst-wiki" "$src/scenarios/profiles" "$src/images/ipsec-ss"
+    echo "FROM scratch" > "$src/images/ipsec-ss/Dockerfile"
     echo "WAN_DELAY=1" > "$src/scenarios/profiles/branch-wan.conf"
     printf '#!/usr/bin/env bash\n' > "$src/scripts/r770-offline-fetch.sh"
     printf '#!/usr/bin/env bash\necho hi\n' > "$src/scripts/hello.sh"
@@ -209,7 +210,7 @@ setup_site_repo() {
     [ ! -e "$BUNDLE_DIR/site/docs/analyst-wiki/site.pem" ]
     [ ! -e "$BUNDLE_DIR/site/scripts/htpasswd" ]
     [ ! -e "$BUNDLE_DIR/site/docs/analyst-wiki/.htpasswd" ]
-    grep -qE 'site/: 6 files from [0-9a-f]{7,40} copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+    grep -qE 'site/: 7 files from [0-9a-f]{7,40} copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
     [ ! -e "$BUNDLE_DIR/MANIFEST.sha256" ]
     [ ! -s "$NET" ]
 }
@@ -300,7 +301,7 @@ setup_site_repo() {
 
 @test "a SITE_SRC_ROOT that looks like this repo but is not a git work tree refuses" {
     SRC="$BATS_TEST_TMPDIR/site-src"
-    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki" "$SRC/scenarios"
+    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki" "$SRC/scenarios" "$SRC/images"
     touch "$SRC/scripts/r770-offline-fetch.sh"
     export SITE_SRC_ROOT="$SRC"
     run "$SCRIPT" --only site
@@ -323,7 +324,7 @@ setup_site_repo() {
 
 @test "0 tracked files under the site trees refuses, even though the identity marker exists" {
     SRC="$BATS_TEST_TMPDIR/site-src"
-    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki" "$SRC/scenarios"
+    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki" "$SRC/scenarios" "$SRC/images"
     touch "$SRC/scripts/r770-offline-fetch.sh"    # present, but UNTRACKED below
     git -C "$SRC" init -q
     gitc -C "$SRC" commit -q -m init --allow-empty
@@ -339,7 +340,7 @@ setup_site_repo() {
     setup_site_repo "$SRC"
     local commit; commit="$(git -C "$SRC" rev-parse HEAD)"
     ARCHIVE="$BATS_TEST_TMPDIR/site.tar"
-    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki scenarios > "$ARCHIVE"
+    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki scenarios images > "$ARCHIVE"
     unset SITE_SRC_ROOT
     export SITE_ARCHIVE="$ARCHIVE" SITE_COMMIT="$commit"
     run "$SCRIPT" --only site
@@ -497,10 +498,10 @@ exec "'"$real"'" "$@"'
     setup_site_repo "$SRC"
     local stage="$BATS_TEST_TMPDIR/archive-src"
     mkdir -p "$stage"
-    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki scenarios | tar xf - -C "$stage"
+    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki scenarios images | tar xf - -C "$stage"
     ln -s /etc/passwd "$stage/scripts/evil-link"
     ARCHIVE="$BATS_TEST_TMPDIR/site.tar"
-    tar cf "$ARCHIVE" -C "$stage" scripts config docs scenarios
+    tar cf "$ARCHIVE" -C "$stage" scripts config docs scenarios images
     unset SITE_SRC_ROOT
     export SITE_ARCHIVE="$ARCHIVE" SITE_COMMIT=0123456789abcdef
     run "$SCRIPT" --only site
@@ -945,14 +946,49 @@ stub_docs_wget() {
     run stage_labimages
     echo "$output"
     [ "$status" -eq 0 ]
-    grep -q 'ctr build -f '"$R"'/images/ipsec-ss/Dockerfile -t lab/ipsec-ss:T1' "$CALLS"
-    grep -q 'ctr build -f '"$R"'/images/wan-emu/Dockerfile -t lab/wan-emu:T1' "$CALLS"
+    grep -q 'ctr build -f '"$R"'/images/ipsec-ss/Dockerfile -t localhost/lab/ipsec-ss:T1' "$CALLS"
+    grep -q 'ctr build -f '"$R"'/images/wan-emu/Dockerfile -t localhost/lab/wan-emu:T1' "$CALLS"
     [ "$(grep -c '^save' "$CALLS")" -eq 1 ]
     ! grep -q '^save.*svc-targets' "$CALLS"
-    [ "$(cat "$B/gns3/docker-nodes/lab-images.list")" = "$(printf 'lab/ipsec-ss:T1\nlab/wan-emu:T1')" ]
+    [ "$(cat "$B/gns3/docker-nodes/lab-images.list")" = "$(printf 'localhost/lab/ipsec-ss:T1\nlocalhost/lab/wan-emu:T1')" ]
     grep -q 'WARN: images/svc-targets/Dockerfile missing' "$B/NOTES"
 }
 
 @test "the curated apt list includes python3-yaml" {
     grep -qE '^[[:space:]]+python3-ruamel\.yaml python3-dotenv python3-yaml' "$SCRIPT"
+}
+
+@test "stage_labimages tags localhost/lab/<name>:TS and the .list matches those tags" {
+    local B="$BATS_TEST_TMPDIR/b" R="$BATS_TEST_TMPDIR/repo" CALLS="$BATS_TEST_TMPDIR/calls"
+    mkdir -p "$B/gns3/docker-nodes" "$R/images/svc-targets"; : > "$B/NOTES"; : > "$R/images/svc-targets/Dockerfile"
+    load_fn "$SCRIPT" stage_labimages; load_fn "$SCRIPT" labimages_root; LAB_IMAGES=(ipsec-ss wan-emu svc-targets)
+    ctr_save() { echo "save $*" >> "$CALLS"; : > "$1"; }
+    note() { echo "- $*" >> "$B/NOTES"; }
+    TS=T2; SITE_SRC_ROOT="$R"; unset SITE_ARCHIVE
+    CTR=ctrstub; ctrstub() { echo "ctr $*" >> "$CALLS"; }
+    run stage_labimages
+    [ "$status" -eq 0 ]
+    grep -q -- '-t localhost/lab/svc-targets:T2' "$CALLS"
+    grep -q '^save .*localhost/lab/svc-targets:T2' "$CALLS"
+    [ "$(cat "$B/gns3/docker-nodes/lab-images.list")" = "localhost/lab/svc-targets:T2" ]
+}
+
+@test "stage_labimages with no images/ tree at the root emits one loud WARN and builds nothing" {
+    local B="$BATS_TEST_TMPDIR/b" R="$BATS_TEST_TMPDIR/repo" CALLS="$BATS_TEST_TMPDIR/calls"
+    mkdir -p "$B/gns3/docker-nodes" "$R"; : > "$B/NOTES"; : > "$CALLS"
+    load_fn "$SCRIPT" stage_labimages; load_fn "$SCRIPT" labimages_root; LAB_IMAGES=(ipsec-ss wan-emu svc-targets)
+    ctr_save() { echo "save $*" >> "$CALLS"; }
+    note() { echo "- $*" >> "$B/NOTES"; }
+    TS=T3; SITE_SRC_ROOT="$R"; unset SITE_ARCHIVE
+    CTR=ctrstub; ctrstub() { echo "ctr $*" >> "$CALLS"; }
+    run stage_labimages
+    [ "$status" -eq 0 ]
+    [ "$(grep -c 'WARN: images/ tree missing' "$B/NOTES")" -eq 1 ]
+    [ ! -s "$CALLS" ]
+}
+
+@test "the repo-root .dockerignore keeps .git, bundles, tarballs and scenario secrets out of the build context" {
+    for p in '.git' 'bundle-*' '*.tar.gz' '*.part' 'r770-precheck-*' 'scenarios/**/secrets.conf' 'scenarios/**/gt/' '.superpowers' '.reports'; do
+        grep -qxF "$p" "$BATS_TEST_DIRNAME/../.dockerignore"
+    done
 }

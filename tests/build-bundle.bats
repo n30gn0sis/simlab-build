@@ -27,7 +27,8 @@ setup() {
     # repo's own ambient working-tree state (which, mid-development, is
     # legitimately dirty).
     PACK_SRC="$BATS_TEST_TMPDIR/pack-src"
-    mkdir -p "$PACK_SRC/scripts" "$PACK_SRC/config" "$PACK_SRC/docs/analyst-wiki" "$PACK_SRC/scenarios"
+    mkdir -p "$PACK_SRC/scripts" "$PACK_SRC/config" "$PACK_SRC/docs/analyst-wiki" "$PACK_SRC/scenarios" "$PACK_SRC/images"
+    echo "i" > "$PACK_SRC/images/ok.txt"
     echo "p" > "$PACK_SRC/scenarios/ok.conf"
     echo "x" > "$PACK_SRC/scripts/ok.sh"
     echo "y" > "$PACK_SRC/config/ok.conf"

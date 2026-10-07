@@ -18,7 +18,7 @@ make_bundle() {
     echo "fake deb"             > "$d/apt/example_1.0_amd64.deb"
     # site/ — this repo's reviewed scripts/config/docs-analyst-wiki, as
     # r770-offline-fetch.sh's stage_site() copies them. Includes a stand-in
-    # for every script r770-bundle.sh's SITE_REQUIRED_SCRIPTS lists (all eight
+    # for every script r770-bundle.sh's SITE_REQUIRED_SCRIPTS lists (all of them
     # exist in the repo), so this "complete bundle" fixture satisfies
     # check_site() with a plain pass, not a WARN. The missing-script WARN path
     # is exercised separately in bundle-verify.bats by deleting one stand-in.
@@ -51,6 +51,9 @@ make_bundle() {
     # The fixture omitted them, which made it a shape no real bundle ever has.
     printf 'ghcr.io/idaholab/malcolm/arkime:0.0.0-fixture\n' > "$d/malcolm/image-list.txt"
     printf 'docker.io/prom/prometheus:v0.0.0-fixture\n'       > "$d/docker/monitoring-image-list.txt"
+    mkdir -p "$d/gns3/docker-nodes"
+    echo "fake lab images"      > "$d/gns3/docker-nodes/lab-images.tar.gz"
+    printf 'localhost/lab/ipsec-ss:0.0.0-fixture\n' > "$d/gns3/docker-nodes/lab-images.list"
     echo "fake iso"             > "$d/isos/ubuntu-0.0.0-fixture-live-server-amd64.iso"
     echo "fake oui"             > "$d/enrichment/oui.txt"
     echo "MANUAL DOWNLOADS from dell.com/support" > "$d/dell/README.txt"

@@ -211,8 +211,9 @@ labimages_root() { (cd -- "${SITE_SRC_ROOT:-$SCRIPT_DIR/..}" 2>/dev/null && pwd 
 labimages_plan() {
     local img root; root="$(labimages_root)"
     for img in "${LAB_IMAGES[@]}"; do
-        [ -f "$root/images/$img/Dockerfile" ] || { echo "  WARN: images/$img/Dockerfile missing -- would skip"; continue; }
-        echo "  ${CTR:-docker} build -f images/$img/Dockerfile -t lab/$img:$TS ."
+        # archive mode builds from the extracted SITE_ARCHIVE, which a dry run does not open
+        [ -n "${SITE_ARCHIVE:-}" ] || [ -f "$root/images/$img/Dockerfile" ] || { echo "  WARN: images/$img/Dockerfile missing -- would skip"; continue; }
+        echo "  ${CTR:-docker} build -f images/$img/Dockerfile -t localhost/lab/$img:$TS ."
     done
     echo "  save -> gns3/docker-nodes/lab-images.tar.gz (+ lab-images.list)"
 }
@@ -658,15 +659,32 @@ note "VM base images: noble cloud image + cirros (validation-suite test VM)"
 # 5b. Lab scenario images, built from this checkout (not pulled)
 # ═════════════════════════════════════════════════════════════════════════════
 stage_labimages() {
-echo "==== [5b] Lab scenario images ===="
-local img tag="$TS" root out="$B/gns3/docker-nodes/lab-images.tar.gz" tags=()
-root="$(labimages_root)"; out="$B/gns3/docker-nodes/lab-images.tar.gz"
+echo "==== [5b/11] Lab scenario images ===="
+local img root out="$B/gns3/docker-nodes/lab-images.tar.gz" tags=() xtmp=""
 mkdir -p "$B/gns3/docker-nodes"
+if [ -n "${SITE_ARCHIVE:-}" ]; then
+    # packed builder: no checkout. The archive's extracted trees (scripts, images,
+    # scenarios, ...) ARE the build context -- nothing else is in it, so no
+    # .dockerignore is needed there; a checkout's own .dockerignore trims the rest.
+    xtmp="$(mktemp -d)" || { note "WARN: mktemp failed -- no lab images built"; return 0; }
+    tar xf "$SITE_ARCHIVE" -C "$xtmp" || { rm -rf "$xtmp"; note "WARN: could not extract SITE_ARCHIVE -- no lab images built"; return 0; }
+    root="$xtmp"
+else
+    root="$(labimages_root)"
+fi
+if [ ! -d "$root/images" ]; then
+    note "WARN: images/ tree missing at $root -- no lab images built"
+    [ -z "$xtmp" ] || rm -rf "$xtmp"
+    return 0
+fi
 for img in "${LAB_IMAGES[@]}"; do
     [ -f "$root/images/$img/Dockerfile" ] || { note "WARN: images/$img/Dockerfile missing -- skipped"; continue; }
-    "$CTR" build -f "$root/images/$img/Dockerfile" -t "lab/$img:$tag" "$root" || { note "WARN: build of lab/$img failed -- skipped"; continue; }
-    tags+=("lab/$img:$tag")
+    # localhost/ prefix: podman stores unqualified names there; docker accepts it,
+    # so RepoTags in the archive match lab-images.list on either runtime
+    "$CTR" build -f "$root/images/$img/Dockerfile" -t "localhost/lab/$img:$TS" "$root" || { note "WARN: build of lab/$img failed -- skipped"; continue; }
+    tags+=("localhost/lab/$img:$TS")
 done
+[ -z "$xtmp" ] || rm -rf "$xtmp"
 [ "${#tags[@]}" -gt 0 ] || return 0
 ctr_save "$out" "${tags[@]}"
 printf '%s\n' "${tags[@]}" > "${out%.tar.gz}.list"
@@ -922,7 +940,7 @@ note "Dell firmware: not a bundle item — handled on the R770 directly (dell/RE
 #     stamp-skipped): it is small, and it must always match the checkout (or
 #     archive) it was cut from.
 # ═════════════════════════════════════════════════════════════════════════════
-SITE_TREES=(scripts config docs/analyst-wiki scenarios)
+SITE_TREES=(scripts config docs/analyst-wiki scenarios images)
 
 site_excluded() {  # site_excluded <path relative to the site source root>
     # Defence in depth on top of tracked-file enumeration: anything secret-

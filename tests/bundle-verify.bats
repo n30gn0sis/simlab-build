@@ -329,3 +329,14 @@ pair_bundle() {   # a bundle with all three list/payload pairs intact
     [ "$status" -ne 0 ]
     [[ "$output" == *"site/scenarios/profiles/branch-wan.conf"* ]]
 }
+
+@test "a lab-images.list without lab-images.tar.gz fails --strict naming it; with both it passes" {
+    run "$SCRIPT" verify "$BUNDLE" --strict
+    [ "$status" -eq 0 ]
+    rm "$BUNDLE/gns3/docker-nodes/lab-images.tar.gz"
+    "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE" --strict
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"lab-images.tar.gz"* ]]
+}

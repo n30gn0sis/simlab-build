@@ -195,7 +195,7 @@ check_manual() {  # <dir>
 # right severity because "missing" is sometimes a legitimate, dispositionable
 # state rather than corruption this script must always refuse:
 #   - no site/ at all: this bundle predates the site/ delivery path.
-#   - site/ present but missing a required script: all eight listed below
+#   - site/ present but missing a required script: all those listed below
 #     exist in the repo and ship in site/ today, but a bundle cut before a
 #     given script landed (r770-install.sh and r770-install-adapters.sh are
 #     the latest) will legitimately lack it. In a bundle cut from the current
@@ -245,7 +245,8 @@ check_required() {  # <dir>
     for pair in \
         "malcolm/image-list.txt|malcolm/malcolm-images-*.tar.gz" \
         "docker/monitoring-image-list.txt|docker/monitoring-images.tar.gz" \
-        "gns3/docker-nodes/image-list.txt|gns3/docker-nodes/gns3-node-images.tar.gz"
+        "gns3/docker-nodes/image-list.txt|gns3/docker-nodes/gns3-node-images.tar.gz" \
+        "gns3/docker-nodes/lab-images.list|gns3/docker-nodes/lab-images.tar.gz"
     do
         list="${pair%%|*}"
         payload="${pair#*|}"

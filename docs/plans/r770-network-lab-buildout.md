@@ -205,7 +205,12 @@ The `iNN` and `ext` bridges belong to the IPsec/WAN scenario track; their rules 
 
 `tc`/`netem` on GNS3 link endpoints or dedicated impairment namespaces. Reusable profile scripts in the config repo (`wan-apply <profile> <iface>`, `wan-show`, `wan-clear`), with profiles for branch WAN (20 Mbps/40 ms/5 ms jitter/0.2% loss), satellite (25 Mbps/600 ms), poor broadband (10 Mbps/80 ms/2% loss), and asymmetric variants (HTB for rate + netem for delay; IFB for ingress where needed). Every profile has apply/show/clear. Impairments never touch the management bond/VLAN (`lacp-trunk`, `lacp-trunk.10`) or capture ports.
 
-Profile files are the library at `scenarios/profiles/*.conf` (format: `RATE_DOWN RATE_UP DELAY JITTER LOSS NOTE`, `tc` syntax); Phase 12's `wan-apply` reads them and installs a copy to the config repo; the in-topology `wan-emu` node reads the same files. New profiles (`lte-good`, `lte-poor`, `leo`, `mpls-metro`, `congested-uplink`) are defined there — see the IPsec scenario spec §6.2.
+Profile files are the library at `scenarios/profiles/*.conf` (format: `RATE_DOWN RATE_UP DELAY JITTER LOSS NOTE`, `tc` syntax); Phase 12's `wan-apply` will read them and install a copy to the config repo; the in-topology `wan-emu` node reads the same files. New profiles (`lte-good`, `lte-poor`, `leo`, `mpls-metro`, `congested-uplink`) are defined there — see the IPsec scenario spec §6.2.
+
+**Phase 12 contract the harness depends on:**
+- `wan-show` prints nothing when no impairment is active.
+- `wan-clear <iface>` succeeds (exit 0) on an iface with no qdisc.
+- `wan-apply <profile> <iface>` reads `scenarios/profiles/<profile>.conf`.
 
 ### 4.5 Internal DNS / names
 

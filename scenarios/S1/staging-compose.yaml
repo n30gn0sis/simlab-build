@@ -5,6 +5,11 @@
 # gns3/docker-nodes/lab-images.list (e.g. localhost/lab/ipsec-ss:<bundle-date>)
 # before `compose up`; the FRR and netshoot images are whatever the bundle loaded.
 #
+# Order: scen-prep -> gen-secrets.sh (RUN_DIR=<run-dir>) -> compose up (one profile)
+#        -> scen-wire.sh x9 -> scen-run.
+# gen-secrets.sh must run BEFORE `compose up`: if the secrets path does not exist yet, the
+# bind mount creates a directory in its place.
+#
 # Start exactly one profile (`--profile s0` or `--profile s1`); both at once collide on
 # container names and wiring.
 # host-b runs `iperf3 -s -D` (lane A bulk/UDP target); the GNS3 host-b node template must

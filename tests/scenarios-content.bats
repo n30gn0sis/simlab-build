@@ -35,9 +35,9 @@ lib() { bash -c "source '$LIB'; $*"; }
     run grep -q 'role: endpoint' "$ROOT/scenarios/S0/run.yaml"; [ "$status" -ne 0 ]
     [ "$(grep -c 'role: endpoint' "$ROOT/scenarios/S1/run.yaml")" -eq 2 ]
 }
-@test "S1 swanctl confs are mirror images: gw-a starts, gw-b traps" {
+@test "S1 swanctl confs are mirror images: both trap" {
     a="$ROOT/scenarios/S1/swanctl/gw-a.conf"; b="$ROOT/scenarios/S1/swanctl/gw-b.conf"
-    grep -q 'start_action = start' "$a"; grep -q 'start_action = trap' "$b"
+    grep -q 'start_action = trap' "$a"; grep -q 'start_action = trap' "$b"
     grep -q 'local_ts  = 10.200.1.0/24' "$a"; grep -q 'local_ts  = 10.200.2.0/24' "$b"
     grep -q 'remote_ts = 10.200.2.0/24' "$a"; grep -q 'remote_ts = 10.200.1.0/24' "$b"
     grep -q 'local_addrs  = 198.18.1.2' "$a"; grep -q 'local_addrs  = 198.18.2.2' "$b"

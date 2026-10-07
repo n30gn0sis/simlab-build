@@ -1,6 +1,6 @@
 # R770 Lab — IPsec & Simulated WAN Scenario Specification
 
-**Version:** v0.1.1 (DRAFT — design only, nothing applied; **filed in repo 2026-10-07**, see Change Log)
+**Version:** v0.1.2 (DRAFT — design only, nothing applied; **filed in repo 2026-10-07**, see Change Log)
 **Date:** 2026-09-24
 **Status:** NOT STARTED — depends on buildout Phases 6, 7, 8, 10, 11, 12 (see §14); all six are NOT STARTED on the R770 per `state/BUILD-STATE.md`, so IP2 onward is gated on them. The plan that implements this spec is `docs/superpowers/plans/2026-10-07-ipsec-scenarios-plan.md`.
 **Pins:** every version this spec needs (FRR image, GNS3 server, CHR, OPNsense) is owned by the pin block in `scripts/r770-offline-fetch.sh` — this document names the component and never the number (`OWNERS.md`).
@@ -487,13 +487,13 @@ connections {
         esp_proposals = aes256gcm16-ecp384
         rekey_time = 120s
         dpd_action = restart
-        start_action = start
+        start_action = trap
       }
     }
   }
 }
 ```
-`gw-B` mirrors this with addresses, IDs, and traffic selectors swapped (and `start_action = trap` so gw-A is always the initiator — makes initiator/responder deterministic in the PCAP).
+`gw-B` mirrors this with addresses, IDs, and traffic selectors swapped (and `start_action = trap`, as on gw-A: both gateways trap, and gw-A remains the initiator because the traffic originates at site A — initiator/responder is deterministic in the PCAP, and IKE only starts once host-A's first packet arrives, after the captures are up).
 
 **`secrets.conf` (generated per run, gitignored):**
 ```text
@@ -508,7 +508,7 @@ secrets {
 
 **Run procedure:**
 1. Start GNS3 project `s1-w1-ss`; confirm W1 validation passed on this project revision.
-2. `scen-prep scenarios/S1` → `scen-run scenarios/S1/run.yaml` (captures start **before** gw-A initiates, so IKE_SA_INIT is in the file — start gw-A's charon after captures, or set both to `trap` and let the first traffic trigger).
+2. `scen-prep scenarios/S1` → `scen-run <run-dir>/run.yaml` (captures start **before** any IKE, so IKE_SA_INIT is in the file: both gateways use `trap` and host-A's first packet triggers the negotiation).
 3. Lane A traffic for 240 s (spans ≥ 1 CHILD_SA rekey); idle 40 s at the end (≥ 1 DPD exchange).
 4. `scen-clear`; `scen-ingest <run-dir>`.
 
@@ -584,3 +584,4 @@ secrets {
 |---|---|---|
 | v0.1 | 2026-09-24 | Initial draft: layer model, W1–W7 underlays, impairment mechanisms and profile additions, endpoint container contract, traffic lanes A/B/C, reference-PCAP harness, S0–S9 catalog, worked W1/S1 templates, open items O1–O10 |
 | v0.1.1 | 2026-10-07 | Filed in repo. Version numbers replaced by references to the fetch script's pin block (`OWNERS.md`); the CHR release named in O9 was behind the pin. O1 collision check against the known real blocks recorded. `scen-ingest` target corrected to Malcolm's upload directory as `r770-malcolm-deploy.sh` discovers it. §0 status now points at the implementing plan |
+| v0.1.2 | 2026-10-07 | §11.2: both S1 gateways use `start_action = trap` (gw-A stays the initiator because traffic originates at site A); run-procedure step 2 runs `scen-run <run-dir>/run.yaml` |

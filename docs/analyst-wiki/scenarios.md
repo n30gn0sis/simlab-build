@@ -48,15 +48,16 @@ Not every scenario is built yet; the build tracker records which ones exist. Und
 
 ## How to run one
 
-On the lab host, four commands in order (run directory from `scen-prep`):
+On the lab host, five commands in order (run directory from `scen-prep`):
 
 ```bash
 scen-prep  <scenario-dir>           # gate: prerequisites checked, run directory created
 scen-run   <run-dir>/run.yaml       # captures, impairment, traffic, events, ground truth
 scen-check <run-dir>                # tshark checks fill in expected.md
 scen-ingest <run-dir>               # tagged upload of the PCAPs to Malcolm (never gt/)
+scen-clear <run-dir>/run.yaml       # end of run (or after an interruption): leftover impairment, ports and captures removed
 ```
 
-`scen-clear <run-dir>/run.yaml` removes any leftover impairment and captures if a run is interrupted. Impairments and scenario traffic only ever touch lab bridges, never the management NIC or the capture ports.
+`scen-clear` is safe to run at any time, including after an interrupted run. Impairments and scenario traffic only ever touch lab bridges, never the management NIC or the capture ports.
 
 Design and details: the scenario spec in `docs/superpowers/specs/2026-10-07-ipsec-scenarios-design.md` and `scenarios/README.md`.

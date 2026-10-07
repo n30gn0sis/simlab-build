@@ -18,6 +18,7 @@ ipsec:
   child_rekey_s: 120
   dpd_delay_s: 10
   mode: policy
+  peers: [198.18.1.2, 198.18.2.2]
 capture_points:
   - {name: outer-t01, bridge: br-lab-t01, view: outer}
   - {name: outer-t02, bridge: br-lab-t02, view: outer}

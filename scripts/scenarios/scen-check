@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# scen-check <run-dir> — automated X-checks for a reference-PCAP run (spec §8).
+# Runs tshark queries against the run's files and writes PASS / FAIL / SKIP (<note>)
+# into the Result column of <run-dir>/expected.md. Exit 0 iff no FAIL (SKIP is not FAIL).
+# S1 runs X1-X9; S0 runs X4-inverse and X8 only. Gateway outer addresses come from
+# run.yaml ipsec.peers.
+set -euo pipefail
+HERE="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+# shellcheck source=/dev/null
+source "$HERE/scen-lib.sh"
+
+[ $# -eq 1 ] || die "usage: scen-check <run-dir>"
+D="$1"
+[ -f "$D/run.yaml" ] || die "no run.yaml in $D"
+[ -f "$D/expected.md" ] || die "no expected.md in $D"
+D="$(cd "$D" && pwd)"; M="$D/run.yaml"; E="$D/expected.md"
+SCENARIO="$(manifest_get "$M" scenario)" || die "scenario missing in $M"
+case "$SCENARIO" in
+    S0) ROWS=(X4-inverse X8) ;;
+    S1) ROWS=(X1 X2 X3 X4 X5 X6 X7 X8 X9) ;;
+    *) die "scen-check: no checks defined for scenario '$SCENARIO'" ;;
+esac
+for r in "${ROWS[@]}"; do
+    grep -q "^| $r |" "$E" || die "expected.md has no '| $r |' row (scenario $SCENARIO needs it)"
+done
+
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+
+# capture_file <name> — print a single pcap path: the lone file, or a mergecap of the ring files.
+capture_file() {
+    local name="$1" f files=()
+    for f in "$D/$name".pcapng*; do
+        if [ -f "$f" ] && [ ! -L "$f" ]; then files+=("$f"); fi
+    done
+    [ "${#files[@]}" -gt 0 ] || return 1
+    if [ "${#files[@]}" -eq 1 ]; then printf '%s\n' "${files[0]}"; return 0; fi
+    mergecap -w "$TMP/$name.merged.pcapng" "${files[@]}" || return 1
+    printf '%s\n' "$TMP/$name.merged.pcapng"
+}
+OUTER="$(capture_file outer-t01)" || die "no outer-t01.pcapng* capture files in $D"
+INNER=''
+if [ "$SCENARIO" = S1 ]; then INNER="$(capture_file inner-i01)" || INNER=''; fi
+
+# count <pcap> <filter> — number of matching frames.
+count() { local n; n=$(tshark -r "$1" -Y "$2" | wc -l) || die "tshark failed: $2"; echo "$n"; }
+
+declare -A RES NOTE
+set_res() { RES[$1]="$2"; NOTE[$1]="${3:-}"; }
+
+check_X1() {
+    local got p missing=''
+    got=$(tshark -r "$OUTER" -Y 'isakmp.exchangetype == 34' -T fields -e ip.src | sort -u) || die "tshark failed (X1)"
+    PEERS=$(manifest_get "$M" ipsec.peers | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || true)
+    [ -n "$PEERS" ] || { set_res X1 FAIL "no ipsec.peers in run.yaml"; return 0; }
+    for p in $PEERS; do
+        printf '%s\n' "$got" | grep -qx "$p" || missing="$missing $p"
+    done
+    if [ -z "$missing" ]; then set_res X1 PASS; else set_res X1 FAIL "no IKE_SA_INIT from$missing"; fi
+}
+check_X2() { local n; n=$(count "$OUTER" 'udp.port==4500')
+    if [ "$n" -eq 0 ]; then set_res X2 PASS; else set_res X2 FAIL "$n frames on UDP 4500"; fi; }
+check_X3() { local n; n=$(count "$OUTER" 'esp')
+    if [ "$n" -gt 0 ]; then set_res X3 PASS; else set_res X3 FAIL "no ESP frames"; fi; }
+check_X4() { local n; n=$(count "$OUTER" 'ip.addr==10.200.0.0/16')
+    if [ "$n" -eq 0 ]; then set_res X4 PASS; else set_res X4 FAIL "$n outer frames carry site addresses"; fi; }
+check_X4_inverse() { local n; n=$(count "$OUTER" 'ip.addr==10.200.0.0/16')
+    if [ "$n" -gt 0 ]; then set_res X4-inverse PASS; else set_res X4-inverse FAIL "site addresses not visible on the outer side"; fi; }
+check_X5() { local n
+    n=$(tshark -r "$OUTER" -Y 'esp' -T fields -e esp.spi | sort -u | awk 'NF' | wc -l) || die "tshark failed (X5)"
+    if [ "$n" -ge 4 ]; then set_res X5 PASS; else set_res X5 FAIL "$n distinct SPIs (need >= 4)"; fi; }
+check_X6() {
+    local tend rows verdict
+    tend=$(tshark -r "$OUTER" -T fields -e frame.time_relative | tail -1) || die "tshark failed (X6)"
+    rows=$(tshark -r "$OUTER" -Y 'isakmp' -T fields -e frame.time_relative -e isakmp.exchangetype) || die "tshark failed (X6)"
+    [ -n "$tend" ] || { set_res X6 FAIL "no frames"; return 0; }
+    # PASS: >=1 isakmp frame in the last 40 s, none in [30, tend-50] except CREATE_CHILD_SA (36).
+    verdict=$(printf '%s\n' "$rows" | LC_ALL=C awk -v tend="$tend" '
+        NF { t = $1 + 0
+             if (t >= tend - 40) tail++
+             if (t >= 30 && t <= tend - 50 && $2 != 36) stray++ }
+        END { if (tail > 0 && stray == 0) print "PASS"
+              else if (tail == 0) print "FAIL no DPD/IKE frames in the final 40 s"
+              else print "FAIL " stray " non-CREATE_CHILD_SA isakmp frames mid-run" }')
+    set_res X6 "${verdict%% *}" "$(printf '%s' "${verdict#PASS}" | sed 's/^FAIL *//')"
+}
+check_X7() {
+    local keys="$D/gt/gw-a/keys/esp_sa" dec inn bad
+    if [ ! -f "$keys" ]; then set_res X7 SKIP "no keys in gt/"; return 0; fi
+    [ -n "$INNER" ] || { set_res X7 FAIL "no inner-i01 capture"; return 0; }
+    # The exact esp_sa UAT string format is confirmed in the Part-B rehearsal.
+    dec=$(tshark -r "$OUTER" -o esp.enable_encryption_decode:TRUE -o "uat:esp_sa:$(cat "$keys")" \
+        -Y 'esp && ip' -T fields -e ip.src -e ip.dst -e tcp.port -e udp.port | sort -u | awk 'NF') || die "tshark failed (X7 decrypt)"
+    inn=$(tshark -r "$INNER" -Y 'ip' -T fields -e ip.src -e ip.dst -e tcp.port -e udp.port | sort -u | awk 'NF') || die "tshark failed (X7 inner)"
+    if [ -z "$dec" ]; then set_res X7 FAIL "nothing decrypted"; return 0; fi
+    bad=$(comm -23 <(printf '%s\n' "$dec") <(printf '%s\n' "$inn") | wc -l)
+    if [ "$bad" -eq 0 ]; then set_res X7 PASS; else set_res X7 FAIL "$bad decrypted tuples not in inner capture"; fi
+}
+check_X8() {
+    local f="$D/capture-stats.txt" bad
+    [ -f "$f" ] || { set_res X8 FAIL "no capture-stats.txt"; return 0; }
+    # Every non-blank line must say 0 drops; UNKNOWN is not zero.
+    bad=$(awk 'NF && $0 !~ / 0 packets dropped by kernel/' "$f" | wc -l)
+    if [ "$bad" -eq 0 ] && [ -n "$(awk 'NF' "$f")" ]; then set_res X8 PASS
+    else set_res X8 FAIL "$bad capture point(s) with drops or unknown drops"; fi
+}
+check_X9() {
+    if [ -n "${SCEN_ARKIME_URL:-}" ]; then set_res X9 SKIP "not implemented in v0.1"
+    else set_res X9 SKIP "manual: Arkime tag query"; fi
+}
+
+for r in "${ROWS[@]}"; do
+    case "$r" in
+        X1) check_X1 ;; X2) check_X2 ;; X3) check_X3 ;; X4) check_X4 ;; X5) check_X5 ;;
+        X6) check_X6 ;; X7) check_X7 ;; X8) check_X8 ;; X9) check_X9 ;;
+        X4-inverse) check_X4_inverse ;;
+    esac
+done
+
+# Write results into expected.md (last cell of each '| Xn |' row) and the traffic line.
+FAILED_STEPS=0
+if [ -f "$D/traffic.out" ]; then FAILED_STEPS=$(grep -c '^FAILED:' "$D/traffic.out" || true); fi
+args=()
+for r in "${ROWS[@]}"; do
+    cell="${RES[$r]}"; [ -n "${NOTE[$r]}" ] && cell="$cell (${NOTE[$r]})"
+    args+=("$r=${cell//|//}")
+done
+python3 -I - "$E" "$FAILED_STEPS" "${args[@]}" <<'PY'
+import sys
+path, nfail, pairs = sys.argv[1], sys.argv[2], dict(a.split('=', 1) for a in sys.argv[3:])
+out, last_row, tline = [], None, f"traffic: {nfail} FAILED steps in traffic.out"
+for line in open(path).read().split('\n'):
+    if line.startswith('traffic: ') and line.endswith(' FAILED steps in traffic.out'):
+        continue
+    if line.startswith('|'):
+        cells = line.split('|')
+        key = cells[1].strip() if len(cells) > 2 else None
+        if key in pairs:
+            cells[-2] = ' ' + pairs[key] + ' '
+            line = '|'.join(cells)
+        last_row = len(out)
+    out.append(line)
+out.insert(last_row + 1 if last_row is not None else len(out), tline)
+open(path, 'w').write('\n'.join(out))
+PY
+
+rc=0; summary=''
+for r in "${ROWS[@]}"; do
+    summary="$summary $r ${RES[$r]}"
+    [ "${RES[$r]}" = FAIL ] && rc=1
+done
+log "summary:$summary"
+echo "traffic: $FAILED_STEPS FAILED steps in traffic.out"
+if [ "$rc" -eq 0 ]; then echo "RESULT: PASS"; else echo "RESULT: FAIL"; fi
+exit "$rc"

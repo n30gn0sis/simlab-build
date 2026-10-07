@@ -26,3 +26,8 @@ r770-bundle-builder.sh
 
 # Subagent-driven-development scratch (ledger, briefs, review packages) — never content
 .superpowers/
+
+# IPsec scenario harness: per-run PSKs and ground truth (keys, SA dumps) never enter Git
+scenarios/**/secrets.conf
+scenarios/**/gt/
+cases/

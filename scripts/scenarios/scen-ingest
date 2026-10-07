@@ -34,14 +34,15 @@ VIEWS="$(manifest_list "$M" capture_points view)" || die "cannot read capture_po
 copied=0
 while IFS= read -r name <&3 && IFS= read -r view <&4; do
     case "$view" in outer|inner) ;; *) die "$name: bad view '$view'" ;; esac
-    case "$name" in ""|*/*|.*) die "bad capture point name '$name'" ;; esac
+    [[ $name =~ ^[A-Za-z0-9_-]+$ ]] || die "bad capture point name '$name'"
     found=0
     for f in "$D/$name".pcapng*; do
-        if [ ! -f "$f" ] || [ -L "$f" ]; then continue; fi
+        if [ -L "$f" ]; then log "$(basename "$f"): symlink, skipped"; continue; fi
+        if [ ! -f "$f" ]; then continue; fi
         found=1
         dest="$UP/$RUN_ID-$view$SCEN_TAG_SEP$(basename "$f")"
         if [ -e "$dest" ] || [ -L "$dest" ]; then die "destination exists, not overwriting: $dest"; fi
-        cp -- "$f" "$dest"
+        install -m 0644 -- "$f" "$dest"
         log "ingested $(basename "$dest")"
         copied=$((copied + 1))
         basename "$dest"

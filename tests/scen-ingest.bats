@@ -6,7 +6,7 @@ setup() {
     export SCEN_DATA_ROOT="$BATS_TEST_TMPDIR/data"
     UP="$SCEN_DATA_ROOT/pcap/raw/upload"; ID=S1-W1-ss-20261001T1400Z
     mkdir -p "$BIN" "$REAL" "$RUN" "$UP"
-    for t in bash env python3 date mkdir cat grep sed awk printf dirname basename readlink cp ls find sort wc rm ln chmod; do
+    for t in bash env python3 date mkdir cat grep sed awk printf dirname basename readlink cp ls find sort wc rm ln chmod install stat; do
         p=$(type -P $t) && ln -sf "$p" "$REAL/$t"
     done
     export SCEN_REPO="$BATS_TEST_DIRNAME/.." SCEN_UPLOAD_DIR="$UP"
@@ -101,4 +101,54 @@ setup() {
     echo "$output"
     [ "$status" -eq 0 ]
     [ -f "$UP/$ID-inner,inner-i01.pcapng" ]
+}
+
+@test "copied files are mode 0644 even when the source is 0600" {
+    echo c > "$RUN/inner-i01.pcapng"; chmod 600 "$RUN/inner-i01.pcapng"
+    run "$SCRIPT" "$RUN"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(stat -c %a "$UP/$ID-inner,inner-i01.pcapng")" = 644 ]
+}
+
+@test "a capture point name containing / is refused and nothing is copied" {
+    echo c > "$RUN/inner-i01.pcapng"
+    sed -i 's|name: outer-t01,|name: ../gt/x,|' "$RUN/run.yaml"
+    run "$SCRIPT" "$RUN"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"bad capture point name '../gt/x'"* ]]
+    [ -z "$(ls "$UP")" ]
+}
+
+@test "a capture point name containing a comma is refused" {
+    echo c > "$RUN/inner-i01.pcapng"
+    sed -i 's|name: outer-t01,|name: "a,b",|' "$RUN/run.yaml"
+    run "$SCRIPT" "$RUN"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"bad capture point name 'a,b'"* ]]
+    [ -z "$(ls "$UP")" ]
+}
+
+@test "a symlinked capture file is skipped and logged, the regular file beside it is copied" {
+    echo secret > "$BATS_TEST_TMPDIR/target"
+    ln -s "$BATS_TEST_TMPDIR/target" "$RUN/outer-t01.pcapng"
+    echo c > "$RUN/inner-i01.pcapng"
+    run "$SCRIPT" "$RUN"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"outer-t01.pcapng: symlink, skipped"* ]]
+    [ -f "$UP/$ID-inner,inner-i01.pcapng" ]
+    [ "$(find "$UP" -type f | wc -l)" -eq 1 ]
+}
+
+@test "a sibling dir sharing the data root's prefix is outside it" {
+    echo c > "$RUN/inner-i01.pcapng"
+    mkdir -p "$BATS_TEST_TMPDIR/database"
+    SCEN_UPLOAD_DIR="$BATS_TEST_TMPDIR/database" run "$SCRIPT" "$RUN"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"outside"* ]]
+    [ -z "$(ls "$BATS_TEST_TMPDIR/database")" ]
 }

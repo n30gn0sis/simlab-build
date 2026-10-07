@@ -12,12 +12,14 @@ setup() {
     BIN="$BATS_TEST_TMPDIR/bin"; REAL="$BATS_TEST_TMPDIR/real"; RUN="$BATS_TEST_TMPDIR/run"
     S="$BATS_TEST_TMPDIR/stubdata"
     mkdir -p "$BIN" "$REAL" "$RUN/gt/gw-a/keys" "$S"
-    for t in bash env python3 date mkdir cat grep sed awk printf dirname basename readlink cp ls sort wc rm mktemp comm tail head cut sha256sum; do
+    for t in cmp bash env python3 date mkdir cat grep sed awk printf dirname basename readlink cp ls sort wc rm mktemp comm tail head cut sha256sum; do
         p=$(type -P $t) && ln -sf "$p" "$REAL/$t"
     done
     export S SCEN_REPO="$BATS_TEST_DIRNAME/.."
     cat > "$BIN/tshark" <<'STUB'
 #!/usr/bin/env bash
+echo "$*" >> "$S/tshark.args"
+[ -n "${TSHARK_RC:-}" ] && exit "$TSHARK_RC"
 f=''
 while [ $# -gt 0 ]; do case "$1" in -Y) f="$2"; shift ;; esac; shift; done
 h=$(printf %s "$f" | sha256sum | cut -c1-12)
@@ -266,4 +268,74 @@ EOF
     [ "$status" -eq 1 ]
     [[ "$output" == *"'| X6 |'"* ]]
     [ "$(cat "$RUN/expected.md")" = "$(cat "$RUN/before")" ]
+}
+
+@test "tshark failure exits 1 and leaves expected.md byte-identical" {
+    cp "$RUN/expected.md" "$RUN/before"
+    TSHARK_RC=2 run "$SCRIPT" "$RUN"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [ "$(cat "$RUN/expected.md")" = "$(cat "$RUN/before")" ]
+    [ ! -e "$RUN/expected.md.tmp" ]
+}
+
+@test "X6 with no isakmp frames at all is FAIL" {
+    : > "$S/tshark.$(printf %s isakmp | sha256sum | cut -c1-12)"
+    run "$SCRIPT" "$RUN"
+    [ "$status" -eq 1 ]
+    [[ "$(cell X6)" == "FAIL (no DPD"* ]]
+}
+
+@test "X7 with keys but nothing decrypted is FAIL" {
+    : > "$S/tshark.$(printf %s 'esp && ip' | sha256sum | cut -c1-12)"
+    run "$SCRIPT" "$RUN"
+    [ "$status" -eq 1 ]
+    [ "$(cell X7)" = "FAIL (nothing decrypted)" ]
+}
+
+@test "X8 FAILs when capture-stats.txt is missing" {
+    rm "$RUN/capture-stats.txt"
+    run "$SCRIPT" "$RUN"
+    [ "$status" -eq 1 ]
+    [ "$(cell X8)" = "FAIL (no capture-stats.txt)" ]
+}
+
+@test "X8 FAILs when capture-stats.txt is empty" {
+    : > "$RUN/capture-stats.txt"
+    run "$SCRIPT" "$RUN"
+    [ "$status" -eq 1 ]
+    [[ "$(cell X8)" == FAIL* ]]
+}
+
+@test "X1 FAILs (not die, not PASS) when ipsec.peers is absent" {
+    grep -v 'peers:' "$BATS_TEST_DIRNAME/fixtures/run-s1.yaml" > "$RUN/run.yaml"
+    run "$SCRIPT" "$RUN"
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [ "$(cell X1)" = "FAIL (no ipsec.peers in run.yaml)" ]
+    [ "$(cell X2)" = PASS ]
+}
+
+@test "S0 X4-inverse with an empty seed (zero frames) is FAIL" {
+    sed 's/^scenario: S1/scenario: S0/' "$BATS_TEST_DIRNAME/fixtures/run-s1.yaml" > "$RUN/run.yaml"
+    cp "$BATS_TEST_DIRNAME/../scenarios/S0/expected.md" "$RUN/expected.md"
+    : > "$S/tshark.$(printf %s 'ip.addr==10.200.0.0/16' | sha256sum | cut -c1-12)"
+    run "$SCRIPT" "$RUN"
+    [ "$status" -eq 1 ]
+    [[ "$(cell X4-inverse)" == "FAIL (site addresses not visible"* ]]
+}
+
+@test "X7 tshark calls carry -E occurrence=l (innermost fields)" {
+    run "$SCRIPT" "$RUN"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c -e '-E occurrence=l' "$S/tshark.args")" -eq 2 ]
+    grep -e 'uat:esp_sa' "$S/tshark.args" | grep -q -e '-E occurrence=l'
+}
+
+@test "happy path leaves no expected.md.tmp and keeps other lines" {
+    cp "$RUN/expected.md" "$RUN/before"
+    run "$SCRIPT" "$RUN"
+    [ "$status" -eq 0 ]
+    [ ! -e "$RUN/expected.md.tmp" ]
+    [ "$(grep -vc '^| X[0-9]' "$RUN/expected.md")" -eq "$(( $(grep -vc '^| X[0-9]' "$RUN/before") + 1 ))" ]
 }

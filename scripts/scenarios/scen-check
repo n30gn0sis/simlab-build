@@ -87,10 +87,12 @@ check_X7() {
     local keys="$D/gt/gw-a/keys/esp_sa" dec inn bad
     if [ ! -f "$keys" ]; then set_res X7 SKIP "no keys in gt/"; return 0; fi
     [ -n "$INNER" ] || { set_res X7 FAIL "no inner-i01 capture"; return 0; }
-    # The exact esp_sa UAT string format is confirmed in the Part-B rehearsal.
+    # The exact esp_sa UAT string format is confirmed in the Part-B rehearsal, as is the
+    # field shape: -E occurrence=l keeps only the innermost ip.src/ip.dst of a decrypted
+    # frame (otherwise outer and inner are comma-joined and never match the inner capture).
     dec=$(tshark -r "$OUTER" -o esp.enable_encryption_decode:TRUE -o "uat:esp_sa:$(cat "$keys")" \
-        -Y 'esp && ip' -T fields -e ip.src -e ip.dst -e tcp.port -e udp.port | sort -u | awk 'NF') || die "tshark failed (X7 decrypt)"
-    inn=$(tshark -r "$INNER" -Y 'ip' -T fields -e ip.src -e ip.dst -e tcp.port -e udp.port | sort -u | awk 'NF') || die "tshark failed (X7 inner)"
+        -Y 'esp && ip' -T fields -E occurrence=l -e ip.src -e ip.dst -e tcp.port -e udp.port | sort -u | awk 'NF') || die "tshark failed (X7 decrypt)"
+    inn=$(tshark -r "$INNER" -Y 'ip' -T fields -E occurrence=l -e ip.src -e ip.dst -e tcp.port -e udp.port | sort -u | awk 'NF') || die "tshark failed (X7 inner)"
     if [ -z "$dec" ]; then set_res X7 FAIL "nothing decrypted"; return 0; fi
     bad=$(comm -23 <(printf '%s\n' "$dec") <(printf '%s\n' "$inn") | wc -l)
     if [ "$bad" -eq 0 ]; then set_res X7 PASS; else set_res X7 FAIL "$bad decrypted tuples not in inner capture"; fi
@@ -125,7 +127,7 @@ for r in "${ROWS[@]}"; do
     args+=("$r=${cell//|//}")
 done
 python3 -I - "$E" "$FAILED_STEPS" "${args[@]}" <<'PY'
-import sys
+import os, sys
 path, nfail, pairs = sys.argv[1], sys.argv[2], dict(a.split('=', 1) for a in sys.argv[3:])
 out, last_row, tline = [], None, f"traffic: {nfail} FAILED steps in traffic.out"
 for line in open(path).read().split('\n'):
@@ -140,7 +142,10 @@ for line in open(path).read().split('\n'):
         last_row = len(out)
     out.append(line)
 out.insert(last_row + 1 if last_row is not None else len(out), tline)
-open(path, 'w').write('\n'.join(out))
+tmp = path + '.tmp'
+with open(tmp, 'w') as fh:
+    fh.write('\n'.join(out))
+os.replace(tmp, path)
 PY
 
 rc=0; summary=''

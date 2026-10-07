@@ -144,3 +144,17 @@ docker exec -i gw-a sh -c swanctl --list-sas" ]
 @test "a missing events file is refused" {
     run drive "$BATS_TEST_TMPDIR/none.yaml"; [ "$status" -eq 1 ]; [[ "$output" == *"no such events file"* ]]
 }
+@test "an exec that reads stdin does not swallow the events after it" {
+    stub docker 'echo "docker $*" >> "$S/calls"; cat > /dev/null'
+    printf -- '- {t: 0, action: exec, node: gw-a, cmd: "true"}\n- {t: 0, action: note, text: after-exec}\n- {t: 0, action: note, text: last}\n' > "$EV"
+    run drive "$EV"; [ "$status" -eq 0 ]
+    grep -q 'event t=0 note text=after-exec$' "$SCEN_LOG"
+    grep -q 'event t=0 note text=last$' "$SCEN_LOG"
+}
+@test "a shell-ish cmd with a tab and a double quote reaches the node as one argument" {
+    stub docker 'printf "%s\n" "$#" > "$S/argc"; printf "%s" "${@: -1}" > "$S/lastarg"'
+    printf -- "- {t: 0, action: exec, node: gw-a, cmd: \"swanctl --list-sas\\\\t| grep \\\\\"INSTALLED\\\\\"\"}\n" > "$EV"
+    run drive "$EV"; [ "$status" -eq 0 ]
+    [ "$(cat "$S/argc")" -eq 6 ]
+    [ "$(cat "$S/lastarg")" = "$(printf 'swanctl --list-sas\t| grep "INSTALLED"')" ]
+}

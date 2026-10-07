@@ -105,18 +105,18 @@ events_exec_one() {
         note) ;;
         link-down|link-up)
             target=$(ev_arg target)
-            ip link set "${target#*:}" "${a#link-}" || rc=$? ;;
+            ip link set "${target#*:}" "${a#link-}" </dev/null || rc=$? ;;
         wan-apply)
             iface=$(ev_arg iface)
             # Recorded before the apply: a half-applied qdisc must still be cleared.
             APPLIED="${APPLIED:-} $iface"
-            wan-apply "$(ev_arg profile)" "$iface" || rc=$? ;;
+            wan-apply "$(ev_arg profile)" "$iface" </dev/null || rc=$? ;;
         wan-clear)
             iface=$(ev_arg iface)
-            wan-clear "$iface" && events_forget "$iface" || rc=$? ;;
+            wan-clear "$iface" </dev/null && events_forget "$iface" || rc=$? ;;
         exec)
             # shellcheck disable=SC2086  # SCEN_EXEC is word-split on purpose
-            $SCEN_EXEC "$(ev_arg node)" sh -c "$(ev_arg cmd)" || rc=$? ;;
+            $SCEN_EXEC "$(ev_arg node)" sh -c "$(ev_arg cmd)" </dev/null || rc=$? ;;
     esac
     [ "$rc" -eq 0 ] || log "event t=$t $a FAILED rc=$rc"
     return 0
@@ -129,12 +129,13 @@ events_run() {
     dump=$(events_dump "$file") || die "cannot read events: $file"
     [ -n "$dump" ] || return 0
     events_validate "$dump"
-    while IFS= read -r line; do
+    # Dump on fd 3: no action may consume the engine's own input.
+    while IFS= read -r -u3 line; do
         IFS="$EV_SEP" read -r -a EV_F <<< "$line"
         EV_F[0]=$((10#${EV_F[0]}))
         now=$(date +%s)
         delay=$((t0 + EV_F[0] - now))
         if [ "$delay" -gt 0 ]; then sleep "$delay"; fi
         events_exec_one
-    done <<< "$dump"
+    done 3<<< "$dump"
 }

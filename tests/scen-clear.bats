@@ -5,7 +5,7 @@ setup() {
     BIN="$BATS_TEST_TMPDIR/bin"; REAL="$BATS_TEST_TMPDIR/real"; RUN="$BATS_TEST_TMPDIR/run"
     CALLS="$BATS_TEST_TMPDIR/calls"
     mkdir -p "$BIN" "$REAL" "$RUN"; : > "$CALLS"
-    for t in bash env python3 date mkdir cat grep sed awk printf dirname basename readlink cp rm; do
+    for t in bash env python3 date mkdir cat grep sed awk printf dirname basename readlink cp rm chmod; do
         p=$(type -P $t) && ln -sf "$p" "$REAL/$t"
     done
     export CALLS SCEN_REPO="$BATS_TEST_DIRNAME/.." SHOW_OUT="" PING_OUT="" PING_RC=0
@@ -158,4 +158,25 @@ add_baseline() { printf 'baseline: {target: 198.18.2.2, rtt_ms: %s}\n' "$1" >> "
     echo "$output"
     [ "$status" -eq 0 ]
     [ "$(grep -c '^wan-clear' "$CALLS")" -eq 0 ]
+}
+
+@test "walks the events file: clears wan-apply ifaces and brings link-down ports up" {
+    printf '#!/bin/bash\necho "ip $*" >> "$CALLS"\n' > "$BIN/ip"; chmod +x "$BIN/ip"
+    mkdir -p "$RUN/events"
+    cat > "$RUN/events/s1-baseline.yaml" <<'YAML'
+- {t: 5, action: wan-apply, profile: branch-wan, iface: veth-t02a}
+- {t: 9, action: link-down, target: "br-lab-t01:veth-t01a"}
+YAML
+    run "$SCRIPT" "$RUN/run.yaml"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -qx 'wan-clear veth-t02a' "$CALLS"
+    grep -qx 'ip link set veth-t01a up' "$CALLS"
+}
+@test "an events file naming a refused iface clears nothing from events and fails" {
+    printf '#!/bin/bash\necho "ip $*" >> "$CALLS"\n' > "$BIN/ip"; chmod +x "$BIN/ip"
+    mkdir -p "$RUN/events"
+    printf -- '- {t: 9, action: link-down, target: "br-lab-t01:lacp-trunk"}\n' > "$RUN/events/s1-baseline.yaml"
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -ne 0 ]
+    run grep -q '^ip ' "$CALLS"; [ "$status" -ne 0 ]
 }

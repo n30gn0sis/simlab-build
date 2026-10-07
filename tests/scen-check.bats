@@ -339,3 +339,31 @@ EOF
     [ ! -e "$RUN/expected.md.tmp" ]
     [ "$(grep -vc '^| X[0-9]' "$RUN/expected.md")" -eq "$(( $(grep -vc '^| X[0-9]' "$RUN/before") + 1 ))" ]
 }
+
+@test "X7 passes one uat:esp_sa option per key line and asks for the port fields" {
+    printf 'sa-one\n# comment\n\nsa-two\n' > "$RUN/gt/gw-a/keys/esp_sa"
+    run "$SCRIPT" "$RUN"
+    [ "$status" -eq 0 ]
+    grep 'uat:esp_sa' "$S/tshark.args" | grep -q -e '-o uat:esp_sa:sa-one -o uat:esp_sa:sa-two '
+    [ "$(grep -c -e 'uat:esp_sa:' "$S/tshark.args")" -eq 1 ]
+    for f in tcp.srcport tcp.dstport udp.srcport udp.dstport; do grep -e 'uat:esp_sa' "$S/tshark.args" | grep -q -e "-e $f"; done
+}
+@test "X7 FAILs when the gateway ground truth is marked MISSING" {
+    echo "docker cp failed" > "$RUN/gt/gw-a/MISSING"
+    run "$SCRIPT" "$RUN"
+    [ "$status" -eq 1 ]
+    [ "$(cell X7)" = "FAIL (ground truth missing)" ]
+}
+@test "X7 FAILs when gt/gw-a was never collected" {
+    rm -rf "$RUN/gt/gw-a"
+    run "$SCRIPT" "$RUN"
+    [ "$status" -eq 1 ]
+    [ "$(cell X7)" = "FAIL (ground truth missing)" ]
+}
+@test "X2 and X4 FAIL on an empty outer capture instead of passing" {
+    : > "$S/tshark.$(printf %s '' | sha256sum | cut -c1-12)"
+    run "$SCRIPT" "$RUN"
+    [ "$status" -eq 1 ]
+    [ "$(cell X2)" = "FAIL (empty capture)" ]
+    [ "$(cell X4)" = "FAIL (empty capture)" ]
+}

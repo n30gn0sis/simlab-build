@@ -57,11 +57,17 @@ check_X1() {
     done
     if [ -z "$missing" ]; then set_res X1 PASS; else set_res X1 FAIL "no IKE_SA_INIT from$missing"; fi
 }
-check_X2() { local n; n=$(count "$OUTER" 'udp.port==4500')
+# An empty outer capture proves nothing: X2/X4 must not PASS on it.
+outer_empty() { [ "$(tshark -r "$OUTER" | wc -l)" -eq 0 ]; }
+check_X2() { local n
+    if outer_empty; then set_res X2 FAIL "empty capture"; return 0; fi
+    n=$(count "$OUTER" 'udp.port==4500')
     if [ "$n" -eq 0 ]; then set_res X2 PASS; else set_res X2 FAIL "$n frames on UDP 4500"; fi; }
 check_X3() { local n; n=$(count "$OUTER" 'esp')
     if [ "$n" -gt 0 ]; then set_res X3 PASS; else set_res X3 FAIL "no ESP frames"; fi; }
-check_X4() { local n; n=$(count "$OUTER" 'ip.addr==10.200.0.0/16')
+check_X4() { local n
+    if outer_empty; then set_res X4 FAIL "empty capture"; return 0; fi
+    n=$(count "$OUTER" 'ip.addr==10.200.0.0/16')
     if [ "$n" -eq 0 ]; then set_res X4 PASS; else set_res X4 FAIL "$n outer frames carry site addresses"; fi; }
 check_X4_inverse() { local n; n=$(count "$OUTER" 'ip.addr==10.200.0.0/16')
     if [ "$n" -gt 0 ]; then set_res X4-inverse PASS; else set_res X4-inverse FAIL "site addresses not visible on the outer side"; fi; }
@@ -84,15 +90,24 @@ check_X6() {
     set_res X6 "${verdict%% *}" "$(printf '%s' "${verdict#PASS}" | sed 's/^FAIL *//')"
 }
 check_X7() {
-    local keys="$D/gt/gw-a/keys/esp_sa" dec inn bad
+    local keys="$D/gt/gw-a/keys/esp_sa" dec inn bad line fields
+    local -a uat=()
+    if [ -e "$D/gt/gw-a/MISSING" ] || [ ! -d "$D/gt/gw-a" ]; then set_res X7 FAIL "ground truth missing"; return 0; fi
     if [ ! -f "$keys" ]; then set_res X7 SKIP "no keys in gt/"; return 0; fi
     [ -n "$INNER" ] || { set_res X7 FAIL "no inner-i01 capture"; return 0; }
+    # One -o uat:esp_sa:<record> per SA: tshark adds a UAT record per option.
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in ''|'#'*) continue ;; esac
+        uat+=(-o "uat:esp_sa:$line")
+    done < "$keys"
+    [ "${#uat[@]}" -gt 0 ] || { set_res X7 SKIP "no keys in gt/"; return 0; }
+    fields=(-T fields -E occurrence=l -e ip.src -e ip.dst -e tcp.srcport -e tcp.dstport -e udp.srcport -e udp.dstport)
     # The exact esp_sa UAT string format is confirmed in the Part-B rehearsal, as is the
-    # field shape: -E occurrence=l keeps only the innermost ip.src/ip.dst of a decrypted
+    # field shape: -E occurrence=l keeps only the innermost fields of a decrypted
     # frame (otherwise outer and inner are comma-joined and never match the inner capture).
-    dec=$(tshark -r "$OUTER" -o esp.enable_encryption_decode:TRUE -o "uat:esp_sa:$(cat "$keys")" \
-        -Y 'esp && ip' -T fields -E occurrence=l -e ip.src -e ip.dst -e tcp.port -e udp.port | sort -u | awk 'NF') || die "tshark failed (X7 decrypt)"
-    inn=$(tshark -r "$INNER" -Y 'ip' -T fields -E occurrence=l -e ip.src -e ip.dst -e tcp.port -e udp.port | sort -u | awk 'NF') || die "tshark failed (X7 inner)"
+    dec=$(tshark -r "$OUTER" -o esp.enable_encryption_decode:TRUE "${uat[@]}" \
+        -Y 'esp && ip' "${fields[@]}" | sort -u | awk 'NF') || die "tshark failed (X7 decrypt)"
+    inn=$(tshark -r "$INNER" -Y 'ip' "${fields[@]}" | sort -u | awk 'NF') || die "tshark failed (X7 inner)"
     if [ -z "$dec" ]; then set_res X7 FAIL "nothing decrypted"; return 0; fi
     bad=$(comm -23 <(printf '%s\n' "$dec") <(printf '%s\n' "$inn") | wc -l)
     if [ "$bad" -eq 0 ]; then set_res X7 PASS; else set_res X7 FAIL "$bad decrypted tuples not in inner capture"; fi

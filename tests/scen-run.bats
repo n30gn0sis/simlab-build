@@ -41,7 +41,7 @@ teardown() { pkill -f "$RUN" 2>/dev/null || true; }
 @test "starts one tcpdump per capture point with cap and ring, then stops them" {
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
     for n in outer-t01 outer-t02 inner-i01 inner-i02; do
-        grep -q -- "-w $RUN/$n.pcapng -C 1024 -W 2 -s 0 -n -U" "$S/tcpdump.$n"
+        grep -q -- "^-Z root -i br-lab-[a-z0-9]* -w $RUN/$n.pcapng -C 1024 -W 2 -s 0 -n -U" "$S/tcpdump.$n"
     done
     [ "$(wc -l < "$RUN/.pids")" -eq 4 ]
     [[ "$output" == *"captures up"* ]]
@@ -245,4 +245,67 @@ esac'
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 3 ]
     grep -q 'not a clean reference' "$RUN/run.yaml"; grep -q '—' "$RUN/run.yaml"
     [ -z "$(find "$RUN" -maxdepth 1 -name '*.tmp')" ]
+}
+
+@test "a manifest without events runs to completion and logs that no events were given" {
+    sed -i '/^events:/d' "$RUN/run.yaml"
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    grep -q 'events: none in manifest' "$RUN/events.log"
+    run grep -q aborted "$RUN/events.log"; [ "$status" -ne 0 ]
+    tail -1 "$RUN/events.log" | grep -q 'run complete'
+}
+@test "a bad event (unknown action) stops scen-run before any tcpdump starts" {
+    printf -- '- {t: 0, action: frobnicate}\n' > "$RUN/events/s1-baseline.yaml"
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 1 ]
+    [[ "$output" == *"unknown action"* ]]
+    [ -z "$(ls "$S"/tcpdump.* 2>/dev/null)" ]
+}
+@test "a link-down event on the management port stops scen-run before any tcpdump starts" {
+    printf -- '- {t: 0, action: link-down, target: "br-lab-t01:lacp-trunk"}\n' > "$RUN/events/s1-baseline.yaml"
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 1 ]
+    [ -z "$(ls "$S"/tcpdump.* 2>/dev/null)" ]
+}
+@test "a wan-apply event with a missing profile stops scen-run before any tcpdump starts" {
+    printf -- '- {t: 0, action: wan-apply, profile: no-such-profile, iface: veth-t01a}\n' > "$RUN/events/s1-baseline.yaml"
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 1 ]
+    [[ "$output" == *"event 1 (wan-apply)"* ]]
+    [ -z "$(ls "$S"/tcpdump.* 2>/dev/null)" ]
+    [ ! -f "$S/calls" ]
+}
+@test "SIGTERM after a link-down event brings the port back up in cleanup" {
+    stub ip 'echo "ip $*" >> "$S/calls"'
+    stub docker 'exec sleep 60'
+    printf -- '- {t: 0, action: link-down, target: "br-lab-t01:veth-t01a"}\n' > "$RUN/events/s1-baseline.yaml"
+    "$SCRIPT" "$RUN/run.yaml" >/dev/null & pid=$!
+    for _ in $(seq 50); do grep -q 'ip link set veth-t01a down' "$S/calls" 2>/dev/null && break; sleep 0.1; done
+    sleep 0.3; kill -TERM $pid; rc=0; wait $pid || rc=$?
+    [ "$rc" -eq 143 ]
+    grep -q '^ip link set veth-t01a up$' "$S/calls"
+    grep -q 'left down by scenario' "$RUN/events.log"
+}
+@test "a port left down at the end of a normal run is logged and brought up" {
+    stub ip 'echo "ip $*" >> "$S/calls"'
+    printf -- '- {t: 0, action: link-down, target: "br-lab-t01:veth-t01a"}\n' > "$RUN/events/s1-baseline.yaml"
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    grep -q '^ip link set veth-t01a up$' "$S/calls"
+    grep -q 'veth-t01a left down by scenario' "$RUN/events.log"
+}
+@test "a full capture ring is logged and noted in results.notes" {
+    cat > "$BIN/tcpdump" <<'STUB'
+#!/usr/bin/env python3
+import os, signal, sys, time
+a = sys.argv[1:]; w = a[a.index('-w') + 1]
+for i in range(int(a[a.index('-W') + 1])): open(f'{w}{i:02d}', 'a').close()
+def stop(*_):
+    sys.stderr.write('0 packets captured\n0 packets dropped by kernel\n'); sys.stderr.flush(); sys.exit(0)
+signal.signal(signal.SIGINT, stop)
+while True: time.sleep(1)
+STUB
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    grep -q 'outer-t01: ring full (2 files)' "$RUN/events.log"
+    grep -q 'ring full: outer-t01, outer-t02, inner-i01, inner-i02' "$RUN/run.yaml"
+}
+@test "a ring that has not wrapped adds no note" {
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    run grep -q 'ring full' "$RUN/events.log"; [ "$status" -ne 0 ]
 }

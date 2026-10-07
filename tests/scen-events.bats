@@ -158,3 +158,19 @@ docker exec -i gw-a sh -c swanctl --list-sas" ]
     [ "$(cat "$S/argc")" -eq 6 ]
     [ "$(cat "$S/lastarg")" = "$(printf 'swanctl --list-sas\t| grep "INSTALLED"')" ]
 }
+
+@test "link-down records the port in DOWNED and link-up removes it" {
+    printf -- '- {t: 0, action: link-down, target: "br-lab-t01:veth-t01a"}\n- {t: 0, action: link-down, target: "br-lab-t01:veth-t02a"}\n- {t: 0, action: link-up, target: "br-lab-t01:veth-t01a"}\n' > "$EV"
+    run bash -c 'source "$LIBDIR/scen-events.sh"; DOWNED=""; events_run "$1" "$2"; echo "DOWNED=[$DOWNED]"' _ "$EV" "$PAST"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"DOWNED=[ veth-t02a]"* ]]
+}
+@test "events_validate_file validates without executing anything" {
+    printf -- '- {t: 0, action: wan-apply, profile: lte-poor, iface: veth-t01a}\n' > "$EV"
+    run bash -c 'source "$LIBDIR/scen-events.sh"; events_validate_file "$1"' _ "$EV"
+    [ "$status" -eq 0 ]
+    [ ! -e "$S/calls" ]
+    printf -- '- {t: 0, action: wan-apply, profile: nope, iface: veth-t01a}\n' > "$EV"
+    run bash -c 'source "$LIBDIR/scen-events.sh"; events_validate_file "$1"' _ "$EV"
+    [ "$status" -eq 1 ]; [[ "$output" == *"event 1 (wan-apply)"* ]]
+}

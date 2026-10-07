@@ -6,6 +6,8 @@
 # up front. A failing event is logged "FAILED rc=<n>" and the run continues — the
 # captures are the product, the log is the evidence.
 # Uses from the caller: log die guard_iface (scen-lib.sh), SCEN_EXEC, APPLIED.
+# DOWNED (space-separated ports taken down by link-down, removed by link-up) is kept
+# like APPLIED, so scen-run's cleanup can bring every left-down port back up.
 set -euo pipefail
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/scen-lib.sh"
@@ -85,11 +87,36 @@ events_validate() {
     done <<< "$1"
 }
 
+# events_validate_file <events.yaml> — dump + validate, executes nothing. Also proves every
+# wan-apply event's profile loads. Dies naming the problem.
+events_validate_file() {
+    local file="$1" dump line n=0 p
+    [ -f "$file" ] || die "no such events file: $file"
+    dump=$(events_dump "$file") || die "cannot read events: $file"
+    [ -n "$dump" ] || return 0
+    events_validate "$dump"
+    while IFS= read -r line; do
+        n=$((n + 1))
+        IFS="$EV_SEP" read -r -a EV_F <<< "$line"
+        [ "${EV_F[1]:-}" = wan-apply ] || continue
+        p=$(ev_arg profile)
+        ( profile_load "$p" ) >/dev/null 2>&1 ||
+            die "event $n (wan-apply): profile '$p' does not load from $SCEN_PROFILES"
+    done <<< "$dump"
+}
+
 # events_forget <iface> — drop iface from APPLIED once it is cleared.
 events_forget() {
     local i keep=''
     for i in ${APPLIED:-}; do [ "$i" = "$1" ] || keep="$keep $i"; done
     APPLIED="$keep"
+}
+
+# events_undown <port> — drop port from DOWNED.
+events_undown() {
+    local i keep=''
+    for i in ${DOWNED:-}; do [ "$i" = "$1" ] || keep="$keep $i"; done
+    DOWNED="$keep"
 }
 
 # events_exec_one — run the event in EV_F; always returns 0.
@@ -105,7 +132,10 @@ events_exec_one() {
         note) ;;
         link-down|link-up)
             target=$(ev_arg target)
-            ip link set "${target#*:}" "${a#link-}" </dev/null || rc=$? ;;
+            # Recorded before the down: a failed `ip` may still have changed state.
+            if [ "$a" = link-down ]; then DOWNED="${DOWNED:-} ${target#*:}"; fi
+            ip link set "${target#*:}" "${a#link-}" </dev/null || rc=$?
+            if [ "$a" = link-up ] && [ "$rc" -eq 0 ]; then events_undown "${target#*:}"; fi ;;
         wan-apply)
             iface=$(ev_arg iface)
             # Recorded before the apply: a half-applied qdisc must still be cleared.

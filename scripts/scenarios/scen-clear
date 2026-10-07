@@ -31,6 +31,34 @@ for iface in "${TODO[@]}"; do
 done
 [ "$cleared" -gt 0 ] || log "no host impairments to clear"
 
+# 1b. Events the run may have left behind: wan-apply ifaces get wan-clear, link-down
+# ports get brought up. Validated first (refuse before touching anything), warn-only after.
+EV_REL="$(manifest_get "$M" events 2>/dev/null || true)"
+if [ -n "$EV_REL" ] && [ -f "$D/$EV_REL" ]; then
+    # shellcheck source=/dev/null
+    source "$HERE/scen-events.sh"
+    EV_DUMP="$(events_dump "$D/$EV_REL")" || die "cannot read events: $D/$EV_REL"
+    EV_CLEAR=(); EV_UP=()
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        IFS="$EV_SEP" read -r -a EV_F <<< "$line"
+        case "${EV_F[1]:-}" in
+            wan-apply) ifc="$(ev_arg iface)"; guard_iface "$ifc" || die "event iface $ifc refused"
+                       EV_CLEAR+=("$ifc") ;;
+            link-down) tgt="$(ev_arg target)"; guard_iface "${tgt#*:}" || die "event port ${tgt#*:} refused"
+                       EV_UP+=("${tgt#*:}") ;;
+        esac
+    done <<< "$EV_DUMP"
+    for ifc in "${EV_CLEAR[@]}"; do
+        if wan-clear "$ifc"; then log "event impairment cleared on $ifc"
+        else log "WARN: wan-clear $ifc failed — check wan-show"; fi
+    done
+    for ifc in "${EV_UP[@]}"; do
+        if ip link set "$ifc" up; then log "port $ifc brought up"
+        else log "WARN: ip link set $ifc up failed — check the port"; fi
+    done
+fi
+
 # 2. Harness captures belonging to this run only (no match is not an error).
 DRE="$(printf '%s' "$D" | sed 's/[][\.*^$+?(){}|]/\\&/g')"
 PKILL_FAIL=0

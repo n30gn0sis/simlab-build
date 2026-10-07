@@ -25,6 +25,8 @@ D="$(cd "$(dirname "$M")" && pwd)"; M="$D/run.yaml"
 export SCEN_LOG="$D/events.log"
 
 APPLIED=''          # ifaces we impaired (M1), cleared by clear_impairments/cleanup
+DOWNED=''           # ports an event took down, brought back up by restore_links/cleanup
+RING_FULL=''        # capture points whose ring has wrapped (noted in results.notes)
 TRAFFIC_PID=''
 FINISHED=0
 TRAFFIC_RC=0        # non-zero: run completed but is not a clean reference (exit 3)
@@ -33,6 +35,16 @@ RUN_START=''        # UTC ISO-8601, when captures went up
 RUN_END=''          # UTC ISO-8601, when captures were stopped
 PIDS=()             # tcpdump PIDs
 NAMES=()            # capture point names, same order
+
+# restore_links — bring every port still in DOWNED back up (fail-soft).
+restore_links() {
+    local p
+    for p in ${DOWNED:-}; do
+        log "port $p left down by scenario — bringing it up"
+        ip link set "$p" up || log "ip link set $p up failed — check the port by hand"
+    done
+    DOWNED=''
+}
 
 cleanup() {
     local rc=$? p i
@@ -46,6 +58,7 @@ cleanup() {
     for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null; done
     for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null; done
     for i in $APPLIED; do wan-clear "$i" || log "wan-clear $i failed — check wan-show"; done
+    restore_links
     [ "$FINISHED" = 1 ] || log "aborted rc=$rc"
     exit "$rc"
 }
@@ -79,6 +92,12 @@ guard_all() {
         guard_iface "$b" || exit 1
     done <<< "$BRIDGES"
     [ "$n" -gt 0 ] || die "run.yaml has no capture_points"
+    # Events are validated before any capture starts: a bad event must not cost a run.
+    if [ -n "$EVENTS" ] && [ -f "$HERE/scen-events.sh" ]; then
+        # shellcheck source=/dev/null
+        source "$HERE/scen-events.sh"
+        events_validate_file "$D/$EVENTS"
+    fi
     while IFS= read -r i; do
         [ -n "$i" ] || continue
         guard_iface "$i" || exit 1
@@ -97,7 +116,7 @@ start_captures() {
     # If scen-run is itself backgrounded its INT trap is a no-op; TERM/EXIT still clean up.
     set -m
     while IFS='|' read -r name br; do
-        tcpdump -i "$br" -w "$D/$name.pcapng" -C "$CAP_MB" -W "$RING" -s 0 -n -U \
+        tcpdump -Z root -i "$br" -w "$D/$name.pcapng" -C "$CAP_MB" -W "$RING" -s 0 -n -U \
             > "$D/.tcpdump-$name.err" 2>&1 &
         pid=$!
         PIDS+=("$pid"); NAMES+=("$name")
@@ -136,11 +155,14 @@ run_traffic() {
     $SCEN_EXEC "$T_NODE" sh -s < "$D/$T_SCRIPT" > "$D/traffic.out" 2>&1 &
     TRAFFIC_PID=$!
     t0=$(date +%s)
-    # Task 7b hook: the timed-event engine. The last event is an `end` note at/after traffic end.
-    if [ -f "$HERE/scen-events.sh" ]; then
+    # The timed-event engine. The last event is an `end` note at/after traffic end.
+    if [ -z "$EVENTS" ]; then
+        log "events: none in manifest"
+    elif [ -f "$HERE/scen-events.sh" ]; then
         # shellcheck source=/dev/null
         source "$HERE/scen-events.sh"
         events_run "$D/$EVENTS" "$t0"
+        restore_links
     else
         log "events: engine not present, skipping"
     fi
@@ -155,11 +177,26 @@ clear_impairments() {
     APPLIED=''
 }
 
+# A full ring means tcpdump may have overwritten the start of the capture.
+note_ring_wrap() {
+    local n files
+    shopt -s nullglob
+    for n in "${NAMES[@]}"; do
+        files=("$D/$n".pcapng*)
+        if [ "${#files[@]}" -ge "$RING" ]; then
+            log "$n: ring full (${#files[@]} files) — oldest data may have been overwritten"
+            RING_FULL="${RING_FULL:+$RING_FULL, }$n"
+        fi
+    done
+    shopt -u nullglob
+}
+
 stop_captures() {
     local p
     for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done
     for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null || true; done
     PIDS=()
+    note_ring_wrap
     RUN_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     log "captures stopped"
 }
@@ -219,6 +256,7 @@ finish_manifest() {
     notes=$(manifest_get "$M" results.notes) || notes=''
     notes="${notes:+$notes; }host load (1m): $load"
     if [ "$TRAFFIC_RC" -ne 0 ]; then notes="$notes; traffic rc=$TRAFFIC_RC — not a clean reference"; fi
+    if [ -n "$RING_FULL" ]; then notes="$notes; ring full: $RING_FULL"; fi
     patch=$(python3 -I -c '
 import json, sys
 dig = dict(l.split("\t", 1) for l in sys.argv[4].splitlines() if l)

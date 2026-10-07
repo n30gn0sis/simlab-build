@@ -123,3 +123,17 @@ teardown() { pkill -f "$RUN" 2>/dev/null || true; }
     rm "$RUN/traffic/profile-basic.sh"
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 1 ]; [ ! -f "$S/tcpdump.outer-t01" ]
 }
+@test "with the event engine present, scen-run runs the events file and logs each event" {
+    [ -f "$BATS_TEST_DIRNAME/../scripts/scenarios/scen-events.sh" ] || skip "engine absent"
+    stub ip 'echo "ip $*" >> "$S/calls"'
+    cat > "$RUN/events/s1-baseline.yaml" <<'YAML'
+- {t: 0, action: note, text: "baseline"}
+- {t: 0, action: link-down, target: "br-lab-t01:veth-t01a"}
+- {t: 0, action: link-up, target: "br-lab-t01:veth-t01a"}
+YAML
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    [ "$(grep -c '^20.*event t=0 ' "$RUN/events.log")" -eq 3 ]
+    grep -q '^ip link set veth-t01a down$' "$S/calls"
+    grep -q '^ip link set veth-t01a up$' "$S/calls"
+    run grep -q 'engine not present' "$RUN/events.log"; [ "$status" -ne 0 ]
+}

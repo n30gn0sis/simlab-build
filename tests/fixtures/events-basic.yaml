@@ -1,0 +1,6 @@
+# Timed events for the event-engine tests (offsets in seconds from traffic start).
+- {t: 0, action: note, text: "baseline traffic running"}
+- {t: 1, action: link-down, target: "br-lab-t01:veth-t01a"}
+- {t: 1, action: link-up, target: "br-lab-t01:veth-t01a"}
+- {t: 2, action: wan-apply, profile: lte-poor, iface: veth-t01a}
+- {t: 2, action: exec, node: gw-a, cmd: "swanctl --list-sas"}

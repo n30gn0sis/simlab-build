@@ -204,7 +204,7 @@ esac'
 }
 @test "host load is appended to results.notes, keeping existing notes" {
     gt_docker
-    stub uptime 'echo " 10:00:00 up 1 day, 1 user,  load average: 1.25, 0.90, 0.80"'
+    echo "1.25 0.90 0.80 1/200 123" > "$S/loadavg"; export SCEN_LOADAVG="$S/loadavg"
     sed -i 's/notes: ""/notes: "operator note"/' "$RUN/run.yaml"
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
     n=$(python3 -I -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["results"]["notes"])' "$RUN/run.yaml")
@@ -218,4 +218,31 @@ esac'
     [ -e "$RUN/gt/gw-a/keys" ]; [ -f "$RUN/sha256sums" ]
     n=$(python3 -I -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["results"]["notes"])' "$RUN/run.yaml")
     [[ "$n" == *"traffic rc=7 — not a clean reference"* ]]
+}
+@test "a missing loadavg is recorded as unknown and the run still succeeds" {
+    gt_docker
+    SCEN_LOADAVG="$S/nope" run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    n=$(python3 -I -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["results"]["notes"])' "$RUN/run.yaml")
+    [[ "$n" == *"host load (1m): unknown"* ]]
+}
+@test "a failing sha256sum dies and publishes no sha256sums or temp file" {
+    gt_docker
+    stub sha256sum 'for a; do case "$a" in *BADFILE*) exit 1;; esac; done; exec "'"$REAL"'/sha256sum" "$@"'
+    stub mycp 'mkdir -p "$2"; touch "$2/BADFILE"'
+    SCEN_CP=mycp run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -ne 0 ]
+    [ ! -e "$RUN/sha256sums" ]; [ ! -e "$RUN/.sha256sums.tmp" ]
+    [[ "$output" == *"cannot write sha256sums"* ]]
+}
+@test "a custom SCEN_CP that reads stdin cannot swallow later nodes" {
+    gt_docker
+    stub mycp 'cat >/dev/null; mkdir -p "$2"; touch "$2/k"'
+    SCEN_CP=mycp run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    [ -e "$RUN/gt/gw-a/k" ]; [ -e "$RUN/gt/gw-b/k" ]
+}
+@test "notes keep a literal em dash and no manifest temp file is left behind" {
+    gt_docker
+    stub docker 'case "$1" in cp) mkdir -p "${@: -1}";; image) exit 1;; *) exit 7;; esac'
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 3 ]
+    grep -q 'not a clean reference' "$RUN/run.yaml"; grep -q '—' "$RUN/run.yaml"
+    [ -z "$(find "$RUN" -maxdepth 1 -name '*.tmp')" ]
 }

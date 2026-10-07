@@ -16,6 +16,7 @@ SCEN_EXEC="${SCEN_EXEC:-docker exec -i}"
 # How /gt is pulled from a node: $SCEN_CP <node> <dest-dir> (a command name; default below).
 scen_cp_default() { docker cp "$1:/gt/." "$2" </dev/null; }
 SCEN_CP="${SCEN_CP:-scen_cp_default}"
+SCEN_LOADAVG="${SCEN_LOADAVG:-/proc/loadavg}"       # overridable for tests
 SCEN_CAPTURE_SETTLE="${SCEN_CAPTURE_SETTLE:-1}"   # seconds before checking tcpdumps survived
 
 [ $# -eq 1 ] || die "usage: scen-run <run-dir>/run.yaml"
@@ -181,17 +182,17 @@ write_capture_stats() {
 # deliver is marked MISSING (with the error) and the run carries on.
 collect_gt() {
     local name role err
-    while IFS='|' read -r name role; do
+    while IFS='|' read -r -u 3 name role; do
         [ "$role" = endpoint ] || continue
         mkdir -p "$D/gt/$name"
         # shellcheck disable=SC2086  # SCEN_CP may be a command with arguments
-        if err=$($SCEN_CP "$name" "$D/gt/$name/" 2>&1); then
+        if err=$($SCEN_CP "$name" "$D/gt/$name/" 2>&1 </dev/null); then
             log "gt $name collected"
         else
             printf '%s\n' "$err" > "$D/gt/$name/MISSING"
             log "gt $name MISSING"
         fi
-    done < <(paste -d'|' <(manifest_list "$M" nodes name) <(manifest_list "$M" nodes role))
+    done 3< <(paste -d'|' <(manifest_list "$M" nodes name) <(manifest_list "$M" nodes role))
 }
 
 # node_digest <image> — RepoDigest, else image id, else "unknown".
@@ -212,7 +213,9 @@ finish_manifest() {
     while IFS='|' read -r name image; do
         digests+="$name"$'\t'"$(node_digest "$image")"$'\n'
     done < <(paste -d'|' <(manifest_list "$M" nodes name) <(manifest_list "$M" nodes image))
-    load=$(uptime | sed -E 's/.*load averages?: *//; s/[, ].*//')
+    # First field of /proc/loadavg: locale-proof. Fail-soft: a missing figure is not a run failure.
+    load=$(cut -d' ' -f1 "$SCEN_LOADAVG" 2>/dev/null) || load=''
+    [ -n "$load" ] || load=unknown
     notes=$(manifest_get "$M" results.notes) || notes=''
     notes="${notes:+$notes; }host load (1m): $load"
     if [ "$TRAFFIC_RC" -ne 0 ]; then notes="$notes; traffic rc=$TRAFFIC_RC — not a clean reference"; fi
@@ -228,12 +231,20 @@ print(json.dumps({"times_utc": {"start": sys.argv[1], "end": sys.argv[2]},
 
 # sha256sums: top-level files (no dot-files) and everything under gt/, paths relative to $D.
 write_sha256sums() {
-    (   cd "$D"
-        { find . -maxdepth 1 -type f ! -name '.*' ! -name sha256sums -printf '%P\n'
-          if [ -d gt ]; then find gt -type f; fi
-        } | LC_ALL=C sort | while IFS= read -r f; do sha256sum -- "$f"; done > .sha256sums.tmp
-        mv .sha256sums.tmp sha256sums
-    ) || die "cannot write sha256sums"
+    local list
+    list=$(cd "$D" && { find . -maxdepth 1 -type f ! -name '.*' ! -name sha256sums -printf '%P\n'
+                        if [ -d gt ]; then find gt -type f; fi; } | LC_ALL=C sort) \
+        || die "cannot list files for sha256sums"
+    # Explicit exits: errexit is off inside a subshell on the left of ||.
+    if ! ( cd "$D" || exit 1
+           : > .sha256sums.tmp || exit 1
+           while IFS= read -r f; do
+               sha256sum -- "$f" >> .sha256sums.tmp || exit 1
+           done <<< "$list"
+           mv .sha256sums.tmp sha256sums || exit 1 ); then
+        rm -f "$D/.sha256sums.tmp"
+        die "cannot write sha256sums"
+    fi
 }
 
 read_manifest

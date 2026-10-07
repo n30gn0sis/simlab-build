@@ -81,9 +81,14 @@ for k, v in patch.items():
     else:
         if not isinstance(d.get(k), dict): d[k] = {}
         d[k].update(v)
-tmp = path + '.tmp'
-with open(tmp, 'w') as f: yaml.safe_dump(d, f, sort_keys=False)
-os.replace(tmp, path)
+d_, b_ = os.path.split(path)
+tmp = os.path.join(d_, '.' + b_ + '.tmp')
+try:
+    with open(tmp, 'w') as f: yaml.safe_dump(d, f, sort_keys=False, allow_unicode=True)
+    os.replace(tmp, path)
+except BaseException:
+    if os.path.exists(tmp): os.remove(tmp)
+    raise
 PY
 }
 run_dir_for() {

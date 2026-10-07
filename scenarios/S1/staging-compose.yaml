@@ -5,6 +5,11 @@
 # gns3/docker-nodes/lab-images.list (e.g. localhost/lab/ipsec-ss:<bundle-date>)
 # before `compose up`; the FRR and netshoot images are whatever the bundle loaded.
 #
+# Start exactly one profile (`--profile s0` or `--profile s1`); both at once collide on
+# container names and wiring.
+# host-b runs `iperf3 -s -D` (lane A bulk/UDP target); the GNS3 host-b node template must
+# start `iperf3 -s` the same way.
+#
 # Order:
 #   1. bridges     scripts/scenarios/scen-bridges.sh (br-lab-t01 t02 i01 i02 must exist)
 #   2. S1 only     ./gen-secrets.sh .   (RUN_DIR=<run-dir> to keep the PSK as gt/psk.txt)
@@ -78,7 +83,7 @@ services:
     <<: *lab
     profiles: [s0, s1]
     image: docker.io/nicolaka/netshoot:latest
-    command: sleep infinity
+    command: sh -c "iperf3 -s -D && exec sleep infinity"
   svc-b:
     <<: *lab
     profiles: [s0, s1]

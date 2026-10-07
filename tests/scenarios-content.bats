@@ -31,8 +31,8 @@ lib() { bash -c "source '$LIB'; $*"; }
     done
 }
 @test "S0 has no ipsec block and no endpoint nodes; S1 has two endpoints" {
-    ! grep -q '^ipsec:' "$ROOT/scenarios/S0/run.yaml"
-    ! grep -q 'role: endpoint' "$ROOT/scenarios/S0/run.yaml"
+    run grep -q '^ipsec:' "$ROOT/scenarios/S0/run.yaml"; [ "$status" -ne 0 ]
+    run grep -q 'role: endpoint' "$ROOT/scenarios/S0/run.yaml"; [ "$status" -ne 0 ]
     [ "$(grep -c 'role: endpoint' "$ROOT/scenarios/S1/run.yaml")" -eq 2 ]
 }
 @test "S1 swanctl confs are mirror images: gw-a starts, gw-b traps" {
@@ -53,8 +53,9 @@ lib() { bash -c "source '$LIB'; $*"; }
     git -C "$ROOT" check-ignore -q scenarios/S1/swanctl/secrets.conf
 }
 @test "no scenario file carries a version pin or a real secret" {
-    ! grep -rE 'secret = "[0-9a-f]{64}"' "$ROOT/scenarios/"
-    ! grep -rhE '(:|@sha256:)[0-9a-f]{12,}|:v?[0-9]+\.[0-9]+\.[0-9]+' "$ROOT"/scenarios/S*/run.yaml "$ROOT"/scenarios/S1/staging-compose.yaml | grep -v '0\.0\.0-fixture'
+    run grep -rE 'secret = "[0-9a-f]{64}"' "$ROOT/scenarios/"; [ "$status" -ne 0 ]
+    pins=$(grep -hE '(:|@sha256:)[0-9a-f]{12,}|:v?[0-9]+\.[0-9]+\.[0-9]+' "$ROOT"/scenarios/S*/run.yaml "$ROOT"/scenarios/S1/staging-compose.yaml | grep -v '0\.0\.0-fixture' || true)
+    [ -z "$pins" ]
 }
 @test "scen-wire.sh --dry-run prints the veth, netns, bridge, address and route commands" {
     run "$ROOT/scenarios/S1/scen-wire.sh" --dry-run gw-a br-lab-t01 eth0 198.18.1.2/30 198.18.1.1
@@ -68,4 +69,5 @@ lib() { bash -c "source '$LIB'; $*"; }
 @test "scen-wire.sh refuses a bridge that is not a lab bridge" {
     run "$ROOT/scenarios/S1/scen-wire.sh" --dry-run gw-a br-mgmt eth0 198.18.1.2/30
     [ "$status" -ne 0 ]
+    [[ "$output" == *"bridge must be br-lab-"* ]]
 }

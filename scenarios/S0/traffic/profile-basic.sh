@@ -3,15 +3,20 @@
 # ~240 s of load, then a 40 s idle tail (DPD window). Spec §7.1.
 # SEED (env, default 1001) only picks the order of the four load phases; durations,
 # rates and request counts are fixed, so two runs with one seed are comparable.
-set -eu
+# Failures do not stop the run: the capture is the evidence. Each step logs "FAILED: ..." to
+# stderr (traffic.out) and the timeline continues; scen-check judges the result. No set -e.
+# S0 has no IPsec and the ISP has no site routes, so delivery fails by design: expect FAILED:
+# lines in traffic.out. The leaked SYNs on the outer capture are what X4-inverse needs.
+set -u
 SEED="${SEED:-1001}"
 SRV=10.200.2.10; SVC=10.200.2.20
 T0=$(date +%s)
 
-bulk() { iperf3 -c "$SRV" -t 60 -P 2; }
-udp()  { iperf3 -c "$SRV" -u -b 5M -t 30; }
-http() { for _ in $(seq 1 50); do curl -s "http://$SVC/fixed.bin" >/dev/null; done; }
-dns()  { for i in $(seq 1 50); do dig "@$SVC" "host$i.site-b.lab" +short >/dev/null; done; }
+step() { "$@" || echo "FAILED: $*" >&2; }
+bulk() { step iperf3 --connect-timeout 5000 -c "$SRV" -t 60 -P 2; }
+udp()  { step iperf3 --connect-timeout 5000 -c "$SRV" -u -b 5M -t 30; }
+http() { for _ in $(seq 1 50); do step curl -s --max-time 10 -o /dev/null "http://$SVC/fixed.bin"; done; }
+dns()  { for i in $(seq 1 50); do step dig +time=2 +tries=1 "@$SVC" "host$i.site-b.lab" +short >/dev/null; done; }
 
 case $((SEED % 4)) in
     0) order="bulk udp http dns" ;;

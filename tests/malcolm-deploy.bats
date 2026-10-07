@@ -1715,6 +1715,25 @@ assert c["indexDir"] == "/data/index", c["indexDir"]
     [ "$(calls tcpdump)" -eq 0 ]
 }
 
+@test "upload-dir prints the compose file's upload bind source and changes nothing" {
+    malcolm_tree
+    up="$BATS_TEST_TMPDIR/data/pcap/raw/upload"; mkdir -p "$up"
+    compose_with_upload "$up" > "$MD/docker-compose.yml"
+    run md upload-dir
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$up" ]
+    [ ! -f "$S/argv" ]
+}
+
+@test "upload-dir refuses when the upload directory is missing" {
+    malcolm_tree; rm -r "$MD/pcap"
+    run md upload-dir
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"upload directory $MD/pcap/upload"*"does not exist"* ]]
+}
+
 @test "unknown verb prints usage and fails" {
     run md frobnicate
     [ "$status" -ne 0 ]

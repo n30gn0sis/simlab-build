@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# scen-ingest <run-dir> — copy a run's PCAPs into Malcolm's upload directory,
+# tagged so Arkime shows them under <run-id>-outer / <run-id>-inner.
+# Destination name: <upload-dir>/<run_id>-<view><SCEN_TAG_SEP><file>.
+# Malcolm's uploader turns comma-separated leading fields into tags; the exact
+# tag rule is confirmed during the staging rehearsal (plan Part B, H4) — if it
+# differs, change SCEN_TAG_SEP (the one place the separator lives).
+# Only top-level <name>.pcapng* files of the manifest's capture points are
+# copied; gt/ (keys, SA dumps) and every subdirectory are never read.
+set -euo pipefail
+HERE="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+# shellcheck source=/dev/null
+source "$HERE/scen-lib.sh"
+
+SCEN_TAG_SEP=','
+SCEN_DATA_ROOT="${SCEN_DATA_ROOT:-/data}"
+SCEN_MALCOLM_DEPLOY="${SCEN_MALCOLM_DEPLOY:-$SCEN_REPO/scripts/r770-malcolm-deploy.sh}"
+
+[ $# -eq 1 ] || die "usage: scen-ingest <run-dir>"
+D="$1"; [ -f "$D/run.yaml" ] || die "no run.yaml in $D"
+D="$(cd "$D" && pwd)"; M="$D/run.yaml"
+
+UP="${SCEN_UPLOAD_DIR:-}"
+[ -n "$UP" ] || UP="$("$SCEN_MALCOLM_DEPLOY" upload-dir)" || die "cannot resolve Malcolm's upload dir"
+UP="$(readlink -f -- "$UP")" || die "cannot resolve upload dir"
+ROOT="$(readlink -f -- "$SCEN_DATA_ROOT")" || die "cannot resolve $SCEN_DATA_ROOT"
+case "$UP/" in "$ROOT"/*) ;; *) die "upload dir $UP is outside $ROOT" ;; esac
+[ -d "$UP" ] || die "upload dir $UP does not exist"
+
+RUN_ID="$(manifest_get "$M" run_id)"; [ -n "$RUN_ID" ] || die "run_id missing in $M"
+NAMES="$(manifest_list "$M" capture_points name)" || die "cannot read capture_points"
+VIEWS="$(manifest_list "$M" capture_points view)" || die "cannot read capture_points"
+
+copied=0
+while IFS= read -r name <&3 && IFS= read -r view <&4; do
+    case "$view" in outer|inner) ;; *) die "$name: bad view '$view'" ;; esac
+    [[ $name =~ ^[A-Za-z0-9_-]+$ ]] || die "bad capture point name '$name'"
+    found=0
+    for f in "$D/$name".pcapng*; do
+        if [ -L "$f" ]; then log "$(basename "$f"): symlink, skipped"; continue; fi
+        if [ ! -f "$f" ]; then continue; fi
+        found=1
+        dest="$UP/$RUN_ID-$view$SCEN_TAG_SEP$(basename "$f")"
+        if [ -e "$dest" ] || [ -L "$dest" ]; then die "destination exists, not overwriting: $dest"; fi
+        install -m 0644 -- "$f" "$dest"
+        log "ingested $(basename "$dest")"
+        copied=$((copied + 1))
+        basename "$dest"
+    done
+    [ "$found" = 1 ] || log "$name: no capture files"
+done 3<<<"$NAMES" 4<<<"$VIEWS"
+[ "$copied" -gt 0 ] || die "nothing to ingest"

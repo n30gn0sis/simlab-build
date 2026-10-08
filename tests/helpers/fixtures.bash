@@ -14,11 +14,11 @@ make_bundle() {
     local d=$1
     mkdir -p "$d"/{apt,malcolm,docker,images,enrichment,isos,dell} \
              "$d"/gns3/{appliances,definitions} "$d"/.stamps \
-             "$d"/site/{scripts,config,docs/analyst-wiki}
+             "$d"/site/{scripts/scenarios,config,docs/analyst-wiki,scenarios/profiles}
     echo "fake deb"             > "$d/apt/example_1.0_amd64.deb"
     # site/ — this repo's reviewed scripts/config/docs-analyst-wiki, as
     # r770-offline-fetch.sh's stage_site() copies them. Includes a stand-in
-    # for every script r770-bundle.sh's SITE_REQUIRED_SCRIPTS lists (all eight
+    # for every script r770-bundle.sh's SITE_REQUIRED_SCRIPTS lists (all of them
     # exist in the repo), so this "complete bundle" fixture satisfies
     # check_site() with a plain pass, not a WARN. The missing-script WARN path
     # is exercised separately in bundle-verify.bats by deleting one stand-in.
@@ -40,6 +40,12 @@ make_bundle() {
     chmod +x "$d/site/scripts/r770-install.sh"
     printf '#!/usr/bin/env bash\necho fixture-install-adapters\n' > "$d/site/scripts/r770-install-adapters.sh"
     chmod +x "$d/site/scripts/r770-install-adapters.sh"
+    printf '#!/usr/bin/env bash\necho fixture-scen-lib\n' > "$d/site/scripts/scenarios/scen-lib.sh"
+    for sc in scen-prep scen-run scen-events.sh scen-check scen-ingest scen-clear scen-bridges.sh; do
+        printf '#!/usr/bin/env bash\necho fixture-%s\n' "$sc" > "$d/site/scripts/scenarios/$sc"
+        chmod +x "$d/site/scripts/scenarios/$sc"
+    done
+    echo "WAN_DELAY=1" > "$d/site/scenarios/profiles/branch-wan.conf"
     echo "server { }" > "$d/site/config/nginx.conf"
     echo "# wiki"      > "$d/site/docs/analyst-wiki/index.md"
     echo "fake malcolm images"  > "$d/malcolm/malcolm-images-0.0.0-fixture.tar.gz"
@@ -49,6 +55,10 @@ make_bundle() {
     # The fixture omitted them, which made it a shape no real bundle ever has.
     printf 'ghcr.io/idaholab/malcolm/arkime:0.0.0-fixture\n' > "$d/malcolm/image-list.txt"
     printf 'docker.io/prom/prometheus:v0.0.0-fixture\n'       > "$d/docker/monitoring-image-list.txt"
+    mkdir -p "$d/gns3/docker-nodes"
+    echo "fake lab images"      > "$d/gns3/docker-nodes/lab-images.tar.gz"
+    printf 'localhost/lab/%s:0.0.0-fixture\n' ipsec-ss wan-emu svc-targets > "$d/gns3/docker-nodes/lab-images.list"
+    mkdir -p "$d/site/images"; echo "# lab image contexts" > "$d/site/images/README.md"
     echo "fake iso"             > "$d/isos/ubuntu-0.0.0-fixture-live-server-amd64.iso"
     echo "fake oui"             > "$d/enrichment/oui.txt"
     echo "MANUAL DOWNLOADS from dell.com/support" > "$d/dell/README.txt"

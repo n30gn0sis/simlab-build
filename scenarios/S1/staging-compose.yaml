@@ -1,0 +1,99 @@
+# W1 / S0 / S1 staging topology (Part B). Containers start with no network
+# (network_mode: none); scen-wire.sh then joins them to the lab bridges.
+#
+# Image tags below are FIXTURES. Substitute the tags from the bundle's
+# gns3/docker-nodes/lab-images.list (e.g. localhost/lab/ipsec-ss:<bundle-date>)
+# before `compose up`; the FRR and netshoot images are whatever the bundle loaded.
+#
+# Order: scen-prep -> gen-secrets.sh (RUN_DIR=<run-dir>) -> compose up (one profile)
+#        -> scen-wire.sh x9 -> scen-run.
+# gen-secrets.sh must run BEFORE `compose up`: if the secrets path does not exist yet, the
+# bind mount creates a directory in its place.
+#
+# Start exactly one profile (`--profile s0` or `--profile s1`); both at once collide on
+# container names and wiring.
+# host-b runs `iperf3 -s -D` (lane A bulk/UDP target); the GNS3 host-b node template must
+# start `iperf3 -s` the same way.
+#
+# Order:
+#   1. bridges     scripts/scenarios/scen-bridges.sh (br-lab-t01 t02 i01 i02 must exist)
+#   2. S1 only     ./gen-secrets.sh .   (RUN_DIR=<run-dir> to keep the PSK as gt/psk.txt)
+#   3. containers  docker compose -f staging-compose.yaml --profile s1 up -d   (or --profile s0)
+#   4. wiring      the commands below, from this directory, as root
+#
+#   ./scen-wire.sh --end a gw-a   br-lab-t01 eth0 198.18.1.2/30 198.18.1.1
+#   ./scen-wire.sh --end b isp1   br-lab-t01 eth0 198.18.1.1/30
+#   ./scen-wire.sh --end a isp1   br-lab-t02 eth1 198.18.2.1/30
+#   ./scen-wire.sh --end b gw-b   br-lab-t02 eth0 198.18.2.2/30 198.18.2.1
+#   ./scen-wire.sh --end a gw-a   br-lab-i01 eth1 10.200.1.1/24
+#   ./scen-wire.sh --end b host-a br-lab-i01 eth0 10.200.1.10/24 10.200.1.1
+#   ./scen-wire.sh --end a gw-b   br-lab-i02 eth1 10.200.2.1/24
+#   ./scen-wire.sh --end b host-b br-lab-i02 eth0 10.200.2.10/24 10.200.2.1
+#   ./scen-wire.sh --end c svc-b  br-lab-i02 eth0 10.200.2.20/24 10.200.2.1
+#
+# (the ninth line wires svc-b, spec §11.1 "svc-targets .20"). Note the bridge-side
+# port of gw-a on br-lab-t01 is veth-t01a, the interface the manifest impairs.
+# Start gw-a's charon after the captures start (see spec §11.2 run procedure).
+# Gateways here use ip_forward; the ISP never learns 10.200.0.0/16.
+
+x-lab: &lab
+  network_mode: none
+  cap_add: [NET_ADMIN]
+
+services:
+  gw-a:
+    <<: *lab
+    profiles: [s0]
+    image: quay.io/frrouting/frr:0.0.0-fixture
+    sysctls: {net.ipv4.ip_forward: 1}
+  gw-b:
+    <<: *lab
+    profiles: [s0]
+    image: quay.io/frrouting/frr:0.0.0-fixture
+    sysctls: {net.ipv4.ip_forward: 1}
+  gw-a-s1:
+    <<: *lab
+    container_name: gw-a
+    profiles: [s1]
+    image: localhost/lab/ipsec-ss:0.0.0-fixture
+    sysctls: {net.ipv4.ip_forward: 1}
+    volumes:
+      - ./swanctl/gw-a.conf:/etc/swanctl/conf.d/s1.conf:ro
+      - ./swanctl/secrets.conf:/etc/swanctl/conf.d/secrets.conf:ro
+      - gt-gw-a:/gt
+  gw-b-s1:
+    <<: *lab
+    container_name: gw-b
+    profiles: [s1]
+    image: localhost/lab/ipsec-ss:0.0.0-fixture
+    sysctls: {net.ipv4.ip_forward: 1}
+    volumes:
+      - ./swanctl/gw-b.conf:/etc/swanctl/conf.d/s1.conf:ro
+      - ./swanctl/secrets.conf:/etc/swanctl/conf.d/secrets.conf:ro
+      - gt-gw-b:/gt
+  isp1:
+    <<: *lab
+    profiles: [s0, s1]
+    image: quay.io/frrouting/frr:0.0.0-fixture
+    sysctls: {net.ipv4.ip_forward: 1}
+    volumes:
+      - ./isp1/daemons:/etc/frr/daemons:ro
+      - ./isp1/frr.conf:/etc/frr/frr.conf:ro
+  host-a:
+    <<: *lab
+    profiles: [s0, s1]
+    image: docker.io/nicolaka/netshoot:latest
+    command: sleep infinity
+  host-b:
+    <<: *lab
+    profiles: [s0, s1]
+    image: docker.io/nicolaka/netshoot:latest
+    command: sh -c "iperf3 -s -D && exec sleep infinity"
+  svc-b:
+    <<: *lab
+    profiles: [s0, s1]
+    image: localhost/lab/svc-targets:0.0.0-fixture
+
+volumes:
+  gt-gw-a:
+  gt-gw-b:

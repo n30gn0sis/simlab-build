@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# scen-clear <run.yaml> — end-of-run cleanup: remove this run's host impairments,
+# stop this run's harness captures, check the baseline RTT is back, and fail if
+# any impairment is still present. M2/M3 impairments live inside the lab
+# nodes and are not touched here.
+set -euo pipefail
+HERE="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+# shellcheck source=/dev/null
+source "$HERE/scen-lib.sh"
+
+[ $# -eq 1 ] || die "usage: scen-clear <run.yaml>"
+M="$1"; [ -f "$M" ] || die "no such manifest: $M"
+D="$(cd "$(dirname "$M")" && pwd)"
+
+# 1. Host (M1) impairments: every manifest iface, guarded, warn-only.
+MECHS="$(manifest_list "$M" impairment mechanism)" || die "cannot read impairment"
+IFACES="$(manifest_list "$M" impairment iface)" || die "cannot read impairment"
+# Validate every iface before clearing any: a refusal clears nothing.
+TODO=()
+while IFS= read -r mech <&3 && IFS= read -r iface <&4; do
+    [ -n "$mech" ] || continue
+    if [ "$mech" != M1 ]; then log "$mech impairment: nothing to clear on host"; continue; fi
+    guard_iface "$iface" || die "manifest iface $iface refused"
+    TODO+=("$iface")
+done 3<<<"$MECHS" 4<<<"$IFACES"
+cleared=0
+for iface in "${TODO[@]}"; do
+    if wan-clear "$iface"; then log "impairment cleared on $iface"
+    else log "WARN: wan-clear $iface failed — check wan-show"; fi
+    cleared=$((cleared + 1))
+done
+[ "$cleared" -gt 0 ] || log "no host impairments to clear"
+
+# 1b. Events the run may have left behind: wan-apply ifaces get wan-clear, link-down
+# ports get brought up. Validated first (refuse before touching anything), warn-only after.
+EV_REL="$(manifest_get "$M" events 2>/dev/null || true)"
+if [ -n "$EV_REL" ] && [ -f "$D/$EV_REL" ]; then
+    # shellcheck source=/dev/null
+    source "$HERE/scen-events.sh"
+    EV_DUMP="$(events_dump "$D/$EV_REL")" || die "cannot read events: $D/$EV_REL"
+    EV_CLEAR=(); EV_UP=()
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        IFS="$EV_SEP" read -r -a EV_F <<< "$line"
+        case "${EV_F[1]:-}" in
+            wan-apply) ifc="$(ev_arg iface)"; guard_iface "$ifc" || die "event iface $ifc refused"
+                       EV_CLEAR+=("$ifc") ;;
+            link-down) tgt="$(ev_arg target)"; guard_iface "${tgt#*:}" || die "event port ${tgt#*:} refused"
+                       EV_UP+=("${tgt#*:}") ;;
+        esac
+    done <<< "$EV_DUMP"
+    for ifc in "${EV_CLEAR[@]}"; do
+        if wan-clear "$ifc"; then log "event impairment cleared on $ifc"
+        else log "WARN: wan-clear $ifc failed — check wan-show"; fi
+    done
+    for ifc in "${EV_UP[@]}"; do
+        if ip link set "$ifc" up; then log "port $ifc brought up"
+        else log "WARN: ip link set $ifc up failed — check the port"; fi
+    done
+fi
+
+# 2. Harness captures belonging to this run only (no match is not an error).
+DRE="$(printf '%s' "$D" | sed 's/[][\.*^$+?(){}|]/\\&/g')"
+PKILL_FAIL=0
+pkill -INT -f -- "tcpdump .* -w $DRE/" && prc=0 || prc=$?
+case "$prc" in
+    0) log "stopped captures under $D" ;;
+    1) log "no captures running under $D" ;;
+    *) log "WARN: pkill failed rc=$prc — captures under $D may still be running"; PKILL_FAIL=1 ;;
+esac
+
+# 3. Baseline RTT (H5): drift is a finding, not a failure.
+TARGET="$(manifest_get "$M" baseline.target 2>/dev/null || true)"
+BASE="$(manifest_get "$M" baseline.rtt_ms 2>/dev/null || true)"
+if [ -n "$TARGET" ] && [ -n "$BASE" ]; then
+    avg=''
+    if out="$(ping -c 10 -q "$TARGET" 2>&1)"; then
+        avg="$(printf '%s\n' "$out" | LC_ALL=C awk -F'[=/ ]+' '/^rtt .*=/ {print $7}')"
+    fi
+    if [ -z "$avg" ]; then
+        echo "RTT UNKNOWN (ping failed)"
+    elif LC_ALL=C awk -v a="$avg" -v b="$BASE" 'BEGIN { d = a - b; if (d < 0) d = -d; exit !(d <= 1.0) }'; then
+        echo "RTT OK ($avg ms vs baseline $BASE)"
+    else
+        echo "RTT DRIFT ($avg ms vs baseline $BASE)"
+    fi
+fi
+
+# 4. Nothing may remain.
+left="$(wan-show)" || die "wan-show failed"
+if [ -n "$left" ]; then
+    printf '%s\n' "$left"
+    log "impairments still present"
+    exit 1
+fi
+[ "$PKILL_FAIL" = 0 ] || exit 1
+log "all clear"

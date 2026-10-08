@@ -1,0 +1,302 @@
+#!/usr/bin/env bash
+# scen-run <run-dir>/run.yaml — execute one reference-PCAP run (spec §8).
+# Order: guard everything -> captures up -> host impairment -> traffic (+ timed
+# events) -> clear impairment -> stop captures -> drop stats.
+# Then: ground truth from endpoint nodes, manifest actuals, sha256sums.
+# Any exit path (error, INT, TERM) stops captures, clears every iface this run
+# impaired, logs "aborted" and keeps the run directory.
+set -euo pipefail
+HERE="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+# shellcheck source=/dev/null
+source "$HERE/scen-lib.sh"
+
+# How traffic is run inside a node: $SCEN_EXEC <node> sh -s < script.
+# Deliberately word-split, so "docker exec -i" or "sudo docker exec -i" work.
+SCEN_EXEC="${SCEN_EXEC:-docker exec -i}"
+# How /gt is pulled from a node: $SCEN_CP <node> <dest-dir> (a command name; default below).
+scen_cp_default() { docker cp "$1:/gt/." "$2" </dev/null; }
+SCEN_CP="${SCEN_CP:-scen_cp_default}"
+SCEN_LOADAVG="${SCEN_LOADAVG:-/proc/loadavg}"       # overridable for tests
+SCEN_CAPTURE_SETTLE="${SCEN_CAPTURE_SETTLE:-1}"   # seconds before checking tcpdumps survived
+
+[ $# -eq 1 ] || die "usage: scen-run <run-dir>/run.yaml"
+M="$1"; [ -f "$M" ] || die "no such manifest: $M"
+D="$(cd "$(dirname "$M")" && pwd)"; M="$D/run.yaml"
+export SCEN_LOG="$D/events.log"
+
+APPLIED=''          # ifaces we impaired (M1), cleared by clear_impairments/cleanup
+DOWNED=''           # ports an event took down, brought back up by restore_links/cleanup
+RING_FULL=''        # capture points whose ring has wrapped (noted in results.notes)
+TRAFFIC_PID=''
+FINISHED=0
+TRAFFIC_RC=0        # non-zero: run completed but is not a clean reference (exit 3)
+CLEANED=0
+RUN_START=''        # UTC ISO-8601, when captures went up
+RUN_END=''          # UTC ISO-8601, when captures were stopped
+PIDS=()             # tcpdump PIDs
+NAMES=()            # capture point names, same order
+
+# restore_links — bring every port still in DOWNED back up (fail-soft).
+restore_links() {
+    local p
+    for p in ${DOWNED:-}; do
+        log "port $p left down by scenario — bringing it up"
+        ip link set "$p" up || log "ip link set $p up failed — check the port by hand"
+    done
+    DOWNED=''
+}
+
+cleanup() {
+    local rc=$? p i
+    set +e
+    [ "$CLEANED" = 0 ] || exit "$rc"
+    CLEANED=1
+    trap '' INT TERM
+    if [ -n "$TRAFFIC_PID" ] && kill -0 "$TRAFFIC_PID" 2>/dev/null; then
+        kill "$TRAFFIC_PID" 2>/dev/null; wait "$TRAFFIC_PID" 2>/dev/null
+    fi
+    for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null; done
+    for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null; done
+    for i in $APPLIED; do wan-clear "$i" || log "wan-clear $i failed — check wan-show"; done
+    restore_links
+    [ "$FINISHED" = 1 ] || log "aborted rc=$rc"
+    exit "$rc"
+}
+# A signal exits with the conventional code; the EXIT trap is the single cleanup pass.
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# ---- guards: nothing starts before every one passes ----
+read_manifest() {
+    BRIDGES=$(manifest_list "$M" capture_points bridge) || die "cannot read capture_points"
+    CNAMES=$(manifest_list "$M" capture_points name) || die "cannot read capture_points"
+    IMP_MECH=$(manifest_list "$M" impairment mechanism) || die "cannot read impairment"
+    IMP_PROF=$(manifest_list "$M" impairment profile) || die "cannot read impairment"
+    IMP_IFACE=$(manifest_list "$M" impairment iface) || die "cannot read impairment"
+    IMP_NODE=$(manifest_list "$M" impairment node) || die "cannot read impairment"
+    CAP_MB=$(manifest_get "$M" capture.cap_mb) || die "capture.cap_mb missing"
+    RING=$(manifest_get "$M" capture.ring) || die "capture.ring missing"
+    T_SCRIPT=$(manifest_get "$M" traffic.script) || die "traffic.script missing"
+    T_NODE=$(manifest_get "$M" traffic.node) || die "traffic.node missing"
+    EVENTS=$(manifest_get "$M" events) || EVENTS=''
+    [[ "$CAP_MB" =~ ^[1-9][0-9]*$ ]] || die "capture.cap_mb must be a positive integer"
+    [[ "$RING" =~ ^[1-9][0-9]*$ ]] || die "capture.ring must be a positive integer"
+    [ -n "$T_NODE" ] || die "traffic.node is empty"
+    [ -f "$D/$T_SCRIPT" ] || die "traffic script not found: $D/$T_SCRIPT"
+}
+guard_all() {
+    local b i m n=0
+    while IFS= read -r b; do
+        [ -n "$b" ] || continue; n=$((n + 1))
+        guard_iface "$b" || exit 1
+    done <<< "$BRIDGES"
+    [ "$n" -gt 0 ] || die "run.yaml has no capture_points"
+    # Events are validated before any capture starts: a bad event must not cost a run.
+    if [ -n "$EVENTS" ] && [ -f "$HERE/scen-events.sh" ]; then
+        # shellcheck source=/dev/null
+        source "$HERE/scen-events.sh"
+        events_validate_file "$D/$EVENTS"
+    fi
+    while IFS= read -r i; do
+        [ -n "$i" ] || continue
+        guard_iface "$i" || exit 1
+    done <<< "$IMP_IFACE"
+    while IFS= read -r m; do
+        case "$m" in M1|M2|M3|'') ;; *) die "unknown impairment mechanism: $m" ;; esac
+    done <<< "$IMP_MECH"
+}
+
+start_captures() {
+    local name br pid
+    : > "$D/.pids"
+    # Job control on while spawning: belt-and-braces so `&` children do not get SIGINT
+    # ignored by this shell (they would still inherit an ignore if scen-run itself
+    # inherited one). Real tcpdump installs its own SIGINT handler regardless.
+    # If scen-run is itself backgrounded its INT trap is a no-op; TERM/EXIT still clean up.
+    set -m
+    while IFS='|' read -r name br; do
+        tcpdump -Z root -i "$br" -w "$D/$name.pcapng" -C "$CAP_MB" -W "$RING" -s 0 -n -U \
+            > "$D/.tcpdump-$name.err" 2>&1 &
+        pid=$!
+        PIDS+=("$pid"); NAMES+=("$name")
+        echo "$pid" >> "$D/.pids"
+    done < <(paste -d'|' <(printf '%s\n' "$CNAMES") <(printf '%s\n' "$BRIDGES"))
+    set +m
+    sleep "$SCEN_CAPTURE_SETTLE"
+    for pid in "${PIDS[@]}"; do
+        kill -0 "$pid" 2>/dev/null || die "a tcpdump exited at startup — see $D/.tcpdump-*.err"
+    done
+    RUN_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    log "captures up (${#PIDS[@]} points)"
+}
+
+apply_impairments() {
+    local mech prof iface node
+    while IFS='|' read -r mech prof iface node; do
+        case "$mech" in
+            M1) guard_iface "$iface" || exit 1
+                # Recorded before the apply: a wan-apply that fails midway may have left a
+                # root qdisc behind, and cleanup must clear it.
+                APPLIED="$APPLIED $iface"
+                wan-apply "$prof" "$iface"
+                log "impairment M1 $prof applied on $iface" ;;
+            M2) log "impairment M2 $prof on node $node — applied inside the node by the operator" ;;
+            M3) log "impairment M3 $prof — ad hoc, nothing applied" ;;
+        esac
+    done < <(paste -d'|' <(printf '%s\n' "$IMP_MECH") <(printf '%s\n' "$IMP_PROF") \
+                   <(printf '%s\n' "$IMP_IFACE") <(printf '%s\n' "$IMP_NODE"))
+}
+
+run_traffic() {
+    local t0
+    log "traffic start: $T_NODE $T_SCRIPT"
+    # shellcheck disable=SC2086  # SCEN_EXEC is word-split on purpose
+    $SCEN_EXEC "$T_NODE" sh -s < "$D/$T_SCRIPT" > "$D/traffic.out" 2>&1 &
+    TRAFFIC_PID=$!
+    t0=$(date +%s)
+    # The timed-event engine. The last event is an `end` note at/after traffic end.
+    if [ -z "$EVENTS" ]; then
+        log "events: none in manifest"
+    elif [ -f "$HERE/scen-events.sh" ]; then
+        # shellcheck source=/dev/null
+        source "$HERE/scen-events.sh"
+        events_run "$D/$EVENTS" "$t0"
+        restore_links
+    else
+        log "events: engine not present, skipping"
+    fi
+    wait "$TRAFFIC_PID" || TRAFFIC_RC=$?
+    TRAFFIC_PID=''
+    if [ "$TRAFFIC_RC" -ne 0 ]; then log "traffic rc=$TRAFFIC_RC"; else log "traffic done"; fi
+}
+
+clear_impairments() {
+    local i
+    for i in $APPLIED; do wan-clear "$i"; log "impairment cleared on $i"; done
+    APPLIED=''
+}
+
+# A full ring means tcpdump may have overwritten the start of the capture.
+note_ring_wrap() {
+    local n files
+    shopt -s nullglob
+    for n in "${NAMES[@]}"; do
+        files=("$D/$n".pcapng*)
+        if [ "${#files[@]}" -ge "$RING" ]; then
+            log "$n: ring full (${#files[@]} files) — oldest data may have been overwritten"
+            RING_FULL="${RING_FULL:+$RING_FULL, }$n"
+        fi
+    done
+    shopt -u nullglob
+}
+
+stop_captures() {
+    local p
+    for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done
+    for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null || true; done
+    PIDS=()
+    note_ring_wrap
+    RUN_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    log "captures stopped"
+}
+
+write_capture_stats() {
+    local n line
+    : > "$D/capture-stats.txt"
+    for n in "${NAMES[@]}"; do
+        line=$(grep -E '[0-9]+ packets? dropped by kernel' "$D/.tcpdump-$n.err" 2>/dev/null | tail -1 || true)
+        if [ -n "$line" ]; then
+            printf '%s: %s\n' "$n" "$(sed -E 's/^[^0-9]*([0-9]+ packets? dropped by kernel).*/\1/' <<< "$line")"
+        else
+            printf '%s: UNKNOWN (no tcpdump summary)\n' "$n"
+        fi >> "$D/capture-stats.txt"
+    done
+    log "capture-stats.txt written"
+}
+
+# Ground truth: <run>/gt/<node>/ gets the endpoint's /gt contents. A node that cannot
+# deliver is marked MISSING (with the error) and the run carries on.
+collect_gt() {
+    local name role err
+    while IFS='|' read -r -u 3 name role; do
+        [ "$role" = endpoint ] || continue
+        mkdir -p "$D/gt/$name"
+        # shellcheck disable=SC2086  # SCEN_CP may be a command with arguments
+        if err=$($SCEN_CP "$name" "$D/gt/$name/" 2>&1 </dev/null); then
+            log "gt $name collected"
+        else
+            printf '%s\n' "$err" > "$D/gt/$name/MISSING"
+            log "gt $name MISSING"
+        fi
+    done 3< <(paste -d'|' <(manifest_list "$M" nodes name) <(manifest_list "$M" nodes role))
+}
+
+# node_digest <image> — RepoDigest, else image id, else "unknown".
+node_digest() {
+    local out
+    if out=$(docker image inspect --format '{{index .RepoDigests 0}}' "$1" 2>/dev/null) && [ -n "$out" ]; then
+        echo "$out"
+    elif out=$(docker image inspect --format '{{.Id}}' "$1" 2>/dev/null) && [ -n "$out" ]; then
+        echo "$out"
+    else
+        echo unknown
+    fi
+}
+
+# Times, per-node image digests and host load into the run copy of run.yaml.
+finish_manifest() {
+    local name image digests='' load notes patch
+    while IFS='|' read -r name image; do
+        digests+="$name"$'\t'"$(node_digest "$image")"$'\n'
+    done < <(paste -d'|' <(manifest_list "$M" nodes name) <(manifest_list "$M" nodes image))
+    # First field of /proc/loadavg: locale-proof. Fail-soft: a missing figure is not a run failure.
+    load=$(cut -d' ' -f1 "$SCEN_LOADAVG" 2>/dev/null) || load=''
+    [ -n "$load" ] || load=unknown
+    notes=$(manifest_get "$M" results.notes) || notes=''
+    notes="${notes:+$notes; }host load (1m): $load"
+    if [ "$TRAFFIC_RC" -ne 0 ]; then notes="$notes; traffic rc=$TRAFFIC_RC — not a clean reference"; fi
+    if [ -n "$RING_FULL" ]; then notes="$notes; ring full: $RING_FULL"; fi
+    patch=$(python3 -I -c '
+import json, sys
+dig = dict(l.split("\t", 1) for l in sys.argv[4].splitlines() if l)
+print(json.dumps({"times_utc": {"start": sys.argv[1], "end": sys.argv[2]},
+                  "results": {"notes": sys.argv[3]}, "node_digests": dig}))
+' "$RUN_START" "$RUN_END" "$notes" "$digests") || die "cannot build manifest patch"
+    manifest_set_json "$M" "$patch" || die "cannot update $M"
+    log "manifest completed"
+}
+
+# sha256sums: top-level files (no dot-files) and everything under gt/, paths relative to $D.
+write_sha256sums() {
+    local list
+    list=$(cd "$D" && { find . -maxdepth 1 -type f ! -name '.*' ! -name sha256sums -printf '%P\n'
+                        if [ -d gt ]; then find gt -type f; fi; } | LC_ALL=C sort) \
+        || die "cannot list files for sha256sums"
+    # Explicit exits: errexit is off inside a subshell on the left of ||.
+    if ! ( cd "$D" || exit 1
+           : > .sha256sums.tmp || exit 1
+           while IFS= read -r f; do
+               sha256sum -- "$f" >> .sha256sums.tmp || exit 1
+           done <<< "$list"
+           mv .sha256sums.tmp sha256sums || exit 1 ); then
+        rm -f "$D/.sha256sums.tmp"
+        die "cannot write sha256sums"
+    fi
+}
+
+read_manifest
+guard_all
+start_captures
+apply_impairments
+run_traffic
+clear_impairments
+stop_captures
+write_capture_stats
+collect_gt
+finish_manifest
+# The last log line goes in before sha256sums so events.log's digest stays valid.
+if [ "$TRAFFIC_RC" -ne 0 ]; then log "run complete with traffic failure (rc=$TRAFFIC_RC)"; else log "run complete"; fi
+write_sha256sums
+FINISHED=1
+if [ "$TRAFFIC_RC" -ne 0 ]; then exit 3; fi

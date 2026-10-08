@@ -1,0 +1,37 @@
+run_id: S1-W1-ss-20261001T1400Z
+scenario: S1
+underlay: W1
+variant: ss
+spec_version: ipsec-scenarios v0.1
+gns3_project: s1-w1-ss.gns3project
+nodes:
+  - {name: gw-a, image: "localhost/lab/ipsec-ss:0.0.0-fixture", role: endpoint}
+  - {name: gw-b, image: "localhost/lab/ipsec-ss:0.0.0-fixture", role: endpoint}
+  - {name: isp1, image: "quay.io/frrouting/frr:0.0.0-fixture", role: provider}
+  - {name: host-a, image: "docker.io/nicolaka/netshoot:latest", role: host}
+ipsec:
+  ike_version: 2
+  auth: psk
+  ike_proposal: aes256gcm16-prfsha384-ecp384
+  esp_proposal: aes256gcm16-ecp384
+  ike_rekey_s: 600
+  child_rekey_s: 120
+  dpd_delay_s: 10
+  mode: policy
+  peers: [198.18.1.2, 198.18.2.2]
+capture_points:
+  - {name: outer-t01, bridge: br-lab-t01, view: outer}
+  - {name: outer-t02, bridge: br-lab-t02, view: outer}
+  - {name: inner-i01, bridge: br-lab-i01, view: inner}
+  - {name: inner-i02, bridge: br-lab-i02, view: inner}
+impairment:
+  - {mechanism: M1, profile: branch-wan, iface: veth-t01a, direction: "A->B"}
+traffic:
+  lane: A
+  script: traffic/profile-basic.sh
+  seed: 1001
+  node: host-a
+events: events/s1-baseline.yaml
+capture: {cap_mb: 1024, ring: 2}
+times_utc: {start: null, end: null}
+results: {pass: null, notes: ""}

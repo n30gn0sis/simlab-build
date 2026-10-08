@@ -1,0 +1,3 @@
+- {t: 0, action: note, text: "traffic start"}
+- {t: 240, action: note, text: "idle tail for DPD"}
+- {t: 280, action: note, text: "end"}

@@ -195,12 +195,13 @@ check_manual() {  # <dir>
 # right severity because "missing" is sometimes a legitimate, dispositionable
 # state rather than corruption this script must always refuse:
 #   - no site/ at all: this bundle predates the site/ delivery path.
-#   - site/ present but missing a required script: all eight listed below
+#   - site/ present but missing a required script: all those listed below
 #     exist in the repo and ship in site/ today, but a bundle cut before a
 #     given script landed (r770-install.sh and r770-install-adapters.sh are
 #     the latest) will legitimately lack it. In a bundle cut from the current
 #     repo, a missing script is a genuine defect to disposition.
-SITE_REQUIRED_SCRIPTS=(scripts/r770-bundle.sh scripts/r770-malcolm-deploy.sh scripts/r770-airgap-sim.sh scripts/r770-lab-ca.sh scripts/r770-portal.sh scripts/r770-ufw.sh scripts/r770-install.sh scripts/r770-install-adapters.sh)
+SITE_REQUIRED_SCRIPTS=(scripts/r770-bundle.sh scripts/r770-malcolm-deploy.sh scripts/r770-airgap-sim.sh scripts/r770-lab-ca.sh scripts/r770-portal.sh scripts/r770-ufw.sh scripts/r770-install.sh scripts/r770-install-adapters.sh scripts/scenarios/scen-lib.sh scripts/scenarios/scen-prep scripts/scenarios/scen-run scripts/scenarios/scen-events.sh scripts/scenarios/scen-check scripts/scenarios/scen-ingest scripts/scenarios/scen-clear scripts/scenarios/scen-bridges.sh)
+SITE_REQUIRED_FILES=(scenarios/profiles/branch-wan.conf)
 
 check_site() {  # <dir>
     local dir="$1" s missing=()
@@ -211,11 +212,35 @@ check_site() {  # <dir>
     for s in "${SITE_REQUIRED_SCRIPTS[@]}"; do
         [ -s "$dir/site/$s" ] || missing+=("$s")
     done
+    for s in "${SITE_REQUIRED_FILES[@]}"; do
+        [ -s "$dir/site/$s" ] || missing+=("$s")
+    done
     if [ "${#missing[@]}" -gt 0 ]; then
         printf '      site/%s\n' "${missing[@]}"
         warn "site/ is missing expected script(s) above (a bundle cut before they shipped, or a defect — see comment above)"
     else
         pass "site/ has the expected deploy script(s)"
+    fi
+    check_lab_images "$dir"
+}
+
+# A site/ that ships images/ (the lab image build contexts) promises the built images
+# too: without lab-images.list naming each of them and lab-images.tar.gz, the scenario
+# harness has nothing to run on the R770. Missing any of it is a WARN (--strict fails).
+LAB_IMAGES_REQUIRED=(ipsec-ss wan-emu svc-targets)
+check_lab_images() {  # <dir>
+    local dir="$1" img missing=()
+    local list="$dir/gns3/docker-nodes/lab-images.list"
+    [ -d "$dir/site/images" ] || return 0
+    for img in "${LAB_IMAGES_REQUIRED[@]}"; do
+        if [ ! -s "$list" ] || ! grep -q "^localhost/lab/$img:" "$list"; then missing+=("$img"); fi
+    done
+    [ -s "$dir/gns3/docker-nodes/lab-images.tar.gz" ] || missing+=("lab-images.tar.gz")
+    if [ "${#missing[@]}" -gt 0 ]; then
+        printf '      %s\n' "${missing[@]}"
+        warn "site/ ships images/ but the built lab image(s) above are missing from gns3/docker-nodes/lab-images.list / lab-images.tar.gz"
+    else
+        pass "lab images listed and saved for the scenario harness"
     fi
 }
 
@@ -240,7 +265,8 @@ check_required() {  # <dir>
     for pair in \
         "malcolm/image-list.txt|malcolm/malcolm-images-*.tar.gz" \
         "docker/monitoring-image-list.txt|docker/monitoring-images.tar.gz" \
-        "gns3/docker-nodes/image-list.txt|gns3/docker-nodes/gns3-node-images.tar.gz"
+        "gns3/docker-nodes/image-list.txt|gns3/docker-nodes/gns3-node-images.tar.gz" \
+        "gns3/docker-nodes/lab-images.list|gns3/docker-nodes/lab-images.tar.gz"
     do
         list="${pair%%|*}"
         payload="${pair#*|}"

@@ -888,6 +888,13 @@ cmd_verify() {
     echo "verify: all checks PASS"
 }
 
+# Read-only: print where Malcolm takes uploads (scen-ingest uses this).
+cmd_upload_dir() {
+    [ $# -eq 0 ] || die "usage: upload-dir"
+    require_compose_file
+    upload_dir || exit 1
+}
+
 case "${1:-}" in
     load)          shift; cmd_load "$@" ;;
     assert-tags)   shift; cmd_assert_tags "$@" ;;
@@ -898,5 +905,6 @@ case "${1:-}" in
     start)         shift; cmd_start "$@" ;;
     health)        shift; cmd_health "$@" ;;
     verify)        shift; cmd_verify "$@" ;;
-    *)             die "usage: r770-malcolm-deploy.sh load|assert-tags|install <bundle-dir> | configure <json> | auth <bundle-dir> --password-file F [--user N] [--force: regenerates ALL internal creds] | bind-loopback | start | health | verify --password-file F [--user N]" ;;
+    upload-dir)    shift; cmd_upload_dir "$@" ;;
+    *)             die "usage: r770-malcolm-deploy.sh load|assert-tags|install <bundle-dir> | configure <json> | auth <bundle-dir> --password-file F [--user N] [--force: regenerates ALL internal creds] | bind-loopback | start | health | verify --password-file F [--user N] | upload-dir (read-only: print the upload directory)" ;;
 esac

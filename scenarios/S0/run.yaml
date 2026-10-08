@@ -1,0 +1,28 @@
+# W1 plaintext baseline: same topology, no IPsec. Operators edit run_id per run
+# (UTC stamp). Image tags are fixtures; see scen-prep --images.
+run_id: S0-W1-none-20261001T1300Z
+scenario: S0
+underlay: W1
+variant: none
+spec_version: ipsec-scenarios v0.1
+gns3_project: s0-w1.gns3project
+nodes:
+  - {name: gw-a, image: "quay.io/frrouting/frr:0.0.0-fixture", role: router}
+  - {name: gw-b, image: "quay.io/frrouting/frr:0.0.0-fixture", role: router}
+  - {name: isp1, image: "quay.io/frrouting/frr:0.0.0-fixture", role: provider}
+  - {name: host-a, image: "docker.io/nicolaka/netshoot:latest", role: helper}
+  - {name: host-b, image: "docker.io/nicolaka/netshoot:latest", role: helper}
+  - {name: svc-b, image: "localhost/lab/svc-targets:0.0.0-fixture", role: helper}
+capture_points:
+  - {name: outer-t01, bridge: br-lab-t01, view: outer}
+  - {name: outer-t02, bridge: br-lab-t02, view: outer}
+  - {name: inner-i01, bridge: br-lab-i01, view: inner}
+  - {name: inner-i02, bridge: br-lab-i02, view: inner}
+impairment:
+  - {mechanism: M1, profile: branch-wan, iface: veth-t01a, direction: "A->B"}
+capture: {cap_mb: 1024, ring: 4}
+traffic: {lane: A, script: traffic/profile-basic.sh, seed: 1001, node: host-a}
+baseline: {target: 198.18.2.2, rtt_ms: null}
+events: events/s0-baseline.yaml
+times_utc: {start: null, end: null}
+results: {pass: null, notes: ""}

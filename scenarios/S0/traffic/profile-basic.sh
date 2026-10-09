@@ -20,7 +20,9 @@ P0=0
 phase() { P0=$(date +%s); }
 budget() { [ $(( $(date +%s) - P0 )) -lt 60 ] || { echo "BUDGET: phase cut at 60 s" >&2; return 1; }; }
 bulk() { step iperf3 --connect-timeout 5000 -c "$SRV" -t 60 -P 2; }
-udp()  { step iperf3 --connect-timeout 5000 -c "$SRV" -u -b 5M -t 30; }
+# -l 1200: iperf3's default 1448-byte datagram does not fit the tunnel MTU (1446 on the
+# staging VM); the first one draws an ICMP frag-needed and iperf3 sends nothing more.
+udp()  { step iperf3 --connect-timeout 5000 -c "$SRV" -u -b 5M -l 1200 -t 30; }
 http() { phase; for _ in $(seq 1 50); do budget || break; step curl -s --max-time 10 -o /dev/null "http://$SVC/fixed.bin"; done; }
 dns()  { phase; for i in $(seq 1 50); do budget || break; step dig +time=2 +tries=1 "@$SVC" "host$i.site-b.lab" +short >/dev/null; done; }
 

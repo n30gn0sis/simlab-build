@@ -1,0 +1,5 @@
+2026-10-09T06:44:05.527Z captures up (4 points)
+2026-10-09T06:44:05.539Z impairment M1 branch-wan applied on veth-t01a
+2026-10-09T06:44:05.541Z traffic start: host-a traffic/profile-basic.sh
+2026-10-09T06:44:05.572Z event t=0 note text=traffic start
+2026-10-09T06:44:34.336Z aborted rc=143

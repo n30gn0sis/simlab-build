@@ -10,6 +10,6 @@
 | X6 | DPD INFORMATIONAL exchanges appear only during the idle tail | isakmp packets in the final 40 s | — |
 | X7 | With `gt/keys`, decrypted outer flows match the inner capture's 5-tuples | tshark with key profile vs `inner-i01.pcapng` | — |
 | X8 | Zero kernel drops on every capture point | `capture-stats.txt` | — |
-| X9 | Malcolm shows the run under `tags == <run stamp> && tags == outer` / `inner` (Malcolm splits the file name on `[,-/_.]+`, so the run-id is several tags; the stamp is the per-run key); outer sessions are IKE/ESP only — needs Arkime `trackESP=true` | Arkime tag query | — |
+| X9 | Malcolm shows the run under `<run-id>-outer` / `-inner` tags; outer sessions are IKE/ESP only | Arkime tag query | — |
 
 **Pass:** X1-X9 all true. Variant runs (`vy`, `op`, `mt`) drop X7 unless the platform yields keys, and substitute the platform's SA dumps for X5 evidence.

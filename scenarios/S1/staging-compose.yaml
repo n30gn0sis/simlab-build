@@ -46,6 +46,9 @@
 x-lab: &lab
   network_mode: none
   cap_add: [NET_ADMIN]
+  # no IPv6 router solicitations / MLD on the lab bridges (they showed up as
+  # icmpv6 sessions on every capture point and in Arkime, 2026-10-09)
+  sysctls: {net.ipv6.conf.all.disable_ipv6: 1}
 
 services:
   gw-a:
@@ -53,19 +56,19 @@ services:
     container_name: gw-a
     profiles: [s0]
     image: quay.io/frrouting/frr:0.0.0-fixture
-    sysctls: {net.ipv4.ip_forward: 1}
+    sysctls: {net.ipv4.ip_forward: 1, net.ipv6.conf.all.disable_ipv6: 1}
   gw-b:
     <<: *lab
     container_name: gw-b
     profiles: [s0]
     image: quay.io/frrouting/frr:0.0.0-fixture
-    sysctls: {net.ipv4.ip_forward: 1}
+    sysctls: {net.ipv4.ip_forward: 1, net.ipv6.conf.all.disable_ipv6: 1}
   gw-a-s1:
     <<: *lab
     container_name: gw-a
     profiles: [s1]
     image: localhost/lab/ipsec-ss:0.0.0-fixture
-    sysctls: {net.ipv4.ip_forward: 1}
+    sysctls: {net.ipv4.ip_forward: 1, net.ipv6.conf.all.disable_ipv6: 1}
     volumes:
       - ./swanctl/gw-a.conf:/etc/swanctl/conf.d/s1.conf:ro
       - ./swanctl/secrets.conf:/etc/swanctl/conf.d/secrets.conf:ro
@@ -75,7 +78,7 @@ services:
     container_name: gw-b
     profiles: [s1]
     image: localhost/lab/ipsec-ss:0.0.0-fixture
-    sysctls: {net.ipv4.ip_forward: 1}
+    sysctls: {net.ipv4.ip_forward: 1, net.ipv6.conf.all.disable_ipv6: 1}
     volumes:
       - ./swanctl/gw-b.conf:/etc/swanctl/conf.d/s1.conf:ro
       - ./swanctl/secrets.conf:/etc/swanctl/conf.d/secrets.conf:ro
@@ -85,7 +88,7 @@ services:
     container_name: isp1
     profiles: [s0, s1]
     image: quay.io/frrouting/frr:0.0.0-fixture
-    sysctls: {net.ipv4.ip_forward: 1}
+    sysctls: {net.ipv4.ip_forward: 1, net.ipv6.conf.all.disable_ipv6: 1}
     volumes:
       - ./isp1/daemons:/etc/frr/daemons:ro
       - ./isp1/frr.conf:/etc/frr/frr.conf:ro

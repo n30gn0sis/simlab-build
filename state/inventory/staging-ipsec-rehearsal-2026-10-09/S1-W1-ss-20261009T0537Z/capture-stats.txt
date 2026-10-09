@@ -1,0 +1,4 @@
+outer-t01: 384 packets dropped by kernel
+outer-t02: 384 packets dropped by kernel
+inner-i01: 167 packets dropped by kernel
+inner-i02: 536 packets dropped by kernel

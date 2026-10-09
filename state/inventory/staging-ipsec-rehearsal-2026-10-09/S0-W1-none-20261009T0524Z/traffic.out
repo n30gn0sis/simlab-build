@@ -1,0 +1,104 @@
+iperf3: error - unable to connect to server - server may have stopped running or use a different port, firewall issue, etc.: Operation timed out
+FAILED: iperf3 --connect-timeout 5000 -c 10.200.2.10 -u -b 5M -t 30
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: curl -s --max-time 10 -o /dev/null http://10.200.2.20/fixed.bin
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host1.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host2.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host3.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host4.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host5.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host6.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host7.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host8.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host9.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host10.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host11.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host12.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host13.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host14.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host15.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host16.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host17.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host18.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host19.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host20.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host21.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host22.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host23.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host24.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host25.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host26.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host27.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host28.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host29.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host30.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host31.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host32.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host33.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host34.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host35.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host36.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host37.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host38.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host39.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host40.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host41.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host42.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host43.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host44.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host45.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host46.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host47.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host48.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host49.site-b.lab +short
+FAILED: dig +time=2 +tries=1 @10.200.2.20 host50.site-b.lab +short
+iperf3: error - unable to connect to server - server may have stopped running or use a different port, firewall issue, etc.: Operation timed out
+FAILED: iperf3 --connect-timeout 5000 -c 10.200.2.10 -t 60 -P 2

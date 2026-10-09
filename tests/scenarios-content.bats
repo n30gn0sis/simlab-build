@@ -111,6 +111,8 @@ PY
         # the whole 240 s load must carry two-way traffic, or DPD fires mid-run (X6, 2026-10-09)
         grep -q '^( while \[ \$(( \$(date +%s) - T0 )) -lt 240 \]; do ping -c 1 -W 1 "\$SRV" >/dev/null 2>&1; sleep 1; done ) &$' "$f"
         grep -q '^wait "\$KEEPALIVE"$' "$f"
+        # UDP datagrams must fit the tunnel MTU, or the UDP phase is empty (2026-10-09)
+        grep -q '^udp()  { step iperf3 .* -u -b 5M -l 1200 -t 30; }$' "$f"
         grep -q '^sleep 40$' "$f"
     done
 }

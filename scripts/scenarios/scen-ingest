@@ -2,9 +2,12 @@
 # scen-ingest <run-dir> — copy a run's PCAPs into Malcolm's upload directory,
 # tagged so Arkime shows them under <run-id>-outer / <run-id>-inner.
 # Destination name: <upload-dir>/<run_id>-<view><SCEN_TAG_SEP><file>.
-# Malcolm's uploader turns comma-separated leading fields into tags; the exact
-# tag rule is confirmed during the staging rehearsal (plan Part B, H4) — if it
-# differs, change SCEN_TAG_SEP (the one place the separator lives).
+# Malcolm's tag rule (pcap_utils.py tags_from_filename, confirmed 2026-10-09 on
+# the staging VM): the file name is split on [,-/_.]+ and every token that is not
+# all digits or pcap-ish becomes a tag. So a hyphenated run_id is several tags —
+# S1, W1, ss, <stamp>, outer — and the per-run Arkime query is
+#   tags == <stamp> && tags == outer      (the stamp is unique per run)
+# SCEN_TAG_SEP stays the one place the separator lives.
 # Only top-level <name>.pcapng* files of the manifest's capture points are
 # copied; gt/ (keys, SA dumps) and every subdirectory are never read.
 set -euo pipefail

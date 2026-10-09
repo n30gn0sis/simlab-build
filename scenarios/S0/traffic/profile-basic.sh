@@ -13,10 +13,16 @@ SRV=10.200.2.10; SVC=10.200.2.20
 T0=$(date +%s)
 
 step() { "$@" || echo "FAILED: $*" >&2; }
+# Each request phase has a 60 s budget: when nothing answers (S0 by design, or a broken
+# tunnel) every request runs to its own timeout, and 50 x 10 s would be 500 s against a
+# 240 s timeline. bulk/udp are bounded by iperf3's -t and --connect-timeout.
+P0=0
+phase() { P0=$(date +%s); }
+budget() { [ $(( $(date +%s) - P0 )) -lt 60 ] || { echo "BUDGET: phase cut at 60 s" >&2; return 1; }; }
 bulk() { step iperf3 --connect-timeout 5000 -c "$SRV" -t 60 -P 2; }
 udp()  { step iperf3 --connect-timeout 5000 -c "$SRV" -u -b 5M -t 30; }
-http() { for _ in $(seq 1 50); do step curl -s --max-time 10 -o /dev/null "http://$SVC/fixed.bin"; done; }
-dns()  { for i in $(seq 1 50); do step dig +time=2 +tries=1 "@$SVC" "host$i.site-b.lab" +short >/dev/null; done; }
+http() { phase; for _ in $(seq 1 50); do budget || break; step curl -s --max-time 10 -o /dev/null "http://$SVC/fixed.bin"; done; }
+dns()  { phase; for i in $(seq 1 50); do budget || break; step dig +time=2 +tries=1 "@$SVC" "host$i.site-b.lab" +short >/dev/null; done; }
 
 case $((SEED % 4)) in
     0) order="bulk udp http dns" ;;

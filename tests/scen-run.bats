@@ -309,3 +309,21 @@ STUB
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
     run grep -q 'ring full' "$RUN/events.log"; [ "$status" -ne 0 ]
 }
+@test "traffic that outlives the last event by SCEN_TRAFFIC_GRACE is abandoned: rc 124, exit 3, in-node stop sent" {
+    stub docker 'echo "docker $*" >> "$S/calls"; case "$1" in exec) case "$*" in *"sh -c"*) exit 0;; esac; exec sleep 60;; esac'
+    SCEN_TRAFFIC_GRACE=2 run "$SCRIPT" "$RUN/run.yaml"
+    echo "$output"
+    [ "$status" -eq 3 ]
+    grep -q 'traffic still running 2s after the last event — abandoning it (rc 124)' "$RUN/events.log"
+    grep -q 'traffic rc=124' "$RUN/events.log"
+    grep -q '^docker exec -i host-a sh -c kill' "$S/calls"
+    run pgrep -f "tcpdump.*$RUN"; [ "$status" -ne 0 ]
+    grep -q 'wan-clear veth-t01a' "$S/calls"
+}
+@test "SCEN_TRAFFIC_GRACE=0 waits for traffic without bound" {
+    stub docker 'echo "docker $*" >> "$S/calls"; case "$1" in exec) sleep 3; cat > "$S/traffic-stdin";; esac'
+    SCEN_TRAFFIC_GRACE=0 run "$SCRIPT" "$RUN/run.yaml"
+    [ "$status" -eq 0 ]
+    grep -q 'traffic done' "$RUN/events.log"
+    run grep -q 'abandoning' "$RUN/events.log"; [ "$status" -ne 0 ]
+}

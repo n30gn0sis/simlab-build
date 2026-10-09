@@ -88,3 +88,12 @@ for a, b in [('gw-a', 'gw-a-s1'), ('gw-b', 'gw-b-s1')]:
     assert not set(d['services'][a]['profiles']) & set(d['services'][b]['profiles']), (a, b)
 PY
 }
+
+# When nothing answers, 50 requests x their own timeouts would outrun the 240 s timeline.
+@test "traffic scripts budget the http and dns phases" {
+    for f in "$ROOT"/scenarios/S0/traffic/profile-basic.sh "$ROOT"/scenarios/S1/traffic/profile-basic.sh; do
+        grep -q '^http() { phase; for .*; do budget || break;' "$f"
+        grep -q '^dns()  { phase; for .*; do budget || break;' "$f"
+        grep -q '^budget() {.*-lt 60' "$f"
+    done
+}

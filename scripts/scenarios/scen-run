@@ -18,6 +18,11 @@ scen_cp_default() { docker cp "$1:/gt/." "$2" </dev/null; }
 SCEN_CP="${SCEN_CP:-scen_cp_default}"
 SCEN_LOADAVG="${SCEN_LOADAVG:-/proc/loadavg}"       # overridable for tests
 SCEN_CAPTURE_SETTLE="${SCEN_CAPTURE_SETTLE:-1}"   # seconds before checking tcpdumps survived
+# Seconds the traffic job may outlive the last event before it is abandoned (rc 124,
+# exit 3). The events file's `end` note is the timeline; a traffic script that is
+# still running long after it has lost the timeline (2026-10-09: S0's curl/dig
+# timeouts summed to ~650 s against a 280 s plan). 0 disables the bound.
+SCEN_TRAFFIC_GRACE="${SCEN_TRAFFIC_GRACE:-60}"
 
 [ $# -eq 1 ] || die "usage: scen-run <run-dir>/run.yaml"
 M="$1"; [ -f "$M" ] || die "no such manifest: $M"
@@ -166,9 +171,31 @@ run_traffic() {
     else
         log "events: engine not present, skipping"
     fi
+    traffic_wait
+    if [ "$TRAFFIC_RC" -ne 0 ]; then log "traffic rc=$TRAFFIC_RC"; else log "traffic done"; fi
+}
+
+# Wait for the traffic job, but not forever: after SCEN_TRAFFIC_GRACE seconds past the
+# last event the client is killed, a best-effort stop is sent into the node, and the
+# run is marked not clean (rc 124).
+traffic_wait() {
+    local waited=0
+    if [ "$SCEN_TRAFFIC_GRACE" -gt 0 ]; then
+        while kill -0 "$TRAFFIC_PID" 2>/dev/null && [ "$waited" -lt "$SCEN_TRAFFIC_GRACE" ]; do
+            sleep 1; waited=$((waited + 1))
+        done
+        if kill -0 "$TRAFFIC_PID" 2>/dev/null; then
+            log "traffic still running ${SCEN_TRAFFIC_GRACE}s after the last event — abandoning it (rc 124)"
+            kill "$TRAFFIC_PID" 2>/dev/null || true
+            # shellcheck disable=SC2086,SC2016  # SCEN_EXEC is word-split on purpose; $() expands in the node
+            $SCEN_EXEC "$T_NODE" sh -c 'kill $(pgrep -f "^sh -s$") 2>/dev/null' </dev/null >/dev/null 2>&1 || true
+            wait "$TRAFFIC_PID" 2>/dev/null || true
+            TRAFFIC_RC=124; TRAFFIC_PID=''
+            return 0
+        fi
+    fi
     wait "$TRAFFIC_PID" || TRAFFIC_RC=$?
     TRAFFIC_PID=''
-    if [ "$TRAFFIC_RC" -ne 0 ]; then log "traffic rc=$TRAFFIC_RC"; else log "traffic done"; fi
 }
 
 clear_impairments() {

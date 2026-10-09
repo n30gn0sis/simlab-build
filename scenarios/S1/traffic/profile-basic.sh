@@ -22,6 +22,11 @@ udp()  { step iperf3 --connect-timeout 5000 -c "$SRV" -u -b 5M -t 30; }
 http() { phase; for _ in $(seq 1 50); do budget || break; step curl -s --max-time 10 -o /dev/null "http://$SVC/fixed.bin"; done; }
 dns()  { phase; for i in $(seq 1 50); do budget || break; step dig +time=2 +tries=1 "@$SVC" "host$i.site-b.lab" +short >/dev/null; done; }
 
+# A 1/s ping for the whole 240 s load keeps ESP flowing both ways even through the
+# one-way UDP phase; otherwise the far gateway sees no inbound traffic and sends DPD
+# mid-run, which X6 allows only in the idle tail (2026-10-09 rehearsal, DPD at 11-31 s).
+( while [ $(( $(date +%s) - T0 )) -lt 240 ]; do ping -c 1 -W 1 "$SRV" >/dev/null 2>&1; sleep 1; done ) &
+KEEPALIVE=$!
 case $((SEED % 4)) in
     0) order="bulk udp http dns" ;;
     1) order="udp http dns bulk" ;;
@@ -29,7 +34,7 @@ case $((SEED % 4)) in
     *) order="dns bulk udp http" ;;
 esac
 for p in $order; do "$p"; done
-# Pad the load phase to 240 s so the run spans at least one CHILD_SA rekey. The pad
-# carries a 1/s ping: a silent pad lets DPD fire mid-run and X6 only allows it in the tail.
-while [ $(( $(date +%s) - T0 )) -lt 240 ]; do step ping -c 1 -W 1 "$SRV" >/dev/null; sleep 1; done
+# Pad the load phase to 240 s so the run spans at least one CHILD_SA rekey (the
+# keepalive above carries the pad), then the 40 s idle tail.
+wait "$KEEPALIVE"
 sleep 40

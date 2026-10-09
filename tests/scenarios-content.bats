@@ -108,7 +108,9 @@ PY
         grep -q '^http() { phase; for .*; do budget || break;' "$f"
         grep -q '^dns()  { phase; for .*; do budget || break;' "$f"
         grep -q '^budget() {.*-lt 60' "$f"
-        # the pad to 240 s must carry traffic, or DPD fires through it (X6 FAIL, 2026-10-09)
-        grep -q '^while \[ \$(( \$(date +%s) - T0 )) -lt 240 \]; do step ping -c 1 -W 1 "\$SRV" >/dev/null; sleep 1; done$' "$f"
+        # the whole 240 s load must carry two-way traffic, or DPD fires mid-run (X6, 2026-10-09)
+        grep -q '^( while \[ \$(( \$(date +%s) - T0 )) -lt 240 \]; do ping -c 1 -W 1 "\$SRV" >/dev/null 2>&1; sleep 1; done ) &$' "$f"
+        grep -q '^wait "\$KEEPALIVE"$' "$f"
+        grep -q '^sleep 40$' "$f"
     done
 }

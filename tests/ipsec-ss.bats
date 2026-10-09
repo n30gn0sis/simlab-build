@@ -52,3 +52,31 @@ case "$1" in --stats) ;; *) echo "s1-net: INSTALLED" ;; esac'
     WAIT_IFACES=eth0 run timeout 4 "$SCRIPT"
     grep -q charon "$S/calls"
 }
+
+# Probe O3: no noble package ships save-keys, so the Dockerfile must build it from the
+# matching source package and guard against the source and binary versions drifting.
+@test "Dockerfile builds save-keys from Ubuntu's strongswan source and copies it into the plugin dir" {
+    DF="$BATS_TEST_DIRNAME/../images/ipsec-ss/Dockerfile"
+    grep -q '^FROM ubuntu:24.04 AS save-keys-builder$' "$DF"
+    grep -q 'apt-get source strongswan' "$DF"
+    grep -q -- '--enable-save-keys' "$DF"
+    grep -q '^COPY --from=save-keys-builder /save-keys.so /usr/lib/ipsec/plugins/libstrongswan-save-keys.so$' "$DF"
+    grep -q 'dpkg-parsechangelog -S Version > /save-keys.version' "$DF"
+    # the guard compares the source version with the installed strongswan-charon and fails the build
+    grep -q "save-keys.version)\" = \"\$(dpkg-query -W -f='\${Version}' strongswan-charon)\"" "$DF"
+    [ "$(grep -c '^FROM ubuntu:24.04' "$DF")" -eq 2 ]
+}
+
+# strongswan.d/charon/*.conf is included inside charon { plugins { } }; strongswan.d/*.conf at
+# top level. A wrapped save-keys block lands at charon.plugins.charon.plugins.* and never loads.
+@test "save-keys.conf is a bare plugin block and logging.conf a top-level charon block" {
+    D="$BATS_TEST_DIRNAME/../images/ipsec-ss/strongswan.d"
+    [ "$(grep -v '^#' "$D/save-keys.conf" | grep -c '^save-keys {')" -eq 1 ]
+    run grep -E '^\s*(charon|plugins) \{' "$D/save-keys.conf"; [ "$status" -ne 0 ]
+    grep -q 'load = yes' "$D/save-keys.conf"
+    grep -q 'wireshark_keys = /gt/keys' "$D/save-keys.conf"
+    [ "$(grep -c '^charon {' "$D/logging.conf")" -eq 1 ]
+    grep -q 'path = /gt/charon.log' "$D/logging.conf"
+    grep -q 'strongswan.d/charon/save-keys.conf' "$BATS_TEST_DIRNAME/../images/ipsec-ss/Dockerfile"
+    grep -q 'strongswan.d/charon-logging.conf' "$BATS_TEST_DIRNAME/../images/ipsec-ss/Dockerfile"
+}

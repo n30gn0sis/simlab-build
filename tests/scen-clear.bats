@@ -180,3 +180,34 @@ YAML
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -ne 0 ]
     run grep -q '^ip ' "$CALLS"; [ "$status" -ne 0 ]
 }
+
+# The lab bridges carry no host IP, so a baseline with a node pings from inside that node.
+@test "baseline.node pings through SCEN_EXEC inside the node and parses busybox output" {
+    printf 'baseline: {node: gw-a, target: 198.18.2.2, rtt_ms: 0.1}\n' >> "$RUN/run.yaml"
+    cat > "$BIN/docker" <<'S'
+#!/bin/bash
+echo "docker $*" >> "$CALLS"
+printf 'round-trip min/avg/max = 0.069/0.104/0.135 ms\n'
+S
+    chmod +x "$BIN/docker"
+    PING_RC=1 run "$SCRIPT" "$RUN/run.yaml"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q '^docker exec -i gw-a ping -c 10 -q 198.18.2.2$' "$CALLS"
+    [[ "$output" == *"RTT OK (0.104 ms vs baseline 0.1, from gw-a)"* ]]
+}
+
+@test "baseline.node: a failing in-node ping is RTT UNKNOWN, and SCEN_EXEC is honoured" {
+    printf 'baseline: {node: gw-a, target: 198.18.2.2, rtt_ms: 0.1}\n' >> "$RUN/run.yaml"
+    cat > "$BIN/myexec" <<'S'
+#!/bin/bash
+echo "myexec $*" >> "$CALLS"; exit 1
+S
+    chmod +x "$BIN/myexec"
+    SCEN_EXEC="myexec -x" run "$SCRIPT" "$RUN/run.yaml"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q '^myexec -x gw-a ping -c 10 -q 198.18.2.2$' "$CALLS"
+    [[ "$output" == *"RTT UNKNOWN (ping failed)"* ]]
+    run grep -c '^docker' "$CALLS"; [ "$output" = 0 ]
+}

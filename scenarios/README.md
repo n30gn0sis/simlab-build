@@ -31,6 +31,11 @@ the profile and events it uses, and the expected-results description that
 (`gt/`: keys, SA dumps) are generated at run time and are gitignored; they never
 enter Git.
 
+`run.yaml`'s `baseline: {node, target, rtt_ms}` is the H5 check `scen-clear` runs
+at the end: `node` pings `target` (the far CE's outer address) from inside the
+node, because the lab bridges carry no host address; `rtt_ms` is the S0 value to
+compare against (`null` disables the check).
+
 ## Safety
 
 Impairments and scenario traffic touch lab transit/inner bridges and veths only

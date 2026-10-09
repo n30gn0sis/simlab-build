@@ -69,20 +69,33 @@ case "$prc" in
     *) log "WARN: pkill failed rc=$prc — captures under $D may still be running"; PKILL_FAIL=1 ;;
 esac
 
-# 3. Baseline RTT (H5): drift is a finding, not a failure.
+# 3. Baseline RTT (H5): drift is a finding, not a failure. The target is a lab
+# address, and the lab bridges carry no host IP, so the ping runs inside
+# baseline.node via $SCEN_EXEC (a CE on the outer path, e.g. gw-a); without a
+# node it runs on the host, which only works when the host can route there.
+# Parses iputils ("rtt min/avg/max/mdev = a/b/c/d ms") and busybox
+# ("round-trip min/avg/max = a/b/c ms") alike.
+SCEN_EXEC="${SCEN_EXEC:-docker exec -i}"
 TARGET="$(manifest_get "$M" baseline.target 2>/dev/null || true)"
 BASE="$(manifest_get "$M" baseline.rtt_ms 2>/dev/null || true)"
+NODE="$(manifest_get "$M" baseline.node 2>/dev/null || true)"
 if [ -n "$TARGET" ] && [ -n "$BASE" ]; then
     avg=''
-    if out="$(ping -c 10 -q "$TARGET" 2>&1)"; then
-        avg="$(printf '%s\n' "$out" | LC_ALL=C awk -F'[=/ ]+' '/^rtt .*=/ {print $7}')"
+    if [ -n "$NODE" ]; then
+        # shellcheck disable=SC2086  # SCEN_EXEC is word-split on purpose
+        out="$($SCEN_EXEC "$NODE" ping -c 10 -q "$TARGET" </dev/null 2>&1)" && prc=0 || prc=$?
+    else
+        out="$(ping -c 10 -q "$TARGET" 2>&1)" && prc=0 || prc=$?
+    fi
+    if [ "$prc" -eq 0 ]; then
+        avg="$(printf '%s\n' "$out" | LC_ALL=C awk '/^(rtt|round-trip) .*=/ { split($0, a, "= "); split(a[2], b, "/"); print b[2] }')"
     fi
     if [ -z "$avg" ]; then
         echo "RTT UNKNOWN (ping failed)"
     elif LC_ALL=C awk -v a="$avg" -v b="$BASE" 'BEGIN { d = a - b; if (d < 0) d = -d; exit !(d <= 1.0) }'; then
-        echo "RTT OK ($avg ms vs baseline $BASE)"
+        echo "RTT OK ($avg ms vs baseline $BASE${NODE:+, from $NODE})"
     else
-        echo "RTT DRIFT ($avg ms vs baseline $BASE)"
+        echo "RTT DRIFT ($avg ms vs baseline $BASE${NODE:+, from $NODE})"
     fi
 fi
 

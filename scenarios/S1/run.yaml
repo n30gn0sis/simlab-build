@@ -33,7 +33,7 @@ impairment:
   - {mechanism: M1, profile: branch-wan, iface: veth-t01a, direction: "A->B"}
 capture: {cap_mb: 1024, ring: 4}
 traffic: {lane: A, script: traffic/profile-basic.sh, seed: 1001, node: host-a}
-baseline: {target: 198.18.2.2, rtt_ms: null}     # filled from the S0 run
+baseline: {node: gw-a, target: 198.18.2.2, rtt_ms: null}   # node pings target; rtt_ms filled from the S0 run
 events: events/s1-baseline.yaml
 times_utc: {start: null, end: null}   # filled by harness
 results: {pass: null, notes: ""}      # filled after expected.md review

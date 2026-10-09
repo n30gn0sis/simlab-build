@@ -11,7 +11,8 @@
 # bind mount creates a directory in its place.
 #
 # Start exactly one profile (`--profile s0` or `--profile s1`); both at once collide on
-# container names and wiring.
+# container names and wiring. Every service pins container_name to its node name: the
+# harness addresses nodes by name (scen-wire.sh, $SCEN_EXEC, docker cp <node>:/gt).
 # host-b runs `iperf3 -s -D` (lane A bulk/UDP target); the GNS3 host-b node template must
 # start `iperf3 -s` the same way.
 #
@@ -43,11 +44,13 @@ x-lab: &lab
 services:
   gw-a:
     <<: *lab
+    container_name: gw-a
     profiles: [s0]
     image: quay.io/frrouting/frr:0.0.0-fixture
     sysctls: {net.ipv4.ip_forward: 1}
   gw-b:
     <<: *lab
+    container_name: gw-b
     profiles: [s0]
     image: quay.io/frrouting/frr:0.0.0-fixture
     sysctls: {net.ipv4.ip_forward: 1}
@@ -73,6 +76,7 @@ services:
       - gt-gw-b:/gt
   isp1:
     <<: *lab
+    container_name: isp1
     profiles: [s0, s1]
     image: quay.io/frrouting/frr:0.0.0-fixture
     sysctls: {net.ipv4.ip_forward: 1}
@@ -81,16 +85,19 @@ services:
       - ./isp1/frr.conf:/etc/frr/frr.conf:ro
   host-a:
     <<: *lab
+    container_name: host-a
     profiles: [s0, s1]
     image: docker.io/nicolaka/netshoot:latest
     command: sleep infinity
   host-b:
     <<: *lab
+    container_name: host-b
     profiles: [s0, s1]
     image: docker.io/nicolaka/netshoot:latest
     command: sh -c "iperf3 -s -D && exec sleep infinity"
   svc-b:
     <<: *lab
+    container_name: svc-b
     profiles: [s0, s1]
     image: localhost/lab/svc-targets:0.0.0-fixture
 

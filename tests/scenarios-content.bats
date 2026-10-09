@@ -71,3 +71,20 @@ lib() { bash -c "source '$LIB'; $*"; }
     [ "$status" -ne 0 ]
     [[ "$output" == *"bridge must be br-lab-"* ]]
 }
+
+# The harness addresses nodes by container name (scen-wire.sh, $SCEN_EXEC <node>,
+# docker cp <node>:/gt); Compose's default <project>-<service>-1 names would break all three.
+@test "staging-compose pins container_name to the node name on every service" {
+    f="$ROOT/scenarios/S1/staging-compose.yaml"
+    python3 -I - "$f" <<'PY'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+want = {'gw-a': 'gw-a', 'gw-b': 'gw-b', 'gw-a-s1': 'gw-a', 'gw-b-s1': 'gw-b',
+        'isp1': 'isp1', 'host-a': 'host-a', 'host-b': 'host-b', 'svc-b': 'svc-b'}
+got = {k: v.get('container_name') for k, v in d['services'].items()}
+assert got == want, got
+# two services may share a container name only when their profiles never overlap
+for a, b in [('gw-a', 'gw-a-s1'), ('gw-b', 'gw-b-s1')]:
+    assert not set(d['services'][a]['profiles']) & set(d['services'][b]['profiles']), (a, b)
+PY
+}

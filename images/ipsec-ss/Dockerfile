@@ -21,8 +21,11 @@ RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.s
 
 FROM ubuntu:24.04
 # Pinned at bundle cut: record the installed strongswan version in the pin review, not here.
+# standard-plugins carries openssl/gcm/aesni: without it aes256gcm16 and ecp384 cannot be
+# negotiated (staging rehearsal 2026-10-09: "plugin 'gcm': failed to load ... no plugin file").
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      strongswan-charon strongswan-swanctl libstrongswan-extra-plugins libcharon-extra-plugins \
+      strongswan-charon strongswan-swanctl libstrongswan-standard-plugins \
+      libstrongswan-extra-plugins libcharon-extra-plugins \
       iproute2 iputils-ping tcpdump ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=save-keys-builder /save-keys.so /usr/lib/ipsec/plugins/libstrongswan-save-keys.so

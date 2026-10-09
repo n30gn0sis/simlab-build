@@ -60,6 +60,7 @@ case "$1" in --stats) ;; *) echo "s1-net: INSTALLED" ;; esac'
     grep -q '^FROM ubuntu:24.04 AS save-keys-builder$' "$DF"
     grep -q 'apt-get source strongswan' "$DF"
     grep -q -- '--enable-save-keys' "$DF"
+    grep -q 'libstrongswan-standard-plugins' "$DF"   # openssl/gcm/aesni: aes256gcm16 + ecp384
     grep -q '^COPY --from=save-keys-builder /save-keys.so /usr/lib/ipsec/plugins/libstrongswan-save-keys.so$' "$DF"
     grep -q 'dpkg-parsechangelog -S Version > /save-keys.version' "$DF"
     # the guard compares the source version with the installed strongswan-charon and fails the build

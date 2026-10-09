@@ -42,6 +42,12 @@ lib() { bash -c "source '$LIB'; $*"; }
     grep -q 'remote_ts = 10.200.2.0/24' "$a"; grep -q 'remote_ts = 10.200.1.0/24' "$b"
     grep -q 'local_addrs  = 198.18.1.2' "$a"; grep -q 'local_addrs  = 198.18.2.2' "$b"
     grep -q 'id = gw-a.site-a.lab' "$a"; grep -q 'id = gw-b.site-b.lab' "$b"
+    # swanctl.conf is one key per line: "auth = psk  id = x" parses as auth = "psk  id = x"
+    # (staging rehearsal 2026-10-09: "invalid value for: auth, config discarded").
+    for f in "$a" "$b"; do
+        run grep -E '=.*[[:space:]][a-z_]+ =' "$f"; [ "$status" -ne 0 ]
+        [ "$(grep -c '^      auth = psk$' "$f")" -eq 2 ]
+    done
 }
 @test "gen-secrets.sh writes a gitignored secrets.conf and the ground-truth copy" {
     cp -r "$ROOT/scenarios/S1" "$T/S1"

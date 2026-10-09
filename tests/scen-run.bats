@@ -17,8 +17,8 @@ setup() {
     cat > "$BIN/tcpdump" <<'STUB'
 #!/usr/bin/env python3
 import os, signal, sys, time
-a = sys.argv[1:]; n = os.path.basename(a[a.index('-w') + 1])[:-len('.pcapng')]; S = os.environ['S']
-open(a[a.index('-w') + 1], 'a').close()
+a = sys.argv[1:]; n = os.path.basename(a[a.index('-w') + 1])[:-len('.pcap')]; S = os.environ['S']
+open(a[a.index('-w') + 1] + '0', 'a').close()  # -C/-W: the first ring file is <name>.pcap0
 open(f'{S}/tcpdump.{n}', 'w').write(' '.join(a) + '\n')
 open(f'{S}/order', 'a').write(f'tcpdump-start {n}\n')
 def stop(*_):
@@ -41,7 +41,8 @@ teardown() { pkill -f "$RUN" 2>/dev/null || true; }
 @test "starts one tcpdump per capture point with cap and ring, then stops them" {
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
     for n in outer-t01 outer-t02 inner-i01 inner-i02; do
-        grep -q -- "^-Z root -i br-lab-[a-z0-9]* -w $RUN/$n.pcapng -C 1024 -W 2 -s 0 -n -U -B 65536$" "$S/tcpdump.$n"
+        grep -q -- "^-Z root -i br-lab-[a-z0-9]* -w $RUN/$n.pcap -C 1024 -W 2 -s 0 -n -U -B 65536$" "$S/tcpdump.$n"
+        [ -f "$RUN/$n-0.pcap" ]; [ ! -e "$RUN/$n.pcap0" ]   # tcpdump's ring name renamed after stop
     done
     [ "$(wc -l < "$RUN/.pids")" -eq 4 ]
     [[ "$output" == *"captures up"* ]]
@@ -93,6 +94,7 @@ teardown() { pkill -f "$RUN" 2>/dev/null || true; }
     tail -1 "$RUN/events.log" | grep -q aborted
     [ -d "$RUN" ]
     [ "$(grep -c 'tcpdump-stop' "$S/order")" -eq 4 ]
+    [ -f "$RUN/outer-t01-0.pcap" ]; [ ! -e "$RUN/outer-t01.pcap0" ]   # aborted runs get final names too
 }
 # bash defers a trap until the foreground command returns: a plain sleep until the next
 # event held cleanup for the whole gap (H6 on the staging VM, 2026-10-09).
@@ -199,7 +201,7 @@ esac'
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
     st=$(python3 -I -c 'import sys,yaml; d=yaml.safe_load(open(sys.argv[1]))["times_utc"]; print(d["start"], d["end"])' "$RUN/run.yaml")
     [[ "$st" =~ ^20[0-9-]+T[0-9:]+Z\ 20[0-9-]+T[0-9:]+Z$ ]]
-    grep -q 'outer-t01.pcapng$' "$RUN/sha256sums"
+    grep -q 'outer-t01-0.pcap$' "$RUN/sha256sums"
     grep -q ' gt/gw-a/keys$' "$RUN/sha256sums"
     grep -q ' run.yaml$' "$RUN/sha256sums"
     run grep -E 'sha256sums$|\.pids|\.tcpdump' "$RUN/sha256sums"; [ "$status" -ne 0 ]
@@ -319,6 +321,25 @@ STUB
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
     grep -q 'outer-t01: ring full (2 files)' "$RUN/events.log"
     grep -q 'ring full: outer-t01, outer-t02, inner-i01, inner-i02' "$RUN/run.yaml"
+    [ -f "$RUN/outer-t01-00.pcap" ] && [ -f "$RUN/outer-t01-01.pcap" ]   # tcpdump's padding is kept
+    [ -z "$(find "$RUN" -maxdepth 1 -name '*.pcap[0-9]*')" ]
+}
+@test "a bare <name>.pcap (no ring suffix) becomes <name>-0.pcap; an existing target is left alone" {
+    cat > "$BIN/tcpdump" <<'STUB'
+#!/usr/bin/env python3
+import signal, sys, time
+a = sys.argv[1:]; w = a[a.index('-w') + 1]
+open(w, 'a').close()
+if w.endswith('outer-t02.pcap'): open(w[:-len('.pcap')] + '-0.pcap', 'w').write('older')
+def stop(*_):
+    sys.stderr.write('0 packets captured\n0 packets dropped by kernel\n'); sys.stderr.flush(); sys.exit(0)
+signal.signal(signal.SIGINT, stop)
+while True: time.sleep(1)
+STUB
+    run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
+    [ -f "$RUN/outer-t01-0.pcap" ]; [ ! -e "$RUN/outer-t01.pcap" ]
+    [ "$(cat "$RUN/outer-t02-0.pcap")" = older ]; [ -f "$RUN/outer-t02.pcap" ]
+    grep -q 'outer-t02.pcap: outer-t02-0.pcap exists, not renamed' "$RUN/events.log"
 }
 @test "a ring that has not wrapped adds no note" {
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]

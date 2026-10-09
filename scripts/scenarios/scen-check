@@ -26,10 +26,11 @@ done
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
-# capture_file <name> — print a single pcap path: the lone file, or a mergecap of the ring files.
+# capture_file <name> — print a single pcap path: the lone file, or a mergecap of the
+# ring files <name>-<N>.pcap (scen-run's final names).
 capture_file() {
     local name="$1" f files=()
-    for f in "$D/$name".pcapng*; do
+    for f in "$D/$name"-[0-9]*.pcap; do
         if [ -f "$f" ] && [ ! -L "$f" ]; then files+=("$f"); fi
     done
     [ "${#files[@]}" -gt 0 ] || return 1
@@ -37,7 +38,7 @@ capture_file() {
     mergecap -w "$TMP/$name.merged.pcapng" "${files[@]}" || return 1
     printf '%s\n' "$TMP/$name.merged.pcapng"
 }
-OUTER="$(capture_file outer-t01)" || die "no outer-t01.pcapng* capture files in $D"
+OUTER="$(capture_file outer-t01)" || die "no outer-t01-*.pcap capture files in $D"
 INNER=''
 if [ "$SCENARIO" = S1 ]; then INNER="$(capture_file inner-i01)" || INNER=''; fi
 

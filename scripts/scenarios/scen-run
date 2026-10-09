@@ -66,6 +66,8 @@ cleanup() {
     fi
     for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null; done
     for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null; done
+    # An aborted run keeps its captures under their final names (no-op after stop_captures).
+    rename_captures
     for i in $APPLIED; do wan-clear "$i" || log "wan-clear $i failed — check wan-show"; done
     restore_links
     [ "$FINISHED" = 1 ] || log "aborted rc=$rc"
@@ -125,7 +127,10 @@ start_captures() {
     # If scen-run is itself backgrounded its INT trap is a no-op; TERM/EXIT still clean up.
     set -m
     while IFS='|' read -r name br; do
-        tcpdump -Z root -i "$br" -w "$D/$name.pcapng" -C "$CAP_MB" -W "$RING" -s 0 -n -U -B "$SCEN_CAP_BUFFER_KB" \
+        # tcpdump writes classic pcap whatever the name says, and -C/-W name the ring
+        # files <name>.pcap0, <name>.pcap1 …; rename_captures gives them their final
+        # names (<name>-0.pcap …) once they are closed.
+        tcpdump -Z root -i "$br" -w "$D/$name.pcap" -C "$CAP_MB" -W "$RING" -s 0 -n -U -B "$SCEN_CAP_BUFFER_KB" \
             > "$D/.tcpdump-$name.err" 2>&1 &
         pid=$!
         PIDS+=("$pid"); NAMES+=("$name")
@@ -208,12 +213,30 @@ clear_impairments() {
     APPLIED=''
 }
 
+# tcpdump's ring names, <name>.pcap<N> (zero-padded by -W when the ring is wide), become
+# <name>-<N>.pcap: the extension says what the file is, and <N> is an all-digit token
+# Malcolm's tag rule drops. A bare <name>.pcap (no -W) counts as file 0. Only run on
+# closed files — after the tcpdumps have been waited for — and safe to run twice.
+rename_captures() {
+    local n f suffix dest
+    shopt -s nullglob
+    for n in "${NAMES[@]}"; do
+        for f in "$D/$n".pcap "$D/$n".pcap[0-9]*; do
+            [ -e "$f" ] || continue   # the bare name is a plain word, not a glob
+            suffix="${f##*.pcap}"; dest="$D/$n-${suffix:-0}.pcap"
+            if [ -e "$dest" ]; then log "$(basename "$f"): $(basename "$dest") exists, not renamed"; continue; fi
+            mv -- "$f" "$dest" || log "$(basename "$f"): rename failed"
+        done
+    done
+    shopt -u nullglob
+}
+
 # A full ring means tcpdump may have overwritten the start of the capture.
 note_ring_wrap() {
     local n files
     shopt -s nullglob
     for n in "${NAMES[@]}"; do
-        files=("$D/$n".pcapng*)
+        files=("$D/$n"-[0-9]*.pcap)
         if [ "${#files[@]}" -ge "$RING" ]; then
             log "$n: ring full (${#files[@]} files) — oldest data may have been overwritten"
             RING_FULL="${RING_FULL:+$RING_FULL, }$n"
@@ -227,6 +250,7 @@ stop_captures() {
     for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; done
     for p in "${PIDS[@]}"; do wait "$p" 2>/dev/null || true; done
     PIDS=()
+    rename_captures
     note_ring_wrap
     RUN_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     log "captures stopped"

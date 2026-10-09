@@ -36,7 +36,7 @@ STUB
     export PATH="$BIN:$REAL"
     cp "$BATS_TEST_DIRNAME/fixtures/run-s1.yaml" "$RUN/run.yaml"
     cp "$BATS_TEST_DIRNAME/../scenarios/S1/expected.md" "$RUN/expected.md"
-    : > "$RUN/outer-t01.pcapng"; : > "$RUN/inner-i01.pcapng"
+    : > "$RUN/outer-t01-0.pcap"; : > "$RUN/inner-i01-0.pcap"
     echo "outer-t01: 0 packets dropped by kernel" > "$RUN/capture-stats.txt"
     echo "inner-i01: 0 packets dropped by kernel" >> "$RUN/capture-stats.txt"
     seed_all_pass
@@ -246,13 +246,12 @@ EOF
 }
 
 @test "ring files are merged with mergecap (both files passed)" {
-    rm "$RUN/outer-t01.pcapng"
-    : > "$RUN/outer-t01.pcapng0"; : > "$RUN/outer-t01.pcapng1"
+    : > "$RUN/outer-t01-1.pcap"
     run "$SCRIPT" "$RUN"
     echo "$output"
     [ "$status" -eq 0 ]
     [ -f "$S/mergecap.calls" ]
-    grep -q "outer-t01.pcapng0 .*outer-t01.pcapng1" "$S/mergecap.calls"
+    grep -q "outer-t01-0.pcap .*outer-t01-1.pcap" "$S/mergecap.calls"
 }
 
 @test "a single capture file is not merged" {
@@ -276,10 +275,11 @@ EOF
 }
 
 @test "dies when the outer capture has no files" {
-    rm "$RUN/outer-t01.pcapng"
+    rm "$RUN/outer-t01-0.pcap"
+    : > "$RUN/outer-t01.pcap0"   # tcpdump's interim name is not a capture file
     run "$SCRIPT" "$RUN"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"no outer-t01.pcapng"* ]]
+    [[ "$output" == *"no outer-t01-*.pcap"* ]]
 }
 
 @test "dies when expected.md lacks a row the scenario needs, leaving it unchanged" {

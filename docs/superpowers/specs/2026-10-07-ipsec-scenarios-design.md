@@ -1,6 +1,6 @@
 # R770 Lab — IPsec & Simulated WAN Scenario Specification
 
-**Version:** v0.1.4 (DRAFT — design only, nothing applied; **filed in repo 2026-10-07**, see Change Log)
+**Version:** v0.1.5 (DRAFT — design only, nothing applied; **filed in repo 2026-10-07**, see Change Log)
 **Date:** 2026-09-24
 **Status:** NOT STARTED — depends on buildout Phases 6, 7, 8, 10, 11, 12 (see §14); all six are NOT STARTED on the R770 per `state/BUILD-STATE.md`, so IP2 onward is gated on them. The plan that implements this spec is `docs/superpowers/plans/2026-10-07-ipsec-scenarios-plan.md`.
 **Pins:** every version this spec needs (FRR image, GNS3 server, CHR, OPNsense) is owned by the pin block in `scripts/r770-offline-fetch.sh` — this document names the component and never the number (`OWNERS.md`).
@@ -305,10 +305,10 @@ Two distinct uses; never confuse them:
 ```text
 /data/pcap/cases/<scenario>/<run-id>/
 ├── run.yaml               # manifest (8.2) — completed with actuals at run end
-├── outer-t01.pcapng       # one file per capture point
-├── outer-t02.pcapng
-├── inner-i01.pcapng
-├── inner-i02.pcapng
+├── outer-t01-0.pcap       # per capture point: one classic-pcap file per ring slot,
+├── outer-t02-0.pcap       #   <name>-<N>.pcap (renamed from tcpdump's <name>.pcapN
+├── inner-i01-0.pcap       #   after stop; tcpdump cannot write pcapng)
+├── inner-i02-0.pcap
 ├── gt/                    # ground truth — LAB-ONLY, excluded from Git and from Malcolm upload
 │   ├── keys/<node>/       # save-keys output (esp_sa, ikev2_decryption_table)
 │   ├── sa/<node>/         # timestamped swanctl / appliance SA dumps
@@ -522,13 +522,13 @@ secrets {
 
 | # | Observation | Check |
 |---|---|---|
-| X1 | IKE_SA_INIT request/response on UDP 500 between 198.18.1.2 ↔ 198.18.2.2 | `tshark -r outer-t01.pcapng -Y 'isakmp'` |
+| X1 | IKE_SA_INIT request/response on UDP 500 between 198.18.1.2 ↔ 198.18.2.2 | `tshark -r outer-t01-0.pcap -Y 'isakmp'` |
 | X2 | No NAT detected → IKE stays on UDP 500 (no 4500) | `tshark … -Y 'udp.port==4500'` returns 0 |
 | X3 | Data carried as ESP (IP proto 50), no UDP encapsulation | `tshark … -Y 'esp'` non-zero |
-| X4 | **No site addresses on the outer side without decryption** | `tshark -r outer-t01.pcapng -Y 'ip.addr==10.200.0.0/16'` returns 0 |
+| X4 | **No site addresses on the outer side without decryption** | `tshark -r outer-t01-0.pcap -Y 'ip.addr==10.200.0.0/16'` returns 0 |
 | X5 | ≥ 1 CHILD_SA rekey (CREATE_CHILD_SA) within the 120 s window minus strongSwan's randomization; new SPI pair appears | SA snapshots in `gt/sa/` + new ESP SPIs in outer capture |
 | X6 | DPD INFORMATIONAL exchanges appear only during the idle tail | isakmp packets in the final 40 s |
-| X7 | With `gt/keys`, decrypted outer flows match the inner capture's 5-tuples | tshark with key profile vs `inner-i01.pcapng` |
+| X7 | With `gt/keys`, decrypted outer flows match the inner capture's 5-tuples | tshark with key profile vs `inner-i01-0.pcap` |
 | X8 | Zero kernel drops on every capture point | `capture-stats.txt` |
 | X9 | Malcolm shows the run under `tags == <run stamp> && tags == outer` / `inner` (Malcolm splits the file name on `[,-/_.]+`, so the run-id is several tags; the stamp is the per-run key); outer sessions are IKE/ESP only — needs Arkime `trackESP=true` | Arkime tag query |
 
@@ -592,4 +592,5 @@ secrets {
 | v0.1.1 | 2026-10-07 | Filed in repo. Version numbers replaced by references to the fetch script's pin block (`OWNERS.md`); the CHR release named in O9 was behind the pin. O1 collision check against the known real blocks recorded. `scen-ingest` target corrected to Malcolm's upload directory as `r770-malcolm-deploy.sh` discovers it. §0 status now points at the implementing plan |
 | v0.1.2 | 2026-10-07 | §11.2: both S1 gateways use `start_action = trap` (gw-A stays the initiator because traffic originates at site A); run-procedure step 2 runs `scen-run <run-dir>/run.yaml` |
 | v0.1.3 | 2026-10-09 | §11.2 swanctl example: `local`/`remote` blocks one key per line (swanctl.conf has no inline `key = v  key = v`; the one-line form made charon discard the connection on the staging VM — `state/inventory/staging-ipsec-rehearsal-2026-10-09.md`) |
+| v0.1.5 | 2026-10-09 | Capture files are `<name>-<N>.pcap` (classic pcap; tcpdump writes no pcapng and names ring files `<name>.pcapN` — `scen-run` renames them after stop, in cleanup too). Decided over switching to dumpcap: the readers never cared about the container, only the name was misleading and `pcapng0` became a Malcolm tag |
 | v0.1.4 | 2026-10-09 | X9: Malcolm tag rule as measured (file name split on `[,-/_.]+`; query by run stamp + view) and Arkime needs `trackESP=true` or ESP packets are dropped as unknown (Phase 10 configuration item) — `state/inventory/staging-ipsec-rehearsal-2026-10-09.md` |

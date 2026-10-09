@@ -5,11 +5,12 @@
 # Malcolm's tag rule (pcap_utils.py tags_from_filename, confirmed 2026-10-09 on
 # the staging VM): the file name is split on [,-/_.]+ and every token that is not
 # all digits or pcap-ish becomes a tag. So a hyphenated run_id is several tags —
-# S1, W1, ss, <stamp>, outer — and the per-run Arkime query is
+# S1, W1, ss, <stamp>, outer, t01 — the ring number and "pcap" are dropped — and the
+# per-run Arkime query is
 #   tags == <stamp> && tags == outer      (the stamp is unique per run)
 # SCEN_TAG_SEP stays the one place the separator lives.
-# Only top-level <name>.pcapng* files of the manifest's capture points are
-# copied; gt/ (keys, SA dumps) and every subdirectory are never read.
+# Only top-level <name>-<N>.pcap files of the manifest's capture points (scen-run's
+# final ring names) are copied; gt/ (keys, SA dumps) and every subdirectory are never read.
 set -euo pipefail
 HERE="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 # shellcheck source=/dev/null
@@ -39,7 +40,7 @@ while IFS= read -r name <&3 && IFS= read -r view <&4; do
     case "$view" in outer|inner) ;; *) die "$name: bad view '$view'" ;; esac
     [[ $name =~ ^[A-Za-z0-9_-]+$ ]] || die "bad capture point name '$name'"
     found=0
-    for f in "$D/$name".pcapng*; do
+    for f in "$D/$name"-[0-9]*.pcap; do
         if [ -L "$f" ]; then log "$(basename "$f"): symlink, skipped"; continue; fi
         if [ ! -f "$f" ]; then continue; fi
         found=1

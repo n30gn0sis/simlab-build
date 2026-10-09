@@ -58,6 +58,7 @@ cleanup() {
     local rc=$? p i
     set +e
     [ "$CLEANED" = 0 ] || exit "$rc"
+    [ -z "${EV_SLEEP:-}" ] || kill "$EV_SLEEP" 2>/dev/null
     CLEANED=1
     trap '' INT TERM
     if [ -n "$TRAFFIC_PID" ] && kill -0 "$TRAFFIC_PID" 2>/dev/null; then

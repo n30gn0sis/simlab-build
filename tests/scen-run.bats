@@ -94,6 +94,21 @@ teardown() { pkill -f "$RUN" 2>/dev/null || true; }
     [ -d "$RUN" ]
     [ "$(grep -c 'tcpdump-stop' "$S/order")" -eq 4 ]
 }
+# bash defers a trap until the foreground command returns: a plain sleep until the next
+# event held cleanup for the whole gap (H6 on the staging VM, 2026-10-09).
+@test "SIGTERM during a long gap between events cleans up within seconds" {
+    stub docker 'exec sleep 60'
+    printf -- '- {t: 0, action: note, text: start}\n- {t: 600, action: note, text: end}\n' > "$RUN/events/s1-baseline.yaml"
+    "$SCRIPT" "$RUN/run.yaml" >/dev/null & pid=$!
+    for _ in $(seq 50); do grep -q 'event t=0' "$RUN/events.log" 2>/dev/null && break; sleep 0.1; done
+    start=$(date +%s); kill -TERM $pid; rc=0; wait $pid || rc=$?
+    [ $(( $(date +%s) - start )) -lt 10 ]
+    [ "$rc" -eq 143 ]
+    run pgrep -f "tcpdump.*$RUN"; [ "$status" -ne 0 ]
+    run pgrep -f "^sleep 600$"; [ "$status" -ne 0 ]
+    grep -q 'wan-clear veth-t01a' "$S/calls"
+    tail -1 "$RUN/events.log" | grep -q aborted
+}
 @test "a wan-apply that fails midway is still cleared, captures stop, run aborts" {
     stub wan-apply 'echo "wan-apply $*" >> "$S/calls"; exit 1'
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -ne 0 ]

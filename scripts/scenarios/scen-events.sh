@@ -6,6 +6,8 @@
 # up front. A failing event is logged "FAILED rc=<n>" and the run continues — the
 # captures are the product, the log is the evidence.
 # Uses from the caller: log die guard_iface (scen-lib.sh), SCEN_EXEC, APPLIED.
+# Sets EV_SLEEP (pid of the engine's current sleep job) for the caller's cleanup.
+EV_SLEEP=''
 # DOWNED (space-separated ports taken down by link-down, removed by link-up) is kept
 # like APPLIED, so scen-run's cleanup can bring every left-down port back up.
 set -euo pipefail
@@ -165,7 +167,10 @@ events_run() {
         EV_F[0]=$((10#${EV_F[0]}))
         now=$(date +%s)
         delay=$((t0 + EV_F[0] - now))
-        if [ "$delay" -gt 0 ]; then sleep "$delay"; fi
+        # Sleep as a job and wait on it: bash runs a trap only after a foreground
+        # command returns, so a plain `sleep 240` would hold scen-run's TERM cleanup
+        # for the whole gap (H6 on the staging VM, 2026-10-09); `wait` returns at once.
+        if [ "$delay" -gt 0 ]; then sleep "$delay" & EV_SLEEP=$!; wait "$EV_SLEEP" || true; EV_SLEEP=''; fi
         events_exec_one
     done 3<<< "$dump"
 }

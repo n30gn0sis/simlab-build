@@ -19,7 +19,7 @@ capture_points:
   - {name: inner-i01, bridge: br-lab-i01, view: inner}
   - {name: inner-i02, bridge: br-lab-i02, view: inner}
 impairment:
-  - {mechanism: M1, profile: branch-wan, iface: veth-t01a, direction: "A->B"}
+  - {mechanism: M1, profile: branch-wan, iface: veth-t01a, direction: "B->A"}   # egress of gw-a's bridge port flows toward gw-a
 capture: {cap_mb: 1024, ring: 4}
 traffic: {lane: A, script: traffic/profile-basic.sh, seed: 1001, node: host-a}
 baseline: {node: gw-a, target: 198.18.2.2, rtt_ms: null}

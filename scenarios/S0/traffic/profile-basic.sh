@@ -31,6 +31,7 @@ case $((SEED % 4)) in
     *) order="dns bulk udp http" ;;
 esac
 for p in $order; do "$p"; done
-# Pad the load phase to 240 s so the run spans at least one CHILD_SA rekey.
-while [ $(( $(date +%s) - T0 )) -lt 240 ]; do sleep 1; done
+# Pad the load phase to 240 s so the run spans at least one CHILD_SA rekey. The pad
+# carries a 1/s ping: a silent pad lets DPD fire mid-run and X6 only allows it in the tail.
+while [ $(( $(date +%s) - T0 )) -lt 240 ]; do step ping -c 1 -W 1 "$SRV" >/dev/null; sleep 1; done
 sleep 40

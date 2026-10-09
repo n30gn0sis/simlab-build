@@ -42,6 +42,9 @@ lib() { bash -c "source '$LIB'; $*"; }
     grep -q 'remote_ts = 10.200.2.0/24' "$a"; grep -q 'remote_ts = 10.200.1.0/24' "$b"
     grep -q 'local_addrs  = 198.18.1.2' "$a"; grep -q 'local_addrs  = 198.18.2.2' "$b"
     grep -q 'id = gw-a.site-a.lab' "$a"; grep -q 'id = gw-b.site-b.lab' "$b"
+    # MOBIKE floats the IKE_SA to UDP 4500 after IKE_AUTH even without NAT (X2 FAIL
+    # on the staging VM); static site-to-site does not need it.
+    grep -q '^    mobike = no$' "$a"; grep -q '^    mobike = no$' "$b"
     # swanctl.conf is one key per line: "auth = psk  id = x" parses as auth = "psk  id = x"
     # (staging rehearsal 2026-10-09: "invalid value for: auth, config discarded").
     for f in "$a" "$b"; do
@@ -101,5 +104,7 @@ PY
         grep -q '^http() { phase; for .*; do budget || break;' "$f"
         grep -q '^dns()  { phase; for .*; do budget || break;' "$f"
         grep -q '^budget() {.*-lt 60' "$f"
+        # the pad to 240 s must carry traffic, or DPD fires through it (X6 FAIL, 2026-10-09)
+        grep -q '^while \[ \$(( \$(date +%s) - T0 )) -lt 240 \]; do step ping -c 1 -W 1 "\$SRV" >/dev/null; sleep 1; done$' "$f"
     done
 }

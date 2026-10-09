@@ -89,6 +89,18 @@ check_X6() {
               else print "FAIL " stray " non-CREATE_CHILD_SA isakmp frames mid-run" }')
     set_res X6 "${verdict%% *}" "$(printf '%s' "${verdict#PASS}" | sed 's/^FAIL *//')"
 }
+# strongSwan's save-keys writes AES-GCM records in Wireshark's deprecated form —
+# "AES-GCM [RFC4106]" with the ICV length carried by "ANY <n> bit authentication
+# [no checking]" — which tshark 4.2 rejects ("AES-GCM encryption can only be used with
+# NULL authentication"); with plain "NULL" the dissector assumes a 0-byte ICV and
+# never finds the next header. The ICV-explicit entries plus "NULL" decrypt and
+# dissect (staging rehearsal 2026-10-09). Other ciphers pass through unchanged.
+esp_sa_record() {
+    printf '%s' "$1" | sed \
+        -e 's/"AES-GCM \[RFC4106\]","\(0x[0-9a-fA-F]*\)","ANY 128 bit authentication \[no checking\]"/"AES-GCM with 16 octet ICV [RFC4106]","\1","NULL"/' \
+        -e 's/"AES-GCM \[RFC4106\]","\(0x[0-9a-fA-F]*\)","ANY 96 bit authentication \[no checking\]"/"AES-GCM with 12 octet ICV [RFC4106]","\1","NULL"/' \
+        -e 's/"AES-GCM \[RFC4106\]","\(0x[0-9a-fA-F]*\)","ANY 64 bit authentication \[no checking\]"/"AES-GCM with 8 octet ICV [RFC4106]","\1","NULL"/'
+}
 check_X7() {
     local keys="$D/gt/gw-a/keys/esp_sa" dec inn bad line fields
     local -a uat=()
@@ -98,13 +110,13 @@ check_X7() {
     # One -o uat:esp_sa:<record> per SA: tshark adds a UAT record per option.
     while IFS= read -r line || [ -n "$line" ]; do
         case "$line" in ''|'#'*) continue ;; esac
-        uat+=(-o "uat:esp_sa:$line")
+        uat+=(-o "uat:esp_sa:$(esp_sa_record "$line")")
     done < "$keys"
     [ "${#uat[@]}" -gt 0 ] || { set_res X7 SKIP "no keys in gt/"; return 0; }
     fields=(-T fields -E occurrence=l -e ip.src -e ip.dst -e tcp.srcport -e tcp.dstport -e udp.srcport -e udp.dstport)
-    # The exact esp_sa UAT string format is confirmed in the Part-B rehearsal, as is the
-    # field shape: -E occurrence=l keeps only the innermost fields of a decrypted
-    # frame (otherwise outer and inner are comma-joined and never match the inner capture).
+    # -E occurrence=l keeps only the innermost fields of a decrypted frame (otherwise
+    # outer and inner are comma-joined and never match the inner capture). Confirmed on
+    # tshark 4.2.2 in the 2026-10-09 staging rehearsal.
     dec=$(tshark -r "$OUTER" -o esp.enable_encryption_decode:TRUE "${uat[@]}" \
         -Y 'esp && ip' "${fields[@]}" | sort -u | awk 'NF') || die "tshark failed (X7 decrypt)"
     inn=$(tshark -r "$INNER" -Y 'ip' "${fields[@]}" | sort -u | awk 'NF') || die "tshark failed (X7 inner)"

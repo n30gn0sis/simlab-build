@@ -367,3 +367,17 @@ EOF
     [ "$(cell X2)" = "FAIL (empty capture)" ]
     [ "$(cell X4)" = "FAIL (empty capture)" ]
 }
+
+# save-keys writes the deprecated AES-GCM UAT pair; tshark 4.2 needs the ICV-explicit
+# entry with NULL authentication to decrypt and dissect (staging rehearsal 2026-10-09).
+@test "X7 rewrites save-keys AES-GCM records to the ICV-explicit entry with NULL auth" {
+    printf '%s\n' '"IPv4","198.18.1.2","198.18.2.2","0xc65cbcd3","AES-GCM [RFC4106]","0xabcd","ANY 128 bit authentication [no checking]","0x"' \
+                  '"IPv4","198.18.2.2","198.18.1.2","0xc4b5845b","AES-GCM [RFC4106]","0x1234","ANY 64 bit authentication [no checking]","0x"' \
+                  '"IPv4","198.18.2.2","198.18.1.2","0x0000beef","AES-CBC [RFC3602]","0x5678","HMAC-SHA-256-128 [RFC4868]","0x9abc"' \
+                  > "$RUN/gt/gw-a/keys/esp_sa"
+    run "$SCRIPT" "$RUN"; echo "$output"
+    grep -q -e '-o uat:esp_sa:"IPv4","198.18.1.2","198.18.2.2","0xc65cbcd3","AES-GCM with 16 octet ICV \[RFC4106\]","0xabcd","NULL","0x" ' "$S/tshark.args"
+    grep -q -e '"0xc4b5845b","AES-GCM with 8 octet ICV \[RFC4106\]","0x1234","NULL","0x" ' "$S/tshark.args"
+    grep -q -e '"0x0000beef","AES-CBC \[RFC3602\]","0x5678","HMAC-SHA-256-128 \[RFC4868\]","0x9abc" ' "$S/tshark.args"
+    run grep -c 'ANY 128 bit' "$S/tshark.args"; [ "$output" = 0 ]
+}

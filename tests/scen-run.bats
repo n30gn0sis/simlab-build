@@ -41,7 +41,7 @@ teardown() { pkill -f "$RUN" 2>/dev/null || true; }
 @test "starts one tcpdump per capture point with cap and ring, then stops them" {
     run "$SCRIPT" "$RUN/run.yaml"; [ "$status" -eq 0 ]
     for n in outer-t01 outer-t02 inner-i01 inner-i02; do
-        grep -q -- "^-Z root -i br-lab-[a-z0-9]* -w $RUN/$n.pcapng -C 1024 -W 2 -s 0 -n -U" "$S/tcpdump.$n"
+        grep -q -- "^-Z root -i br-lab-[a-z0-9]* -w $RUN/$n.pcapng -C 1024 -W 2 -s 0 -n -U -B 65536$" "$S/tcpdump.$n"
     done
     [ "$(wc -l < "$RUN/.pids")" -eq 4 ]
     [[ "$output" == *"captures up"* ]]

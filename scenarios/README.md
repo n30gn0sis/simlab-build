@@ -31,6 +31,12 @@ the profile and events it uses, and the expected-results description that
 (`gt/`: keys, SA dumps) are generated at run time and are gitignored; they never
 enter Git.
 
+`impairment[].direction` is a label, not a control: `wan-apply` shapes the **egress** of
+the named host interface, and the egress of a bridge port flows *toward the node on
+that port*. So `veth-t01a` (gw-a's port on `br-lab-t01`) impairs B→A; to impair A→B on
+the same link name the ISP's port, `veth-t01b` (measured 2026-10-09: A→B bulk ran at
+135 Mbit/s past a 20 Mbit profile on `veth-t01a`, only the ACKs were shaped).
+
 `run.yaml`'s `baseline: {node, target, rtt_ms}` is the H5 check `scen-clear` runs
 at the end: `node` pings `target` (the far CE's outer address) from inside the
 node, because the lab bridges carry no host address; `rtt_ms` is the S0 value to

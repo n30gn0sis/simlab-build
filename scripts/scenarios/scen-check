@@ -79,11 +79,14 @@ check_X6() {
     tend=$(tshark -r "$OUTER" -T fields -e frame.time_relative | tail -1) || die "tshark failed (X6)"
     rows=$(tshark -r "$OUTER" -Y 'isakmp' -T fields -e frame.time_relative -e isakmp.exchangetype) || die "tshark failed (X6)"
     [ -n "$tend" ] || { set_res X6 FAIL "no frames"; return 0; }
-    # PASS: >=1 isakmp frame in the last 40 s, none in [30, tend-50] except CREATE_CHILD_SA (36).
-    verdict=$(printf '%s\n' "$rows" | LC_ALL=C awk -v tend="$tend" '
+    # PASS: >=1 isakmp frame in the last 40 s, none in [30, tend-50] except CREATE_CHILD_SA
+    # (36) and the INFORMATIONAL (37) DELETE exchange that follows a rekey within 5 s —
+    # from outside, a DELETE and a DPD are both opaque INFORMATIONALs (2026-10-09 rehearsal).
+    verdict=$(printf '%s\n' "$rows" | LC_ALL=C sort -n | LC_ALL=C awk -v tend="$tend" '
         NF { t = $1 + 0
              if (t >= tend - 40) tail++
-             if (t >= 30 && t <= tend - 50 && $2 != 36) stray++ }
+             if ($2 == 36) rekey = t
+             else if (t >= 30 && t <= tend - 50 && !($2 == 37 && rekey != "" && t - rekey <= 5)) stray++ }
         END { if (tail > 0 && stray == 0) print "PASS"
               else if (tail == 0) print "FAIL no DPD/IKE frames in the final 40 s"
               else print "FAIL " stray " non-CREATE_CHILD_SA isakmp frames mid-run" }')

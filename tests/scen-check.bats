@@ -167,6 +167,27 @@ EOF
     [[ "$(cell X6)" == "FAIL (no DPD"* ]]
 }
 
+@test "X6 allows the INFORMATIONAL delete that follows a CREATE_CHILD_SA, but not a lone one" {
+    seed_tshark 'isakmp' <<EOF
+1.0	34
+140.2	36
+140.3	36
+140.3	37
+140.3	37
+270.0	37
+EOF
+    run "$SCRIPT" "$RUN"
+    [ "$(cell X6)" = PASS ]
+    seed_tshark 'isakmp' <<EOF
+1.0	34
+140.2	36
+150.0	37
+270.0	37
+EOF
+    run "$SCRIPT" "$RUN"
+    [[ "$(cell X6)" == "FAIL (1 non-CREATE_CHILD_SA"* ]]
+}
+
 @test "missing gt keys marks X7 SKIP, not FAIL" {
     rm "$RUN/gt/gw-a/keys/esp_sa"
     run "$SCRIPT" "$RUN"

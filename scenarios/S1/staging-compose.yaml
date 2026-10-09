@@ -35,6 +35,12 @@
 # (the ninth line wires svc-b, spec §11.1 "svc-targets .20"). Note the bridge-side
 # port of gw-a on br-lab-t01 is veth-t01a, the interface the manifest impairs.
 # Start gw-a's charon after the captures start (see spec §11.2 run procedure).
+#
+# /gt on the gateways is an anonymous volume: recreate them with
+#   docker compose ... --profile s1 up -d --force-recreate -V
+# before every run, or the previous run's charon.log and keys stay in the ground truth
+# (a named volume did exactly that on 2026-10-09). Recreate isp1 too, or its ARP cache
+# keeps the old gateway MACs and the first IKE_SA_INITs go nowhere for ~25 s.
 # Gateways here use ip_forward; the ISP never learns 10.200.0.0/16.
 
 x-lab: &lab
@@ -63,7 +69,7 @@ services:
     volumes:
       - ./swanctl/gw-a.conf:/etc/swanctl/conf.d/s1.conf:ro
       - ./swanctl/secrets.conf:/etc/swanctl/conf.d/secrets.conf:ro
-      - gt-gw-a:/gt
+      - /gt
   gw-b-s1:
     <<: *lab
     container_name: gw-b
@@ -73,7 +79,7 @@ services:
     volumes:
       - ./swanctl/gw-b.conf:/etc/swanctl/conf.d/s1.conf:ro
       - ./swanctl/secrets.conf:/etc/swanctl/conf.d/secrets.conf:ro
-      - gt-gw-b:/gt
+      - /gt
   isp1:
     <<: *lab
     container_name: isp1
@@ -100,7 +106,3 @@ services:
     container_name: svc-b
     profiles: [s0, s1]
     image: localhost/lab/svc-targets:0.0.0-fixture
-
-volumes:
-  gt-gw-a:
-  gt-gw-b:

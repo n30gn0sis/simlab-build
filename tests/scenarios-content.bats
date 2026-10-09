@@ -95,6 +95,10 @@ assert got == want, got
 # two services may share a container name only when their profiles never overlap
 for a, b in [('gw-a', 'gw-a-s1'), ('gw-b', 'gw-b-s1')]:
     assert not set(d['services'][a]['profiles']) & set(d['services'][b]['profiles']), (a, b)
+# /gt must be an anonymous volume so -V gives every run a fresh ground truth
+for g in ('gw-a-s1', 'gw-b-s1'):
+    assert '/gt' in d['services'][g]['volumes'], g
+assert not d.get('volumes'), d.get('volumes')
 PY
 }
 

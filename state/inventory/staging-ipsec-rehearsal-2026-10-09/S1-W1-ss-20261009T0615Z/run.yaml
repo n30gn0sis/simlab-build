@@ -1,0 +1,80 @@
+run_id: S1-W1-ss-20261009T0615Z
+scenario: S1
+underlay: W1
+variant: ss
+spec_version: ipsec-scenarios v0.1
+gns3_project: s1-w1-ss.gns3project
+nodes:
+- name: gw-a
+  image: localhost/lab/ipsec-ss:20261009
+  role: endpoint
+  digest: localhost/lab/ipsec-ss@sha256:7742ad331ccd3dfdf342614dee648132754b1ca37f50ef53ac949a346e765701
+- name: gw-b
+  image: localhost/lab/ipsec-ss:20261009
+  role: endpoint
+  digest: localhost/lab/ipsec-ss@sha256:7742ad331ccd3dfdf342614dee648132754b1ca37f50ef53ac949a346e765701
+- name: isp1
+  image: quay.io/frrouting/frr:10.7.1
+  role: provider
+  digest: quay.io/frrouting/frr@sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2
+- name: host-a
+  image: docker.io/nicolaka/netshoot:latest
+  role: helper
+  digest: nicolaka/netshoot@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70
+- name: host-b
+  image: docker.io/nicolaka/netshoot:latest
+  role: helper
+  digest: nicolaka/netshoot@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70
+- name: svc-b
+  image: localhost/lab/svc-targets:20261009
+  role: helper
+  digest: localhost/lab/svc-targets@sha256:6e2fa8add7467b4afd7d5d71e4a75660932a2e09adfd9f7cb4339b192809cc1e
+ipsec:
+  ike_version: 2
+  auth: psk
+  ike_proposal: aes256gcm16-prfsha384-ecp384
+  esp_proposal: aes256gcm16-ecp384
+  ike_rekey_s: 600
+  child_rekey_s: 120
+  dpd_delay_s: 10
+  mode: policy
+  peers:
+  - 198.18.1.2
+  - 198.18.2.2
+capture_points:
+- name: outer-t01
+  bridge: br-lab-t01
+  view: outer
+- name: outer-t02
+  bridge: br-lab-t02
+  view: outer
+- name: inner-i01
+  bridge: br-lab-i01
+  view: inner
+- name: inner-i02
+  bridge: br-lab-i02
+  view: inner
+impairment:
+- mechanism: M1
+  profile: branch-wan
+  iface: veth-t01a
+  direction: B->A
+capture:
+  cap_mb: 1024
+  ring: 4
+traffic:
+  lane: A
+  script: traffic/profile-basic.sh
+  seed: 1001
+  node: host-a
+baseline:
+  node: gw-a
+  target: 198.18.2.2
+  rtt_ms: 0.1
+events: events/s1-baseline.yaml
+times_utc:
+  start: '2026-10-09T06:15:50Z'
+  end: '2026-10-09T06:20:30Z'
+results:
+  pass: null
+  notes: 'host load (1m): 0.24'

@@ -1,0 +1,68 @@
+run_id: S0-W1-none-20261009T0524Z
+scenario: S0
+underlay: W1
+variant: none
+spec_version: ipsec-scenarios v0.1
+gns3_project: s0-w1.gns3project
+nodes:
+- name: gw-a
+  image: quay.io/frrouting/frr:10.7.1
+  role: router
+  digest: quay.io/frrouting/frr@sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2
+- name: gw-b
+  image: quay.io/frrouting/frr:10.7.1
+  role: router
+  digest: quay.io/frrouting/frr@sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2
+- name: isp1
+  image: quay.io/frrouting/frr:10.7.1
+  role: provider
+  digest: quay.io/frrouting/frr@sha256:e995beaa50fdc9edb35eadcfefa29b7f062cc06f2b812613789b68fa541554d2
+- name: host-a
+  image: docker.io/nicolaka/netshoot:latest
+  role: helper
+  digest: nicolaka/netshoot@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70
+- name: host-b
+  image: docker.io/nicolaka/netshoot:latest
+  role: helper
+  digest: nicolaka/netshoot@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70
+- name: svc-b
+  image: localhost/lab/svc-targets:20261009
+  role: helper
+  digest: localhost/lab/svc-targets@sha256:ca675b45f49700c83e0172b7344aff2ffba27cf5bf334197630ce2d68acce240
+capture_points:
+- name: outer-t01
+  bridge: br-lab-t01
+  view: outer
+- name: outer-t02
+  bridge: br-lab-t02
+  view: outer
+- name: inner-i01
+  bridge: br-lab-i01
+  view: inner
+- name: inner-i02
+  bridge: br-lab-i02
+  view: inner
+impairment:
+- mechanism: M1
+  profile: branch-wan
+  iface: veth-t01a
+  direction: A->B
+capture:
+  cap_mb: 1024
+  ring: 4
+traffic:
+  lane: A
+  script: traffic/profile-basic.sh
+  seed: 1001
+  node: host-a
+baseline:
+  node: gw-a
+  target: 198.18.2.2
+  rtt_ms: null
+events: events/s0-baseline.yaml
+times_utc:
+  start: '2026-10-09T05:25:16Z'
+  end: '2026-10-09T05:36:07Z'
+results:
+  pass: null
+  notes: 'host load (1m): 0.11'

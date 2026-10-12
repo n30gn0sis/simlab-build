@@ -1,0 +1,11 @@
+# Build context for images/*/Dockerfile is the repo root. COPY lines are
+# specific; this keeps the upload small and never sends secrets to the daemon.
+.git
+bundle-*
+*.tar.gz
+*.part
+r770-precheck-*
+scenarios/**/secrets.conf
+scenarios/**/gt/
+.superpowers
+.reports

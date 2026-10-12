@@ -1,0 +1,14 @@
+2026-10-09T06:15:50.847Z captures up (4 points)
+2026-10-09T06:15:50.857Z impairment M1 branch-wan applied on veth-t01a
+2026-10-09T06:15:50.858Z traffic start: host-a traffic/profile-basic.sh
+2026-10-09T06:15:50.890Z event t=0 note text=traffic start
+2026-10-09T06:19:50.894Z event t=240 note text=idle tail for DPD
+2026-10-09T06:20:30.902Z event t=280 note text=end
+2026-10-09T06:20:30.903Z traffic done
+2026-10-09T06:20:30.913Z impairment cleared on veth-t01a
+2026-10-09T06:20:30.935Z captures stopped
+2026-10-09T06:20:30.950Z capture-stats.txt written
+2026-10-09T06:20:31.049Z gt gw-a collected
+2026-10-09T06:20:31.107Z gt gw-b collected
+2026-10-09T06:20:31.371Z manifest completed
+2026-10-09T06:20:31.373Z run complete

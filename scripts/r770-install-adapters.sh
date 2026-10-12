@@ -99,6 +99,8 @@ malcolm_apply() {
         || { printf 'malcolm_apply: halted — auth failed\n' >&2; return 1; }
     "$MALCOLM_DEPLOY" bind-loopback \
         || { printf 'malcolm_apply: halted — bind-loopback failed\n' >&2; return 1; }
+    "$MALCOLM_DEPLOY" arkime-config \
+        || { printf 'malcolm_apply: halted — arkime-config failed\n' >&2; return 1; }
     "$MALCOLM_DEPLOY" start \
         || { printf 'malcolm_apply: halted — start failed\n' >&2; return 1; }
     "$MALCOLM_DEPLOY" health \

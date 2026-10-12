@@ -182,8 +182,12 @@ EOF
     grep -q "malcolm configure $T/config.json" "$T/calls"
     grep -q "malcolm auth $T/bundle --password-file $T/pw --user analyst" "$T/calls"
     grep -q "malcolm bind-loopback" "$T/calls"
+    grep -q "malcolm arkime-config" "$T/calls"
     grep -q "malcolm start" "$T/calls"
     grep -q "malcolm health" "$T/calls"
+    # arkime-config sits between bind-loopback and start (both edit the compose file before start reads it)
+    [ "$(grep -n 'malcolm bind-loopback' "$T/calls" | cut -d: -f1)" -lt "$(grep -n 'malcolm arkime-config' "$T/calls" | cut -d: -f1)" ]
+    [ "$(grep -n 'malcolm arkime-config' "$T/calls" | cut -d: -f1)" -lt "$(grep -n 'malcolm start' "$T/calls" | cut -d: -f1)" ]
 }
 
 @test "malcolm_apply halts at the first sub-verb that fails and runs nothing after it" {
@@ -194,6 +198,7 @@ EOF
     [[ "$output" == *"auth"* ]]
     grep -q "malcolm configure" "$T/calls"
     ! grep -q "malcolm bind-loopback" "$T/calls"
+    ! grep -q "malcolm arkime-config" "$T/calls"
     ! grep -q "malcolm start" "$T/calls"
 }
 

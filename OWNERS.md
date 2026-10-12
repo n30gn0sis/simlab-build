@@ -149,7 +149,7 @@ value the block sets, and states plainly which ones `tests/owners.bats` actually
 restated outside the fetch script:
 
 - `MALCOLM_VER`, `UBUNTU_ISO_VER`, `GNS3_VER`, `ET_SURICATA_PATH`, `CHR_VER`, `OPNSENSE_VER`,
-  `FRR_IMG`
+  `FRR_IMG`, `STRONGSWAN_IMG`
 - `MONITOR_IMAGES` tags: prometheus, alertmanager, blackbox-exporter, cadvisor
 
 **Named exceptions — not mechanically enforced, and here is why:**

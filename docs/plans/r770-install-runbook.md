@@ -319,6 +319,19 @@ new config: restart it with Malcolm's own `restart`, as the PUID user (8.1):
 `cd /opt/malcolm/malcolm && sudo -u <puid-user> env HOME=/opt/malcolm/malcolm ./scripts/restart --quiet`,
 then `health`.
 
+**ESP tracking — after every `configure`.** Malcolm's Arkime makes no
+session for ESP (IP protocol 50), and Zeek logs none, so IPsec payload traffic
+is invisible in Malcolm unless Arkime's `trackESP` is on. Malcolm has no config
+key for it, but Arkime 5 reads `ARKIME_<section>__<key>` from the environment,
+and `malcolm/config/arkime.env` is loaded by both Arkime containers. Every
+installer run rewrites the `config/*.env` files, so after each `configure`
+make sure `malcolm/config/arkime.env` holds exactly one line
+`ARKIME_default__trackESP=true` (append it, or replace another value; keep the
+file's owner and mode), then restart so the containers are recreated. Measured
+on staging VM 9770, 2026-09-26 (`state/inventory/staging-kit-rehearsal-2026-09-26.md`,
+finding 15); the R770 kit's `r770-malcolm-deploy.sh configure` does this
+itself. `site/scripts/r770-malcolm-deploy.sh` does not yet — a follow-up.
+
 **Malcolm's own tools run as the PUID user, never as root.** `auth_setup`,
 `start` and the rest of `malcolm/scripts/` are symlinks to `control.py`, which
 refuses root — including a root *identity*: `getpass.getuser()` reads
@@ -727,13 +740,19 @@ a bundle. Expect gaps, and expect them to be reading material only.
 
 ## Part 12 — Dell firmware  *(reference only — not a bundle item since 2026-09-25)*
 
-> Dell firmware is **not a bundle item** (operator, 2026-09-25): it is handled on the R770 directly, outside this runbook.
+> Dell firmware is **not a bundle item** (operator, 2026-09-25): it is handled
+> on the R770 directly, outside this runbook. No iDRAC or PERC work on the
+> R770 (operator, 2026-09-24) — this runbook, and no script in this repo,
+> applies firmware, queries, or otherwise touches iDRAC or the PERC. If the
+> operator updates firmware themselves via iDRAC, the baselines below are
+> for their reference only.
 
-Firmware is applied through iDRAC, not over SSH. Apply only a DUP that is
-**newer than what is installed** — the Phase 1 inventory holds the baselines.
-
-**IPMI-over-LAN is disabled on this chassis** (Serial-over-LAN is enabled), so
-any scripted out-of-band work must use Redfish. `ipmitool -H` will not connect.
+Installed baselines (Phase 1 evidence, for reference only): BIOS **1.7.5**
+(2026-01-16) · iDRAC/LC **1.30.20.10** · PERC **8.14.0.0.28-40** · backplane
+**1.92** · Broadcom NIC family **233.1.181.0** · PSU **1408** · CPLD
+**109.125.104**. **IPMI-over-LAN is disabled on this chassis** (Serial-over-LAN
+is enabled) — not that it matters here, since nothing in this repo automates
+against iDRAC either way.
 
 ---
 

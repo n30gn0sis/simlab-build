@@ -7,15 +7,18 @@
 # It changes NOTHING: no packages installed, no config touched, no state modified.
 #
 # Usage:   sudo ./r770-precheck.sh
-#          (runs without sudo too, but PERC/SMART/dmidecode sections will be skipped)
+#          (runs without sudo too, but SMART/dmidecode sections will be skipped)
 #
 # Output:  ./r770-precheck-<hostname>-<timestamp>/   (full per-section logs)
 #          ./r770-precheck-<hostname>-<timestamp>.tar.gz  (bundle to send back)
 #          plus a PASS/WARN/FAIL summary on stdout.
 #
 # Expected hardware (checks are calibrated to this; mismatches WARN, not fail):
-#   2 x Intel Xeon 6 6515P (32 cores / 64 threads), 128 GB DDR5, PERC NVMe RAID1,
-#   2 x Broadcom quad-port 10GbE OCP (8 capture ports), integrated mgmt NIC, iDRAC.
+#   2 x Intel Xeon 6 6515P (32 cores / 64 threads), 128 GB DDR5, NVMe RAID1,
+#   2 x Broadcom quad-port 10GbE OCP (8 capture ports), integrated mgmt NIC.
+#
+# No PERC or iDRAC work on the R770 (2026-09-24 decision): this script never
+# queries either — RAID VD facts come from lsblk/OS-side checks only.
 
 set -u
 umask 077
@@ -32,7 +35,7 @@ if [ "$(id -u)" -ne 0 ]; then
         SUDO="sudo"
     else
         echo "NOTE: not root and passwordless sudo unavailable — privileged sections will be skipped."
-        echo "      Re-run with sudo for PERC, SMART, dmidecode, and full dmesg coverage."
+        echo "      Re-run with sudo for SMART, dmidecode, and full dmesg coverage."
     fi
 else
     SUDO=""
@@ -169,17 +172,6 @@ if have smartctl; then
 else
     echo "smartmontools not installed — SMART health deferred to Phase 2" >> "$SEC"
 fi
-# PERC
-PERCCLI=""
-for c in perccli2 perccli storcli2 storcli; do have "$c" && { PERCCLI="$c"; break; }; done
-if [ -n "$PERCCLI" ]; then
-    runp "$PERCCLI" /call show
-    runp "$PERCCLI" /call/vall show all
-    runp "$PERCCLI" /call/eall/sall show
-    ok "PERC CLI ($PERCCLI) present — VD/PD details captured"
-else
-    warn "No perccli/storcli found — PERC details come from the iDRAC inventory export (Phase 1) and OS-side checks (Phase 2); the CLI is not part of the build."
-fi
 # usable-capacity sanity: largest block device
 LARGEST=$(lsblk -b -d -n -e7 -o SIZE 2>/dev/null | sort -n | tail -1)
 if [ -n "${LARGEST:-}" ] && [ "$LARGEST" -gt 0 ]; then
@@ -262,32 +254,17 @@ fi
 if have resolvectl; then run resolvectl status; fi
 if getent hosts archive.ubuntu.com >/dev/null 2>&1; then ok "DNS resolution works (archive.ubuntu.com)"; else warn "DNS resolution failed — fix before package phases"; fi
 
-# ── 8. iDRAC visibility (read-only) ──────────────────────────────────────────
-section 08-idrac.txt "iDRAC (read-only, from host)"
-if have ipmitool; then
-    runp ipmitool lan print 1
-    runp ipmitool mc info
-    IDRAC_IP=$(priv ipmitool lan print 1 2>/dev/null | awk -F': ' '/^IP Address +:/{print $2}')
-    if [ -n "${IDRAC_IP:-}" ] && [ "$IDRAC_IP" != "0.0.0.0" ]; then
-        ok "iDRAC reachable via IPMI, IP ${IDRAC_IP} — VERIFY console login out-of-band before any network change"
-    else
-        warn "iDRAC IP not readable/unset via IPMI — verify iDRAC recovery path manually before Phase 5"
-    fi
-else
-    warn "ipmitool not installed — iDRAC state unverified from host; confirm OOB console access manually before Phase 5"
-fi
-
-# ── 9. health / errors ───────────────────────────────────────────────────────
-section 09-health.txt "Health / errors"
+# ── 8. health / errors ───────────────────────────────────────────────────────
+section 08-health.txt "Health / errors"
 runp bash -c 'dmesg --level=err,warn | tail -60'
 run bash -c "journalctl -p err -b --no-pager 2>/dev/null | tail -40 || true"
 ERRS=$(priv dmesg --level=err 2>/dev/null | grep -c . 2>/dev/null); ERRS=$(echo "${ERRS:-0}" | head -1)
 case "$ERRS" in (''|*[!0-9]*) ERRS=0;; esac
-[ "$ERRS" -eq 0 ] && ok "No kernel-level errors this boot" || warn "${ERRS} kernel error line(s) this boot — review 09-health.txt"
+[ "$ERRS" -eq 0 ] && ok "No kernel-level errors this boot" || warn "${ERRS} kernel error line(s) this boot — review 08-health.txt"
 if have sensors; then run sensors; fi
 
-# ── 10. tool availability for later phases ───────────────────────────────────
-section 10-tools.txt "Tooling present vs needed later"
+# ── 9. tool availability for later phases ────────────────────────────────────
+section 09-tools.txt "Tooling present vs needed later"
 # Check BINARY names, not package names: 'lvm2' is a package and is never on
 # PATH, so it always reported MISSING even on this host, which is already
 # running LVM. The binary to look for is 'lvs'.

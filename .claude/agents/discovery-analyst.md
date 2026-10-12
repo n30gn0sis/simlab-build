@@ -10,12 +10,12 @@ Produce/update `state/inventory/r770-discovery-findings.md` with only what the e
 
 Must answer:
 
-- **Storage:** actual PERC controller model + firmware, physical NVMe drives (count/size/health), virtual disk layout, and the resolved USABLE capacity. **Settled for tag G8WFGH4 (2026-09-03) — read the measured values from `state/BUILD-STATE.md`'s hardware-of-record table (its owner, see `OWNERS.md`) rather than from this prompt; carrying them here is how a capacity figure drifted once already.** The 8 TB branch of buildout §3 applies and the LV sizes are already written there. Also report controller **encryption state and key mode**, and the NVMe **negotiated vs capable link width** — both were missed by the original checklist and both matter.
+- **Storage:** actual PERC controller model + firmware, physical NVMe drives (count/size/health), virtual disk layout, and the resolved USABLE capacity. **Settled for tag G8WFGH4 (2026-09-03) — read the measured values from `state/BUILD-STATE.md`'s hardware-of-record table (its owner, see `OWNERS.md`) rather than from this prompt; carrying them here is how a capacity figure drifted once already.** The 8 TB branch of buildout §3 applies and the LV sizes are already written there. Also report the NVMe **negotiated vs capable link width** — missed by the original checklist and it matters. (No PERC querying — no PERC work on the R770, 2026-09-24.)
 - **CPU/NUMA:** sockets, cores, threads, NUMA node count (flag sub-NUMA clustering), sibling-thread map location.
 - **Memory:** total, DIMM count and per-socket placement, speed, EDAC errors.
 - **NICs:** every interface with driver, firmware, media type, queue/ring maxima, offload states, MAC, and NUMA node. **Settled for this chassis: ten `bnxt_en` ports — 8 × 10GBASE-T copper capture (OCP Slot 10 → node 0, Slot 4 → node 1) plus a 2 × 25G SFP28 pair (Slot 9, node 0) bonded 802.3ad as `lacp-trunk` with VLAN 10 (`lacp-trunk.10`, 10.10.10.31/24) carrying management.** Management is *not* the integrated NIC. Do not re-open the 57412/57416 media question unless the adapters change.
 - **NUMA locality of the OCP adapters and PERC** → recommend which socket is "capture" and which is "lab" per buildout plan §8, or flag that the split needs rethinking if I/O straddles sockets.
-- **Management path:** which interface/IP carries SSH, gateway, Netplan contents, iDRAC IP and whether OOB recovery is confirmed (if not, say so loudly — it gates Phase 5).
+- **Management path:** which interface/IP carries SSH, gateway, and Netplan contents. (No iDRAC querying — no iDRAC work on the R770, 2026-09-24; Phase 5 relies on `netplan try` + saved rollback only.)
 - **Disposition of every PASS/WARN/FAIL** from the precheck summary.
 
 End with: resolved unknowns (mapped to PRD §11), still-open unknowns, and concrete corrections needed in the plan documents.

@@ -136,7 +136,7 @@ Created from the ≈6.84 TiB of free extents. Keep ~10% of the VG unallocated as
 
 Rationale unchanged: XFS on the large streaming/parallel-write volumes (PCAP, OpenSearch, VM images) for allocation-group parallelism and large-file performance; ext4 where boring reliability is all that's needed. Separate LVs mean a runaway capture, index explosion, or fat VM disk fills **its own** filesystem, never `/`.
 
-Mount options: `noatime` on all data LVs; use periodic `fstrim.timer` (weekly) rather than `discard` — enabled only if Phase 2's OS-side check shows the VD advertises discard (`lsblk -D`, `/sys/block/<dev>/queue/discard_max_bytes`); otherwise left off. No swap beyond a small 8 GB swapfile with low swappiness; OpenSearch performs badly when swapped (Malcolm sets memlock).
+Mount options: `noatime` on all data LVs; use periodic `fstrim.timer` (weekly) rather than `discard` — enabled only if Phase 2's OS-side check shows the VD advertises discard (`lsblk -D`, `/sys/block/<dev>/queue/discard_max_bytes`); otherwise left off. **When enabled, the timer is pinned to a maintenance window and its first pass over `lv_pcap` is measured under capture (§7.4)** — a trim pass held a 387 GB staging disk at 97 % IO pressure for 20 min (2026-10-09), and the stock service trims every mount, the PCAP volume included; details in the Phase 2/3 storage design, mount policy. No swap beyond a small 8 GB swapfile with low swappiness; OpenSearch performs badly when swapped (Malcolm sets memlock).
 
 > **PERC encryption (accepted risk, 2026-09-24):** the PERC reports `Encryption mode: Enabled` with a `Security Key Assigned`. Key custody is not being established — no PERC work on the R770 (`PRD.md` §6). Losing the key loses the VD. No phase is gated on it.
 
@@ -268,6 +268,7 @@ AF_PACKET first. It is the zero-extra-complexity path and on this hardware comfo
 - Arkime capture stats (its own drop counters, surfaced in Dashboards)
 - Zeek `capture_loss.log` (must stay ≈ 0%)
 - All three exported to Prometheus with alert thresholds; a validation script compares a known replayed traffic count (tcpreplay of a reference PCAP) against captured session counts.
+- One of the replay runs is made **during an `fstrim -v /data/pcap`** (the weekly timer's pass trims the capture volume too; a staging trim pinned the disk for 20 min at 97 % IO pressure, 2026-10-09). Zero drops across it, or the PCAP mount leaves the timer's pass — Phase 2/3 storage design, mount policy.
 
 ### 7.5 Host-level tools
 

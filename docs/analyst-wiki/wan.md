@@ -23,9 +23,16 @@ Every impairment is visible in `wan-show` and fully removable with `wan-clear` �
 | `branch-wan` | 20 Mbps | 40 ms | 5 ms | 0.2% | A typical branch-office circuit |
 | `satellite` | 25 Mbps | 600 ms RTT-equivalent | variable | — | Geostationary satellite |
 | `poor-broadband` | 10 Mbps | 80 ms | — | 2% | Bad consumer DSL/cable |
-| asymmetric variants | different up/down | | | | ADSL-style circuits |
+| `asym-adsl` | 8 Mbps down / 1 Mbps up | 25 ms | 3 ms | 0.1% | ADSL-style asymmetric line |
+| `lte-good` | 30 Mbps down / 10 Mbps up | 45 ms | 10 ms | 0.3% | Subscriber on a good cell |
+| `lte-poor` | 5 Mbps down / 1 Mbps up | 90 ms | 30 ms | 2% | Subscriber on a poor cell |
+| `leo` | 100 Mbps down / 15 Mbps up | 30 ms | 10 ms | 0.5% | Low-earth-orbit satellite (handover spikes are scripted link-down/up events, not part of the profile) |
+| `mpls-metro` | 100 Mbps | 5 ms | 1 ms | 0% | Metro MPLS customer-edge access |
+| `congested-uplink` | 50 Mbps | — | — | — | Rate cap only; delay and loss come from queueing when background flows compete |
 
 Profiles are just parameter files — new ones (a specific customer circuit, a cellular link, a lossy microwave hop) are easy to add to the library; ask or submit one.
+
+The profile files themselves live in `scenarios/profiles/`, one `.conf` per circuit, and are shared with the IPsec reference-PCAP scenarios — see [Reference PCAPs and scenarios](scenarios.md).
 
 ## Workflow: prove it, then trust it
 

@@ -24,6 +24,7 @@ Everything runs offline. There is no internet on this box — software, IDS rule
 | Deep-dive individual packets | Export from Arkime → Wireshark on your workstation | [Malcolm](malcolm.md#exporting-to-wireshark) |
 | Build a network topology to test or reproduce something | GNS3 | [GNS3](gns3.md) |
 | Make a lab link behave like a bad WAN circuit | `wan-apply` profiles | [WAN emulation](wan.md) |
+| Find or produce a labelled IPsec/WAN reference PCAP | `scen-*` harness, tagged Arkime sessions | [Scenarios](scenarios.md) |
 | Capture and analyze traffic *from a lab topology* | Virtual mirror feed → Malcolm | [GNS3](gns3.md#analyzing-lab-traffic) |
 | Quick spot-check that packets are flowing on an interface | `tcpdump` / `tshark` (pcapture group) | [CLI tools](cli-tools.md#spot-capture) |
 | Replay a reference PCAP into a capture feed | `tcpreplay` | [CLI tools](cli-tools.md#tcpreplay) |

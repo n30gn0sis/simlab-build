@@ -104,6 +104,7 @@ VG: `ubuntu-vg0` (discovered). The script never names a block device; it acts on
 - `noatime` on every new LV. `nofail` on every new data LV so a bad data mount cannot stop boot (and SSH). `lv-var` keeps its existing entry — no `nofail`.
 - Mount points are made immutable (`chattr +i`) before mounting, so a data LV that fails to mount at boot (nofail) leaves an immutable, empty directory on `/` or `/var` instead of a writable one that services can silently fill. Consuming units — Docker's data-root in Phase 6, Malcolm's data paths in Phase 10 — must also get `RequiresMountsFor=` so they fail to start rather than write into that directory; this is a gate for those phases.
 - `fstrim.timer` enabled only if Phase 2 item 3 is `ADVERTISED`; otherwise left disabled and noted in the evidence file.
+- **fstrim and the capture disk (added 2026-10-12).** Ubuntu's stock `fstrim.service` trims every mounted filesystem in one pass, `lv_pcap` included, on the timer's weekly schedule (`OnCalendar=weekly`, `RandomizedDelaySec` of 100 min — i.e. early Monday, whenever). On staging VM 9771 (2026-10-09) that pass held `/sbin/fstrim` in D state for **20 min on a 387 GB virtual disk at 97 % IO pressure**, enough to stall container starts and expire a scenario's 60 s interface wait (`state/inventory/staging-ipsec-rehearsal-2026-10-09.md`, "fstrim"). A multi-TiB XFS `lv_pcap` on a PERC RAID-1 VD, trimmed under a live capture, is the same event scaled up and would surface as drops in §7.4 of the buildout. So, when the timer is enabled: (1) pin it to a maintenance window with a drop-in (`systemctl edit fstrim.timer`: `OnCalendar=` cleared then set, `RandomizedDelaySec=0`), recorded with the rest of the Phase 3 evidence; (2) Phase 9's drop-accounting validation must include one trim of `lv_pcap` under capture (`fstrim -v /data/pcap` while a replay runs, `/proc/pressure/io` sampled) — if drops appear, exclude the PCAP mount from the timer's pass (an `fstrim.service` drop-in replacing `ExecStart=` with an explicit mount list) and trim `lv_pcap` only in no-capture windows. `discard` as a mount option stays out: online discard puts the same work on every delete, in the capture path.
 - Swapfile/swappiness stays in **Phase 4** (it is a sysctl; "measure before tuning").
 
 ### Execution order
@@ -113,7 +114,7 @@ VG: `ubuntu-vg0` (discovered). The script never names a block device; it acts on
 3. Operator confirms (CLAUDE.md rule 3: what changes, data at risk, device, current vs proposed, rollback).
 4. `--grow-var`.
 5. `--apply --lv` for each LV, `lv_pcap` last.
-6. `fstrim.timer` per Phase 2 verdict.
+6. `fstrim.timer` per Phase 2 verdict — with the maintenance-window drop-in from the mount policy above.
 7. `--plan` again (every row `already applied`); `validation-runner` pass.
 8. Reboot test at an operator-chosen time; confirm every mount returns.
 

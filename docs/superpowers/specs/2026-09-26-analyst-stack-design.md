@@ -35,6 +35,7 @@ The fetch copies this repo's `scripts/`, `config/` and `docs/analyst-wiki/` into
 | `configure` | `install.py --non-interactive --configure --import-malcolm-config-file config/malcolm/malcolm-config.json`, evolved from the rehearsal config. **Suricata off, GeoIP off** (decisions of record); PCAP bind-mounted at `/data/pcap/raw` and OpenSearch data at `/data/index` (buildout §3.2). On 9771 those are plain directories. The OpenSearch heap stays at the rehearsed 4 GiB |
 | `auth` | Malcolm's own `auth_setup --auth-noninteractive`. The analyst password comes from a prompt or a file named by the operator. **It never appears in the repo, a log, or argv**, and ends up only in Malcolm's htpasswd |
 | `bind-loopback` | Change Malcolm's nginx port mapping from `0.0.0.0:443:443` to `127.0.0.1:8443:443`. It matches that exact mapping (not a line number) and **refuses unless there's exactly one match**. The compose file is backed up first |
+| `arkime-config` | Arkime `trackESP=true`, without which every ESP packet is dropped as "unknown" (staging IPsec rehearsal 2026-10-09; no Malcolm env variable renders it). Takes `config.orig.ini` from the arkime image the compose file names, adds the setting, keeps it at `malcolm/arkime/etc/config.orig.ini` and bind-mounts it read-only over the image's copy in the `arkime` and `arkime-live` services — the file the entrypoint renders `config.ini` from at container creation. Compose file backed up first; a new image refreshes the copy (stamped); re-run after every `configure`. `health` checks the running container's `config.ini` (added 2026-10-12) |
 | `start` / `health` | Malcolm's own start script, then wait (up to about 10 min) until **every** service is healthy. On failure it lists the unhealthy ones. Afterwards nothing may listen beyond `127.0.0.1:8443` |
 | `verify` | Write a small PCAP on the box (loopback capture while probing the portal; no internet needed) into Malcolm's upload dir. Arkime must show sessions and Zeek must write logs. The zeek container must be healthy, because Malcolm's zeek binary carries `cap_net_admin,cap_net_raw` and only runs when those are granted |
 
@@ -66,7 +67,7 @@ Every verb checks its preconditions and reports "already done" instead of repeat
 
 1. Host memory check (refuse if it doesn't fit). Snapshot `installed-2026-09-26` of the install-test state. Raise 9771 to 12 GiB (root, once). Start.
 2. Air gap on (`scripts/r770-airgap-sim.sh`, auto-revert).
-3. `r770-lab-ca.sh apply`, then Malcolm `install`, `configure`, `auth`, `bind-loopback`, `start`, `health`, then `r770-portal.sh apply`, then `r770-ufw.sh apply`, then `confirm` from a new SSH session.
+3. `r770-lab-ca.sh apply`, then Malcolm `install`, `configure`, `auth`, `bind-loopback`, `arkime-config`, `start`, `health`, then `r770-portal.sh apply`, then `r770-ufw.sh apply`, then `confirm` from a new SSH session.
 4. From the Claude session, as an analyst would:
    - every name via `--resolve <name>:443:192.168.4.26` with the exported CA, giving 401, then 200 with credentials;
    - Malcolm `verify` (PCAP indexed);

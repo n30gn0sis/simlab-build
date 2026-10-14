@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# scen-prep <scenario-dir> — prerequisite gate for a reference-PCAP run (spec §8).
+# --images <list-file> (repeatable) rewrites nodes[].image tags ending 0.0.0-fixture in the
+# run copy. Pass the lab image list and, for the real FRR/netshoot tags, the bundle's
+# gns3/docker-nodes/image-list.txt as a second list; leftovers are warned about.
+# Reads <scenario-dir>/run.yaml; checks modules, capture bridges, interface
+# guards, wan-show and free space; only then creates the run directory.
+# Nothing is created before every check has passed.
+set -euo pipefail
+# shellcheck source=/dev/null
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/scen-lib.sh"
+
+SCEN_SYSNET="${SCEN_SYSNET:-/sys/class/net}"
+SCEN_MODULES_FILE="${SCEN_MODULES_FILE:-/proc/modules}"
+SCEN_FREE_FLOOR_GB="${SCEN_FREE_FLOOR_GB:-200}"
+
+IMAGES_LISTS=()
+while [ "${1:-}" = "--images" ]; do
+    [ $# -ge 2 ] || die "usage: scen-prep [--images <list-file>]... <scenario-dir>"
+    [ -f "$2" ] || die "images list not found: $2"
+    IMAGES_LISTS+=("$2"); shift 2
+done
+[ $# -eq 1 ] || die "usage: scen-prep [--images <list-file>]... <scenario-dir>"
+SDIR="$1"; M="$SDIR/run.yaml"
+[ -f "$M" ] || die "no run.yaml in $SDIR"
+
+# 1. kernel modules
+missing=''
+for m in xfrm_user xfrm_interface esp4; do
+    grep -q "^$m " "$SCEN_MODULES_FILE" || missing="$missing $m"
+done
+[ -z "$missing" ] || die "modules not loaded:$missing ($SCEN_MODULES_FILE)"
+
+# 2. capture bridges exist and are lab bridges; 3. impairment ifaces are lab-only
+bridges=$(manifest_list "$M" capture_points bridge) || die "cannot read capture_points from $M"
+ifaces=$(manifest_list "$M" impairment iface) || die "cannot read impairment from $M"
+points=0
+while IFS= read -r br; do
+    [ -n "$br" ] || continue
+    points=$((points + 1))
+    [ -e "$SCEN_SYSNET/$br" ] || die "capture bridge $br does not exist"
+    guard_iface "$br" || exit 1
+done <<< "$bridges"
+[ "$points" -gt 0 ] || die "run.yaml has no capture_points"
+while IFS= read -r ifc; do
+    [ -n "$ifc" ] || continue
+    guard_iface "$ifc" || exit 1
+done <<< "$ifaces"
+
+# 4. no impairment left over from an earlier run
+left=$(wan-show) || die "wan-show failed"
+[ -z "$left" ] || die "wan-show not clean: $left"
+
+# 5a. identity: scenario and run_id become path components
+scenario=$(manifest_get "$M" scenario) || die "run.yaml has no scenario"
+run_id=$(manifest_get "$M" run_id) || die "run.yaml has no run_id"
+for kv in "scenario=$scenario" "run_id=$run_id"; do
+    v="${kv#*=}"
+    if ! [[ $v =~ ^[A-Za-z0-9._-]+$ ]] || [[ $v == *..* ]]; then
+        die "${kv%%=*} must match ^[A-Za-z0-9._-]+\$ and not contain '..' (got '$v')"
+    fi
+done
+
+# 5. free space: floor, then cap_mb x ring x points
+cap=$(manifest_get "$M" capture.cap_mb) || die "run.yaml has no capture.cap_mb"
+ring=$(manifest_get "$M" capture.ring) || die "run.yaml has no capture.ring"
+for kv in "capture.cap_mb=$cap" "capture.ring=$ring" "capture_points=$points"; do
+    [[ ${kv#*=} =~ ^[1-9][0-9]*$ ]] || die "${kv%%=*} must be a positive integer (got '${kv#*=}')"
+done
+probe="$SCEN_CASES"
+while [ ! -d "$probe" ] && [ "$probe" != "/" ]; do probe=$(dirname "$probe"); done
+free_kb=$(df -Pk "$probe" | awk 'NR==2{print $4}')
+free_mb=$((free_kb / 1024))
+need_mb=$((cap * ring * points))
+[ "$free_mb" -ge $((SCEN_FREE_FLOOR_GB * 1024)) ] ||
+    die "free space below the ${SCEN_FREE_FLOOR_GB} GB floor: ${free_mb} MB free on $probe"
+[ "$free_mb" -ge "$need_mb" ] ||
+    die "${need_mb} MB needed (${cap} MB x ring ${ring} x ${points} points), ${free_mb} MB free on $probe"
+
+# 6. create the run dir; later commands get only <run-dir>/run.yaml
+dir=$(run_dir_for "$M") || die "cannot derive the run directory"
+[ ! -e "$dir" ] || die "run dir already exists: $dir — remove it deliberately before re-running scen-prep (cases/ is retention-exempt evidence)"
+mkdir -p "$dir"
+cp "$M" "$dir/run.yaml"
+if [ "${#IMAGES_LISTS[@]}" -gt 0 ]; then
+    manifest_rewrite_images "$dir/run.yaml" "${IMAGES_LISTS[@]}" | while IFS= read -r l; do log "$l"; done
+fi
+for x in traffic events expected.md; do
+    if [ -e "$SDIR/$x" ]; then cp -R "$SDIR/$x" "$dir/$x"; fi
+done
+echo "$dir"

@@ -136,7 +136,7 @@ Created from the ≈6.84 TiB of free extents. Keep ~10% of the VG unallocated as
 
 Rationale unchanged: XFS on the large streaming/parallel-write volumes (PCAP, OpenSearch, VM images) for allocation-group parallelism and large-file performance; ext4 where boring reliability is all that's needed. Separate LVs mean a runaway capture, index explosion, or fat VM disk fills **its own** filesystem, never `/`.
 
-Mount options: `noatime` on all data LVs; use periodic `fstrim.timer` (weekly) rather than `discard` — enabled only if Phase 2's OS-side check shows the VD advertises discard (`lsblk -D`, `/sys/block/<dev>/queue/discard_max_bytes`); otherwise left off. No swap beyond a small 8 GB swapfile with low swappiness; OpenSearch performs badly when swapped (Malcolm sets memlock).
+Mount options: `noatime` on all data LVs; use periodic `fstrim.timer` (weekly) rather than `discard` — enabled only if Phase 2's OS-side check shows the VD advertises discard (`lsblk -D`, `/sys/block/<dev>/queue/discard_max_bytes`); otherwise left off. **When enabled, the timer is pinned to a maintenance window and its first pass over `lv_pcap` is measured under capture (§7.4)** — a trim pass held a 387 GB staging disk at 97 % IO pressure for 20 min (2026-10-09), and the stock service trims every mount, the PCAP volume included; details in the Phase 2/3 storage design, mount policy. No swap beyond a small 8 GB swapfile with low swappiness; OpenSearch performs badly when swapped (Malcolm sets memlock).
 
 ### 3.3 Retention and protection policy
 
@@ -192,12 +192,23 @@ Start with Linux bridges (libvirt-managed):
 | `br-lab-nat` | Lab internet access when explicitly needed | Yes | NAT via the mgmt bond (`lacp-trunk.10`), firewalled |
 | `br-lab-tXX` | GNS3/lab transit segments, created per topology | No | none |
 | `br-lab` | The mirrored lab bridge: hub mode (`ageing_time 0`), GNS3 Cloud nodes attach through kit TAPs `lab-tapN`; its veth `lab-mon0` ⇄ `lab-mirror0` is the virtual feed Malcolm captures (see §7) | No | none |
+| `br-lab-iNN` | Inner / protected-LAN segment of an IPsec scenario (upload-only to Malcolm, never mirrored) | No | none |
+| `br-lab-ext` | Lane-C physical ingress: one Slot-4 port as member, untrusted | No | none |
+
+The `iNN` and `ext` bridges belong to the IPsec/WAN scenario track; their rules are in the scenario spec §3 (`docs/superpowers/specs/2026-10-07-ipsec-scenarios-design.md`).
 
 **OVS decision:** not installed at initial build. Adopt OVS later *only if* a concrete need appears — port mirroring of many lab segments at once, 802.1Q trunk manipulation inside the fabric, or OpenFlow experiments. A Linux bridge in hub mode covers the initial mirror-to-Malcolm requirement (decided 2026-09-24 in the R770 kit, replacing per-port `tc mirred`: no per-port rules to chase as GNS3 attaches and detaches TAPs). This decision is recorded and reversible.
 
 ### 4.4 WAN emulation
 
 `tc`/`netem` on GNS3 link endpoints or dedicated impairment namespaces. Reusable profile scripts in the config repo (`wan-apply <profile> <iface>`, `wan-show`, `wan-clear`), with profiles for branch WAN (20 Mbps/40 ms/5 ms jitter/0.2% loss), satellite (25 Mbps/600 ms), poor broadband (10 Mbps/80 ms/2% loss), and asymmetric variants (HTB for rate + netem for delay; IFB for ingress where needed). Every profile has apply/show/clear. Impairments never touch the management bond/VLAN (`lacp-trunk`, `lacp-trunk.10`) or capture ports.
+
+Profile files are the library at `scenarios/profiles/*.conf` (format: `RATE_DOWN RATE_UP DELAY JITTER LOSS NOTE`, `tc` syntax); Phase 12's `wan-apply` will read them and install a copy to the config repo; the in-topology `wan-emu` node reads the same files. New profiles (`lte-good`, `lte-poor`, `leo`, `mpls-metro`, `congested-uplink`) are defined there — see the IPsec scenario spec §6.2.
+
+**Phase 12 contract the harness depends on:**
+- `wan-show` prints nothing when no impairment is active.
+- `wan-clear <iface>` succeeds (exit 0) on an iface with no qdisc.
+- `wan-apply <profile> <iface>` reads `scenarios/profiles/<profile>.conf`.
 
 ### 4.5 Internal DNS / names
 
@@ -255,6 +266,7 @@ AF_PACKET first. It is the zero-extra-complexity path and on this hardware comfo
 - Arkime capture stats (its own drop counters, surfaced in Dashboards)
 - Zeek `capture_loss.log` (must stay ≈ 0%)
 - All three exported to Prometheus with alert thresholds; a validation script compares a known replayed traffic count (tcpreplay of a reference PCAP) against captured session counts.
+- One of the replay runs is made **during an `fstrim -v /data/pcap`** (the weekly timer's pass trims the capture volume too; a staging trim pinned the disk for 20 min at 97 % IO pressure, 2026-10-09). Zero drops across it, or the PCAP mount leaves the timer's pass — Phase 2/3 storage design, mount policy.
 
 ### 7.5 Host-level tools
 

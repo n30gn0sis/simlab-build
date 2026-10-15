@@ -50,7 +50,7 @@ load_seed_fns() {
     note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
 }
 
-ALL="preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site kit manifest"
+ALL="preflight apt iso malcolm monitoring gns3 labimages appliances enrichment docs manual site kit manifest"
 
 # selected <output> -- the stage names the dry run says it would execute, in order
 selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print $NF}' | tr '\n' ' ' | sed 's/ $//'; }
@@ -93,7 +93,7 @@ selected() { echo "$1" | grep -oE '^\s*(would run|run) +[a-z0-9]+' | awk '{print
     run "$SCRIPT" --skip docs,manifest,preflight --dry-run
     echo "$output"
     [ "$status" -eq 0 ]
-    [ "$(selected "$output")" = "apt iso malcolm monitoring gns3 appliances enrichment manual site kit" ]
+    [ "$(selected "$output")" = "apt iso malcolm monitoring gns3 labimages appliances enrichment manual site kit" ]
 }
 
 @test "an unknown stage name is rejected by name, before anything runs" {
@@ -163,7 +163,9 @@ gitc() { git -c user.name=test -c user.email=test@test.invalid "$@"; }
 # site_excluded() unit test below instead.
 setup_site_repo() {
     local src="$1"
-    mkdir -p "$src/scripts" "$src/config/nginx" "$src/docs/analyst-wiki"
+    mkdir -p "$src/scripts" "$src/config/nginx" "$src/docs/analyst-wiki" "$src/scenarios/profiles" "$src/images/ipsec-ss"
+    echo "FROM scratch" > "$src/images/ipsec-ss/Dockerfile"
+    echo "WAN_DELAY=1" > "$src/scenarios/profiles/branch-wan.conf"
     printf '#!/usr/bin/env bash\n' > "$src/scripts/r770-offline-fetch.sh"
     printf '#!/usr/bin/env bash\necho hi\n' > "$src/scripts/hello.sh"
     chmod +x "$src/scripts/hello.sh"
@@ -193,13 +195,14 @@ setup_site_repo() {
     [ ! -x "$BUNDLE_DIR/site/scripts/README.txt" ]
     [ -s "$BUNDLE_DIR/site/config/nginx/site.conf" ]
     [ -s "$BUNDLE_DIR/site/docs/analyst-wiki/index.md" ]
+    [ -s "$BUNDLE_DIR/site/scenarios/profiles/branch-wan.conf" ]
     [ ! -e "$BUNDLE_DIR/site/config/x.env" ]
     [ ! -e "$BUNDLE_DIR/site/config/y.key" ]
     [ ! -e "$BUNDLE_DIR/site/scripts/outside.env" ]
     [ ! -e "$BUNDLE_DIR/site/docs/analyst-wiki/site.pem" ]
     [ ! -e "$BUNDLE_DIR/site/scripts/htpasswd" ]
     [ ! -e "$BUNDLE_DIR/site/docs/analyst-wiki/.htpasswd" ]
-    grep -qE 'site/: 5 files from [0-9a-f]{7,40} copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
+    grep -qE 'site/: 7 files from [0-9a-f]{7,40} copied' "$BUNDLE_DIR/BUNDLE_NOTES.md"
     [ ! -e "$BUNDLE_DIR/MANIFEST.sha256" ]
     [ ! -s "$NET" ]
 }
@@ -290,7 +293,7 @@ setup_site_repo() {
 
 @test "a SITE_SRC_ROOT that looks like this repo but is not a git work tree refuses" {
     SRC="$BATS_TEST_TMPDIR/site-src"
-    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki"
+    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki" "$SRC/scenarios" "$SRC/images"
     touch "$SRC/scripts/r770-offline-fetch.sh"
     export SITE_SRC_ROOT="$SRC"
     run "$SCRIPT" --only site
@@ -311,9 +314,9 @@ setup_site_repo() {
     [[ "$output" == *"docs/analyst-wiki"* ]]
 }
 
-@test "0 tracked files under the three trees refuses, even though the identity marker exists" {
+@test "0 tracked files under the site trees refuses, even though the identity marker exists" {
     SRC="$BATS_TEST_TMPDIR/site-src"
-    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki"
+    mkdir -p "$SRC/scripts" "$SRC/config" "$SRC/docs/analyst-wiki" "$SRC/scenarios" "$SRC/images"
     touch "$SRC/scripts/r770-offline-fetch.sh"    # present, but UNTRACKED below
     git -C "$SRC" init -q
     gitc -C "$SRC" commit -q -m init --allow-empty
@@ -329,7 +332,7 @@ setup_site_repo() {
     setup_site_repo "$SRC"
     local commit; commit="$(git -C "$SRC" rev-parse HEAD)"
     ARCHIVE="$BATS_TEST_TMPDIR/site.tar"
-    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki > "$ARCHIVE"
+    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki scenarios images > "$ARCHIVE"
     unset SITE_SRC_ROOT
     export SITE_ARCHIVE="$ARCHIVE" SITE_COMMIT="$commit"
     run "$SCRIPT" --only site
@@ -487,10 +490,10 @@ exec "'"$real"'" "$@"'
     setup_site_repo "$SRC"
     local stage="$BATS_TEST_TMPDIR/archive-src"
     mkdir -p "$stage"
-    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki | tar xf - -C "$stage"
+    git -C "$SRC" archive --format=tar HEAD -- scripts config docs/analyst-wiki scenarios images | tar xf - -C "$stage"
     ln -s /etc/passwd "$stage/scripts/evil-link"
     ARCHIVE="$BATS_TEST_TMPDIR/site.tar"
-    tar cf "$ARCHIVE" -C "$stage" scripts config docs
+    tar cf "$ARCHIVE" -C "$stage" scripts config docs scenarios images
     unset SITE_SRC_ROOT
     export SITE_ARCHIVE="$ARCHIVE" SITE_COMMIT=0123456789abcdef
     run "$SCRIPT" --only site
@@ -899,6 +902,89 @@ stub_docs_wget() {
     [[ "$output" == *"Candidate: 1.0"* ]]
 }
 
+# ── labimages: lab container images built from this checkout ──
+
+@test "--list names the labimages stage between gns3 and appliances" {
+    run "$SCRIPT" --list
+    echo "$output"
+    [ "$status" -eq 0 ]
+    local order
+    order="$(echo "$output" | grep -oE '^\s*[a-z0-9]+' | tr -d ' ' | tr '\n' ' ')"
+    [[ "$order" == *"gns3 labimages appliances"* ]]
+}
+
+@test "--dry-run --only labimages prints one build per lab image and one save, touching nothing" {
+    run "$SCRIPT" --only labimages --dry-run
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"would run  labimages"* ]]
+    [ "$(echo "$output" | grep -c 'build -f images/ipsec-ss/Dockerfile')" -eq 1 ]
+    [ "$(echo "$output" | grep -c 'build -f images/wan-emu/Dockerfile')" -eq 1 ]
+    [ "$(echo "$output" | grep -c 'build -f images/svc-targets/Dockerfile')" -eq 1 ]
+    [ "$(echo "$output" | grep -c 'gns3/docker-nodes/lab-images.tar.gz')" -eq 1 ]
+    [ ! -s "$NET" ]
+}
+
+@test "stage_labimages builds and saves each image, writes the .list, and WARNs+skips a missing Dockerfile" {
+    local B="$BATS_TEST_TMPDIR/b" R="$BATS_TEST_TMPDIR/repo" CALLS="$BATS_TEST_TMPDIR/calls"
+    mkdir -p "$B/gns3/docker-nodes" "$R/images/ipsec-ss" "$R/images/wan-emu" ; : > "$B/NOTES"
+    : > "$R/images/ipsec-ss/Dockerfile"; : > "$R/images/wan-emu/Dockerfile"   # svc-targets absent
+    load_fn "$SCRIPT" stage_labimages; load_fn "$SCRIPT" labimages_root; LAB_IMAGES=(ipsec-ss wan-emu svc-targets)
+    # shellcheck disable=SC2317
+    ctr_save() { echo "save $*" >> "$CALLS"; : > "$1"; }
+    note() { echo "- $*" >> "$B/NOTES"; }
+    TS=T1; SITE_SRC_ROOT="$R"
+    CTR=ctrstub; ctrstub() { echo "ctr $*" >> "$CALLS"; }
+    run stage_labimages
+    echo "$output"
+    [ "$status" -eq 0 ]
+    grep -q 'ctr build -f '"$R"'/images/ipsec-ss/Dockerfile -t localhost/lab/ipsec-ss:T1' "$CALLS"
+    grep -q 'ctr build -f '"$R"'/images/wan-emu/Dockerfile -t localhost/lab/wan-emu:T1' "$CALLS"
+    [ "$(grep -c '^save' "$CALLS")" -eq 1 ]
+    ! grep -q '^save.*svc-targets' "$CALLS"
+    [ "$(cat "$B/gns3/docker-nodes/lab-images.list")" = "$(printf 'localhost/lab/ipsec-ss:T1\nlocalhost/lab/wan-emu:T1')" ]
+    grep -q 'WARN: images/svc-targets/Dockerfile missing' "$B/NOTES"
+}
+
+@test "the curated apt list includes python3-yaml" {
+    grep -qE '^[[:space:]]+python3-ruamel\.yaml python3-dotenv python3-yaml' "$SCRIPT"
+}
+
+@test "stage_labimages tags localhost/lab/<name>:TS and the .list matches those tags" {
+    local B="$BATS_TEST_TMPDIR/b" R="$BATS_TEST_TMPDIR/repo" CALLS="$BATS_TEST_TMPDIR/calls"
+    mkdir -p "$B/gns3/docker-nodes" "$R/images/svc-targets"; : > "$B/NOTES"; : > "$R/images/svc-targets/Dockerfile"
+    load_fn "$SCRIPT" stage_labimages; load_fn "$SCRIPT" labimages_root; LAB_IMAGES=(ipsec-ss wan-emu svc-targets)
+    ctr_save() { echo "save $*" >> "$CALLS"; : > "$1"; }
+    note() { echo "- $*" >> "$B/NOTES"; }
+    TS=T2; SITE_SRC_ROOT="$R"; unset SITE_ARCHIVE
+    CTR=ctrstub; ctrstub() { echo "ctr $*" >> "$CALLS"; }
+    run stage_labimages
+    [ "$status" -eq 0 ]
+    grep -q -- '-t localhost/lab/svc-targets:T2' "$CALLS"
+    grep -q '^save .*localhost/lab/svc-targets:T2' "$CALLS"
+    [ "$(cat "$B/gns3/docker-nodes/lab-images.list")" = "localhost/lab/svc-targets:T2" ]
+}
+
+@test "stage_labimages with no images/ tree at the root emits one loud WARN and builds nothing" {
+    local B="$BATS_TEST_TMPDIR/b" R="$BATS_TEST_TMPDIR/repo" CALLS="$BATS_TEST_TMPDIR/calls"
+    mkdir -p "$B/gns3/docker-nodes" "$R"; : > "$B/NOTES"; : > "$CALLS"
+    load_fn "$SCRIPT" stage_labimages; load_fn "$SCRIPT" labimages_root; LAB_IMAGES=(ipsec-ss wan-emu svc-targets)
+    ctr_save() { echo "save $*" >> "$CALLS"; }
+    note() { echo "- $*" >> "$B/NOTES"; }
+    TS=T3; SITE_SRC_ROOT="$R"; unset SITE_ARCHIVE
+    CTR=ctrstub; ctrstub() { echo "ctr $*" >> "$CALLS"; }
+    run stage_labimages
+    [ "$status" -eq 0 ]
+    [ "$(grep -c 'WARN: images/ tree missing' "$B/NOTES")" -eq 1 ]
+    [ ! -s "$CALLS" ]
+}
+
+@test "the repo-root .dockerignore keeps .git, bundles, tarballs and scenario secrets out of the build context" {
+    for p in '.git' 'bundle-*' '*.tar.gz' '*.part' 'r770-precheck-*' 'scenarios/**/secrets.conf' 'scenarios/**/gt/' '.superpowers' '.reports'; do
+        grep -qxF "$p" "$BATS_TEST_DIRNAME/../.dockerignore"
+    done
+}
+
 # ── GNS3 docker-node archive — reused only when it holds exactly the pinned list ──
 # A cached gns3-node-images.tar.gz (seeded from a previous bundle, or left by a
 # same-day resume) was reused whenever it existed, so a newly pinned node image
@@ -1013,4 +1099,127 @@ setup_kit_repo() {
     [ "$status" -eq 0 ]
     [ -x "$BUNDLE_DIR/kit/scripts/r770-install.sh" ]
     [ "$(cat "$BUNDLE_DIR/kit/KIT_COMMIT")" = "$commit" ]
+}
+
+# ── free QEMU images chosen by their own .gns3a ──────────────────────────────
+# The 2026-10-06 EC2 rehearsal: frr, tinycore-linux and openwrt definitions
+# were bundled with no image, so they appeared in GNS3 and failed at boot.
+
+# a registry-shaped definition: versions newest first, images keyed by filename
+write_gns3a() {  # write_gns3a <file> <filename> <md5> <url> [compression]
+    local comp=""
+    [ -n "${5:-}" ] && comp=", \"compression\": \"$5\""
+    cat > "$1" <<JSON
+{"name": "fixture", "status": "stable",
+ "images": [
+  {"filename": "old-1.0.qcow2", "version": "1.0", "md5sum": "00000000000000000000000000000000", "direct_download_url": "https://example.invalid/old-1.0.qcow2"},
+  {"filename": "$2", "version": "2.0", "md5sum": "$3", "direct_download_url": "$4"$comp}
+ ],
+ "versions": [
+  {"name": "2.0", "images": {"hda_disk_image": "$2"}},
+  {"name": "1.0", "images": {"hda_disk_image": "old-1.0.qcow2"}}
+ ]}
+JSON
+}
+
+load_gns3a_fns() {
+    load_fn "$SCRIPT" gns3a_newest_image || { echo "gns3a_newest_image not found in $SCRIPT"; return 1; }
+    load_fn "$SCRIPT" fetch_gns3a_image || { echo "fetch_gns3a_image not found in $SCRIPT"; return 1; }
+    GNS3A_PY=(python3)       # the shipped default runs python3 inside PYTHON_BUILD_IMG
+    B="$BUNDLE_DIR"; FORCE=0; NOTES="$BATS_TEST_TMPDIR/notes.log"; : > "$NOTES"
+    mkdir -p "$B/gns3/definitions" "$B/gns3/appliances"
+    have() { [ "${FORCE:-0}" = "0" ] && [ -s "$1" ]; }
+    note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
+    seed() { :; }
+    # fetch <out> <url>: serve the url's basename from $SRV, log the url
+    export SRV="$BATS_TEST_TMPDIR/srv"; mkdir -p "$SRV"
+    fetch() { echo "fetch $2" >> "$FETCH_NET_LOG"; cp "$SRV/$(basename "$2")" "$1"; }
+}
+
+@test "gns3a_newest_image: picks the newest version's disk image and prints filename, md5, url, compression" {
+    load_gns3a_fns
+    write_gns3a "$B/gns3/definitions/x.gns3a" new-2.0.qcow2 0123456789abcdef0123456789abcdef https://example.invalid/new-2.0.qcow2
+    run gns3a_newest_image "$B/gns3/definitions/x.gns3a"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$output" = "new-2.0.qcow2 0123456789abcdef0123456789abcdef https://example.invalid/new-2.0.qcow2 none" ]
+}
+
+@test "gns3a_newest_image: reports gzip compression, and a definition with no downloadable newest image fails" {
+    load_gns3a_fns
+    write_gns3a "$B/gns3/definitions/g.gns3a" new.img 0123456789abcdef0123456789abcdef https://example.invalid/new.img.gz gzip
+    run gns3a_newest_image "$B/gns3/definitions/g.gns3a"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *" gzip" ]]
+    write_gns3a "$B/gns3/definitions/n.gns3a" new.img 0123456789abcdef0123456789abcdef ""
+    run gns3a_newest_image "$B/gns3/definitions/n.gns3a"
+    echo "$output"
+    [ "$status" -ne 0 ]
+}
+
+@test "fetch_gns3a_image: keeps an image whose md5 matches its definition, upgrading http to https" {
+    load_gns3a_fns
+    printf 'qcow2-bytes' > "$SRV/new-2.0.qcow2"
+    md5=$(md5sum < "$SRV/new-2.0.qcow2" | cut -d' ' -f1)
+    write_gns3a "$B/gns3/definitions/x.gns3a" new-2.0.qcow2 "$md5" http://downloads.example.invalid/new-2.0.qcow2
+    run fetch_gns3a_image x
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ -s "$B/gns3/appliances/new-2.0.qcow2" ]
+    grep -qx 'fetch https://downloads.example.invalid/new-2.0.qcow2' "$NET"
+    grep -q "x: new-2.0.qcow2 .*md5 matches its definition" "$NOTES"
+    [ -z "$(ls "$B/gns3/appliances" | grep -vx 'new-2.0.qcow2')" ]
+}
+
+@test "fetch_gns3a_image: an md5 mismatch removes the image and WARNs" {
+    load_gns3a_fns
+    printf 'tampered' > "$SRV/new-2.0.qcow2"
+    write_gns3a "$B/gns3/definitions/x.gns3a" new-2.0.qcow2 0123456789abcdef0123456789abcdef https://example.invalid/new-2.0.qcow2
+    run fetch_gns3a_image x
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [ -z "$(ls -A "$B/gns3/appliances")" ]
+    grep -q "WARN: x: new-2.0.qcow2 md5 does not match its definition" "$NOTES"
+}
+
+@test "fetch_gns3a_image: a gzip image is unpacked (OpenWrt's trailing-signature exit 2 tolerated), verified, and no .gz is left" {
+    load_gns3a_fns
+    printf 'raw-disk-image' > "$BATS_TEST_TMPDIR/new.img"
+    md5=$(md5sum < "$BATS_TEST_TMPDIR/new.img" | cut -d' ' -f1)
+    gzip -c "$BATS_TEST_TMPDIR/new.img" > "$SRV/new.img.gz"
+    printf 'SIGNATURE-BLOCK' >> "$SRV/new.img.gz"      # what OpenWrt appends; gzip -d then exits 2
+    write_gns3a "$B/gns3/definitions/w.gns3a" new.img "$md5" https://example.invalid/new.img.gz gzip
+    run fetch_gns3a_image w
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$B/gns3/appliances/new.img")" = "raw-disk-image" ]
+    [ -z "$(ls "$B/gns3/appliances" | grep -vx 'new.img')" ]
+}
+
+@test "fetch_gns3a_image: an image already present with the right md5 is not fetched again" {
+    load_gns3a_fns
+    printf 'qcow2-bytes' > "$B/gns3/appliances/new-2.0.qcow2"
+    md5=$(md5sum < "$B/gns3/appliances/new-2.0.qcow2" | cut -d' ' -f1)
+    write_gns3a "$B/gns3/definitions/x.gns3a" new-2.0.qcow2 "$md5" https://example.invalid/new-2.0.qcow2
+    run fetch_gns3a_image x
+    [ "$status" -eq 0 ]
+    [ ! -s "$NET" ]
+}
+
+@test "fetch_gns3a_image: a definition that was not staged WARNs and fetches nothing" {
+    load_gns3a_fns
+    run fetch_gns3a_image missing
+    [ "$status" -ne 0 ]
+    grep -q "WARN: missing.gns3a not staged" "$NOTES"
+    [ ! -s "$NET" ]
+}
+
+@test "stage_appliances fetches the image for every free definition named in GNS3A_FREE_IMAGES, each one also in GNS3A_DEFS" {
+    run grep -cE '^ *fetch_gns3a_image "\$a"' "$SCRIPT"
+    [ "$output" -eq 1 ]
+    eval "$(sed -n '/^GNS3A_DEFS=(/,/^)/p' "$SCRIPT")"
+    eval "$(grep -E '^GNS3A_FREE_IMAGES=\([^)]*\)$' "$SCRIPT")"
+    [ "${#GNS3A_FREE_IMAGES[@]}" -ge 3 ]
+    for f in frr tinycore-linux openwrt; do [[ " ${GNS3A_FREE_IMAGES[*]} " == *" $f "* ]]; done
+    for f in "${GNS3A_FREE_IMAGES[@]}"; do [[ " ${GNS3A_DEFS[*]} " == *" $f "* ]]; done
 }

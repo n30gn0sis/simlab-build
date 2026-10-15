@@ -22,8 +22,17 @@
 #                              credentials too. It is not a password-change path.
 #   bind-loopback              nginx-proxy 0.0.0.0:443:443[/tcp] -> 127.0.0.1:8443:443[/tcp]
 #                              (the file keeps its owner)
+#   arkime-config              Arkime trackESP=true (without it every ESP packet is
+#                              dropped as unknown; no Malcolm env knob): the arkime
+#                              image's config.orig.ini, with trackESP=true, kept at
+#                              malcolm/arkime/etc/config.orig.ini and bind-mounted
+#                              read-only over the image's copy in the arkime and
+#                              arkime-live services. Like bind-loopback, run again
+#                              after every configure; a running container needs a
+#                              stop and start to render a new config.ini.
 #   start                      Malcolm's own ./scripts/start --quiet (refused before bind-loopback)
-#   health [--timeout SECS]    every service running+healthy; only 127.0.0.1:8443 published
+#   health [--timeout SECS]    every service running+healthy; only 127.0.0.1:8443 published;
+#                              arkime's config.ini has trackESP=true
 #   verify --password-file FILE [--user NAME]
 #                              loopback PCAP -> Malcolm's upload dir (read from the
 #                              upload: service's bind mount in docker-compose.yml);
@@ -656,6 +665,142 @@ cmd_bind_loopback() {
     echo "PASS    nginx-proxy rebound: 0.0.0.0:443:443 -> 127.0.0.1:8443:443 (rollback: cp -p $bak $COMPOSE_FILE)"
 }
 
+# ── arkime-config ────────────────────────────────────────────────────────────
+
+# Arkime drops every ESP packet as "unknown" unless config.ini has
+# trackESP=true (staging rehearsal 2026-10-09: an outer IPsec capture indexed
+# no file and no session). No Malcolm env variable renders that setting: the
+# arkime image's entrypoint copies /opt/arkime/etc/config.orig.ini to
+# config.ini the first time a container starts (then edits it from the env),
+# and config.ini lives in the container's writable layer, so an edit there
+# dies with the container. The durable form: this host's copy of the image's
+# config.orig.ini with trackESP=true, bind-mounted read-only over the image's
+# at the path the entrypoint copies from, in every service that runs the
+# arkime image (arkime; arkime-live when present). The copy is taken from the
+# image the compose file names, so it carries that version's [custom-fields];
+# the stamp records which image, and a new image (bundle upgrade) refreshes
+# it. The installer rewrites docker-compose.yml, so this runs again after
+# configure, like bind-loopback. A container created before this ran keeps its
+# old config.ini until it is recreated (stop, then start).
+ARKIME_INI_REL='arkime/etc/config.orig.ini'
+ARKIME_INI_TARGET='/opt/arkime/etc/config.orig.ini'
+ARKIME_SERVICES='arkime arkime-live'
+
+# compose_service_image SERVICE: the `    image:` value inside that service.
+compose_service_image() {
+    awk -v svc="$1" '
+        /^  [A-Za-z0-9_-]+:$/ { cur = substr($0, 3, length($0) - 3) }
+        cur == svc && /^    image: / { sub(/^    image: */, ""); print; exit }' "$COMPOSE_FILE"
+}
+# compose_service_count SERVICE LINE: how many times exactly LINE occurs inside
+# that service (-v strings are compared whole: no regex, no escape processing).
+compose_service_count() {
+    awk -v svc="$1" -v line="$2" '
+        /^  [A-Za-z0-9_-]+:$/ { cur = substr($0, 3, length($0) - 3) }
+        cur == svc && $0 == line { n++ } END { print n + 0 }' "$COMPOSE_FILE"
+}
+# compose_insert_after SERVICE LINE BLOCK: print BLOCK after the first LINE
+# inside SERVICE (edits $COMPOSE_FILE in place).
+compose_insert_after() {
+    local tmp
+    tmp=$(mktemp) || return 1
+    awk -v svc="$1" -v after="$2" -v block="$3" '
+        /^  [A-Za-z0-9_-]+:$/ { cur = substr($0, 3, length($0) - 3) }
+        { print }
+        cur == svc && !done && $0 == after { print block; done = 1 }' "$COMPOSE_FILE" > "$tmp" &&
+        cat "$tmp" > "$COMPOSE_FILE"
+    local rc=$?
+    rm -f "$tmp"
+    return "$rc"
+}
+
+cmd_arkime_config() {
+    require_root
+    require_compose_file
+    local ini="$MD/$ARKIME_INI_REL" stamp="$STAMP_DIR/arkime-config.image" img
+    img=$(compose_service_image arkime)
+    [ -n "$img" ] || refuse "no arkime service with an image: line in $COMPOSE_FILE"
+
+    # 1. The image's config.orig.ini, with trackESP=true, on the host.
+    local changed=0 bak tmp
+    if [ ! -s "$ini" ] || [ "$(cat "$stamp" 2>/dev/null || true)" != "$img" ]; then
+        tmp=$(mktemp) || fail "mktemp failed"
+        if ! docker run --rm --pull never --network none --entrypoint cat "$img" "$ARKIME_INI_TARGET" > "$tmp" 2>/dev/null ||
+           ! grep -q '^\[default\]$' "$tmp"; then
+            rm -f "$tmp"; fail "cannot read $ARKIME_INI_TARGET from $img (is the image loaded?)"
+        fi
+        mkdir -p "$(dirname "$ini")" || { rm -f "$tmp"; fail "cannot create $(dirname "$ini")"; }
+        if [ -s "$ini" ]; then
+            bak="$ini.bak-$(date +%Y%m%dT%H%M%S)"
+            cp -p "$ini" "$bak" || { rm -f "$tmp"; fail "cannot back up $ini"; }
+            echo "backup: $bak"
+        fi
+        cat "$tmp" > "$ini" || { rm -f "$tmp"; fail "cannot write $ini"; }
+        rm -f "$tmp"
+        chmod 0644 "$ini" || fail "cannot chmod $ini"
+        mkdir -p "$STAMP_DIR" || fail "cannot create $STAMP_DIR"
+        printf '%s\n' "$img" > "$stamp" || fail "cannot write $stamp"
+        echo "config.orig.ini taken from $img"
+        changed=1
+    fi
+    if ! grep -qx 'trackESP=true' "$ini"; then
+        if grep -q '^trackESP=' "$ini"; then
+            sed -i 's/^trackESP=.*/trackESP=true/' "$ini" || fail "sed on $ini failed"
+        else
+            sed -i '/^\[default\]$/a trackESP=true' "$ini" || fail "sed on $ini failed"
+        fi
+        changed=1
+    fi
+    if [ "$(grep -c '^trackESP=' "$ini")" -ne 1 ] || ! grep -qx 'trackESP=true' "$ini"; then
+        fail "$ini does not carry exactly one trackESP=true"
+    fi
+    # The tree's owner (root before start, Malcolm's PUID after); the mount is
+    # read-only and the entrypoint only copies the file.
+    chown --reference="$COMPOSE_FILE" -- "$ini" "$(dirname "$ini")" || fail "cannot chown $ini"
+
+    # 2. The bind mount in every service that runs the arkime image.
+    local svc entry missing='' n
+    entry=$(printf '%s\n' '    - type: bind' '      bind:' '        create_host_path: false' \
+                   "      source: ./$ARKIME_INI_REL" "      target: $ARKIME_INI_TARGET" '      read_only: true')
+    for svc in $ARKIME_SERVICES; do
+        grep -qx "  $svc:" "$COMPOSE_FILE" || continue
+        [ "$(compose_service_count "$svc" "      source: ./$ARKIME_INI_REL")" -ge 1 ] || missing="$missing $svc"
+    done
+    grep -qx '  arkime:' "$COMPOSE_FILE" || refuse "no arkime service in $COMPOSE_FILE"
+    if [ -n "$missing" ]; then
+        bak="$COMPOSE_FILE.bak-$(date +%Y%m%dT%H%M%S)"
+        cp -p "$COMPOSE_FILE" "$bak" || fail "cannot back up $COMPOSE_FILE"
+        echo "backup: $bak"
+        for svc in $missing; do
+            if [ "$(compose_service_count "$svc" '    volumes:')" -ge 1 ]; then
+                compose_insert_after "$svc" '    volumes:' "$entry"
+            else
+                compose_insert_after "$svc" "  $svc:" "    volumes:"$'\n'"$entry"
+            fi || fail "cannot edit $COMPOSE_FILE; restore with: cp -p $bak $COMPOSE_FILE"
+        done
+        chown --reference="$bak" -- "$COMPOSE_FILE" ||
+            fail "cannot restore the owner of $COMPOSE_FILE; restore with: cp -p $bak $COMPOSE_FILE"
+        for svc in $missing; do
+            n=$(compose_service_count "$svc" "      source: ./$ARKIME_INI_REL")
+            [ "$n" -eq 1 ] || fail "$svc: expected one $ARKIME_INI_REL mount after the edit, found $n; restore with: cp -p $bak $COMPOSE_FILE"
+        done
+        echo "mounted ./$ARKIME_INI_REL over $ARKIME_INI_TARGET in:$missing (rollback: cp -p $bak $COMPOSE_FILE)"
+        changed=1
+    fi
+
+    if [ "$changed" -eq 0 ]; then
+        echo "already configured: trackESP=true in $ini (from $img), mounted in every arkime service"
+        return 0
+    fi
+    echo "PASS    Arkime trackESP=true via $ini"
+    # A running container rendered its config.ini when it was created.
+    compose_cmd
+    local ps
+    if ps=$(compose_ps 2> /dev/null) && [ -n "$ps" ]; then
+        echo "NOTE    Malcolm has containers: config.ini is rendered when a container is created — stop and start Malcolm for trackESP to take effect, then check with: health"
+    fi
+}
+
 # ── start ────────────────────────────────────────────────────────────────────
 
 cmd_start() {
@@ -745,7 +890,21 @@ cmd_health() {
         sleep "$POLL_SECS"
     done
     echo "PASS    all $(grep -c . <<< "$ps") services running and healthy"
-    check_ports
+    local bad=0
+    check_ports || bad=1
+    check_track_esp || bad=1
+    return "$bad"
+}
+
+# The running arkime container's config.ini must carry trackESP=true (see
+# arkime-config): without it an IPsec capture indexes nothing, silently.
+check_track_esp() {
+    if (cd "$MD" && timeout 30 "${COMPOSE[@]}" exec -T arkime grep -qx 'trackESP=true' /opt/arkime/etc/config.ini) 2> /dev/null; then
+        echo "PASS    arkime config.ini has trackESP=true"
+    else
+        echo "FAIL    arkime config.ini lacks trackESP=true (ESP would be dropped as unknown): run arkime-config, then stop and start Malcolm"
+        return 1
+    fi
 }
 
 # ── verify ───────────────────────────────────────────────────────────────────
@@ -888,6 +1047,13 @@ cmd_verify() {
     echo "verify: all checks PASS"
 }
 
+# Read-only: print where Malcolm takes uploads (scen-ingest uses this).
+cmd_upload_dir() {
+    [ $# -eq 0 ] || die "usage: upload-dir"
+    require_compose_file
+    upload_dir || exit 1
+}
+
 case "${1:-}" in
     load)          shift; cmd_load "$@" ;;
     assert-tags)   shift; cmd_assert_tags "$@" ;;
@@ -895,8 +1061,10 @@ case "${1:-}" in
     configure)     shift; cmd_configure "$@" ;;
     auth)          shift; cmd_auth "$@" ;;
     bind-loopback) shift; cmd_bind_loopback "$@" ;;
+    arkime-config) shift; cmd_arkime_config "$@" ;;
     start)         shift; cmd_start "$@" ;;
     health)        shift; cmd_health "$@" ;;
     verify)        shift; cmd_verify "$@" ;;
-    *)             die "usage: r770-malcolm-deploy.sh load|assert-tags|install <bundle-dir> | configure <json> | auth <bundle-dir> --password-file F [--user N] [--force: regenerates ALL internal creds] | bind-loopback | start | health | verify --password-file F [--user N]" ;;
+    upload-dir)    shift; cmd_upload_dir "$@" ;;
+    *)             die "usage: r770-malcolm-deploy.sh load|assert-tags|install <bundle-dir> | configure <json> | auth <bundle-dir> --password-file F [--user N] [--force: regenerates ALL internal creds] | bind-loopback | arkime-config | start | health | verify --password-file F [--user N] | upload-dir (read-only: print the upload directory)" ;;
 esac

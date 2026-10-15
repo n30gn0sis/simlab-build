@@ -83,20 +83,26 @@ GNS3A_DEFS=(
     vyos mikrotik-chr opnsense frr alpine-linux tinycore-linux openwrt
     cisco-iosv cisco-iosvl2 cisco-asav fortigate pan-vm-fw
 )
+# Free definitions whose image is taken from the definition itself: the newest
+# version it lists, from its own download URL, checked against its own md5 (so
+# no version is restated here). vyos, mikrotik-chr, opnsense and alpine-linux
+# have dedicated fetches above with stronger verification; the licensed five
+# stay manual (gns3/appliances/README.txt).
+GNS3A_FREE_IMAGES=(frr tinycore-linux openwrt)
 
 UBUNTU_BUILD_IMG="docker.io/library/ubuntu:24.04"
 PYTHON_BUILD_IMG="docker.io/library/python:3.12-slim"
 
 # ── stages: run all, or a selection ──────────────────────────────────────────
 # Fixed order. --only picks from it (given in any order), --skip removes from it.
-STAGES=(preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site kit manifest)
+STAGES=(preflight apt iso malcolm monitoring gns3 labimages appliances enrichment docs manual site kit manifest)
 ONLY=""; SKIP=""; LIST=0; DRY_RUN=0
 usage() {
     cat <<'USAGE'
 usage: r770-offline-fetch.sh [--only s1,s2,...] [--skip s1,s2,...] [--list] [--dry-run] [-h]
 
 Runs every stage in order unless told otherwise. The stages, in run order:
-  preflight apt iso malcolm monitoring gns3 appliances enrichment docs manual site kit manifest
+  preflight apt iso malcolm monitoring gns3 labimages appliances enrichment docs manual site kit manifest
 
   --only s,s   run just these (fixed order applies). NEVER implies manifest:
                finish with  --only manifest  or let r770-build-bundle.sh do it
@@ -234,6 +240,21 @@ else
 fi
 note() { echo "- $*" >> "$NOTES"; echo ">> $*"; }
 
+# Lab scenario images (stage_labimages, below; --dry-run prints its plan before any runtime exists)
+LAB_IMAGES=(ipsec-ss wan-emu svc-targets)
+# labimages_root -- the checkout the images build from: the same one the site
+# stage uses (SITE_SRC_ROOT, set when "site" is selected), else this script's repo.
+labimages_root() { (cd -- "${SITE_SRC_ROOT:-$SCRIPT_DIR/..}" 2>/dev/null && pwd -P) || echo "${SITE_SRC_ROOT:-$SCRIPT_DIR/..}"; }
+# labimages_plan -- what --dry-run says stage_labimages would do (no runtime needed)
+labimages_plan() {
+    local img root; root="$(labimages_root)"
+    for img in "${LAB_IMAGES[@]}"; do
+        # archive mode builds from the extracted SITE_ARCHIVE, which a dry run does not open
+        [ -n "${SITE_ARCHIVE:-}" ] || [ -f "$root/images/$img/Dockerfile" ] || { echo "  WARN: images/$img/Dockerfile missing -- would skip"; continue; }
+        echo "  ${CTR:-docker} build -f images/$img/Dockerfile -t localhost/lab/$img:$TS ."
+    done
+    echo "  save -> gns3/docker-nodes/lab-images.tar.gz (+ lab-images.list)"
+}
 # ── --list / --dry-run answer here, before any runtime is needed ─────────────
 # node_list_matches — the GNS3 docker-node archive's image-list.txt names exactly
 # GNS3_NODE_IMAGES, in order. The archive's filename carries no versions, so a
@@ -252,6 +273,7 @@ stage_marker() {  # stage_marker <stage> — a coarse "looks complete" marker fo
         malcolm)    ls "$B/malcolm"/malcolm-images-*.tar.gz >/dev/null 2>&1 ;;
         monitoring) [ -s "$B/docker/monitoring-images.tar.gz" ] ;;
         gns3)       [ -f "$B/.stamps/05-wheelhouse.done" ] && [ -s "$B/images/noble-server-cloudimg-amd64.img" ] ;;
+        labimages)  [ -s "$B/gns3/docker-nodes/lab-images.tar.gz" ] ;;
         appliances) [ -s "$B/gns3/docker-nodes/gns3-node-images.tar.gz" ] && node_list_matches ;;
         enrichment) [ -s "$B/enrichment/oui.txt" ] ;;
         docs)       [ "$(ls "$B/.stamps"/08-docs-*.done 2>/dev/null | wc -l)" -ge 3 ] ;;
@@ -273,6 +295,7 @@ fi
 if [ "$DRY_RUN" = "1" ]; then
     echo "== dry run: stages this command line would run, in order =="
     for s in "${STAGES[@]}"; do want "$s" && printf '  would run  %s\n' "$s"; done
+    want labimages && labimages_plan
     exit 0
 fi
 
@@ -335,6 +358,65 @@ fetch() {  # fetch <output> <url> [extra curl args...] — seed from prev bundle
         curl -fL --retry 3 "$@" -o "${out}.part" "$url" || { rm -f "${out}.part"; return 1; }
     fi
     mv "${out}.part" "$out"
+}
+
+# gns3a_newest_image <file.gns3a> -- "filename md5 url compression" for the disk
+# image of the newest version the definition lists (the registry lists newest
+# first). Fails when that version names no image with an md5 and a direct URL.
+# The JSON is read inside PYTHON_BUILD_IMG: the host is not required to have
+# python3 (preflight checks curl/sha256sum/tar/awk only). GNS3A_PY overrides.
+gns3a_newest_image() {
+    local -a py=("${GNS3A_PY[@]}")
+    [ "${#py[@]}" -gt 0 ] || py=("$CTR" run --rm -i --network none "$PYTHON_BUILD_IMG" python3)
+    "${py[@]}" -c '
+import json, sys
+d = json.load(sys.stdin)
+vs = d.get("versions") or []
+if not vs:
+    sys.exit("no versions listed")
+imgs = vs[0].get("images") or {}
+fn = imgs.get("hda_disk_image") or next(iter(imgs.values()), "")
+e = next((i for i in d.get("images", []) if i.get("filename") == fn), None)
+if not e or not e.get("md5sum") or not e.get("direct_download_url"):
+    sys.exit("the newest version names no downloadable image")
+print(fn, e["md5sum"], e["direct_download_url"], e.get("compression") or "none")
+' < "$1"
+}
+
+# fetch_gns3a_image <definition name> -- stage the image its own .gns3a names
+# into gns3/appliances/, and keep it only if its md5 matches the definition.
+# GNS3 matches an appliance's image by filename and md5, so any other file
+# would leave the definition in the GUI with nothing to boot.
+fetch_gns3a_image() {
+    local name="$1" def="$B/gns3/definitions/$1.gns3a" fn="" md5="" url="" comp="" out got rc
+    [ -s "$def" ] || { note "WARN: ${name}.gns3a not staged — its image cannot be chosen"; return 1; }
+    read -r fn md5 url comp < <(gns3a_newest_image "$def") || true
+    [ -n "$comp" ] || { note "WARN: ${name}.gns3a names no downloadable image for its newest version — stage one by hand"; return 1; }
+    out="$B/gns3/appliances/$fn"
+    url="${url/#http:\/\//https://}"     # sourceforge serves the same path over https
+    seed "$out"
+    if ! have "$out"; then
+        case "$comp" in
+            none) fetch "$out" "$url" || { note "WARN: ${name}: ${fn} download failed — ${url}"; return 1; } ;;
+            gzip)
+                fetch "${out}.gz" "$url" || { note "WARN: ${name}: ${fn} download failed — ${url}"; return 1; }
+                # OpenWrt appends a signature after the gzip stream: gzip warns
+                # "trailing garbage ignored" and exits 2 with the image intact.
+                rc=0; gzip -dc "${out}.gz" > "${out}.part" || rc=$?
+                rm -f "${out}.gz"
+                [ "$rc" -le 2 ] || { rm -f "${out}.part"; note "WARN: ${name}: ${fn} did not decompress (gzip exit $rc)"; return 1; }
+                mv "${out}.part" "$out" ;;
+            *) note "WARN: ${name}: ${fn} uses compression '${comp}', which this script does not unpack — stage it by hand"; return 1 ;;
+        esac
+    fi
+    got=$(md5sum < "$out" | cut -d' ' -f1)
+    if [ "$got" = "$md5" ]; then
+        note "GNS3 appliance image ${name}: ${fn} — md5 matches its definition"
+        return 0
+    fi
+    rm -f "$out"
+    note "WARN: ${name}: ${fn} md5 does not match its definition (${got} != ${md5}) — removed"
+    return 1
 }
 
 # ── cross-bundle seeding: reuse completed files from a previous bundle dir ───
@@ -522,7 +604,8 @@ PKGS=(
     python3-venv python3-pip dpkg-dev rsync
     # Malcolm's install.py imports these and the cloud image ships neither;
     # found by the 2026-09-12 staging rehearsal after bundle-20260908 was cut
-    python3-ruamel.yaml python3-dotenv
+    # (python3-yaml: the scen-* harness parses run.yaml)
+    python3-ruamel.yaml python3-dotenv python3-yaml
     # kernel/security update tracking
     linux-generic-hwe-24.04
 )
@@ -689,6 +772,42 @@ note "VM base images: noble cloud image + cirros (validation-suite test VM)"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
+# 5b. Lab scenario images, built from this checkout (not pulled)
+# ═════════════════════════════════════════════════════════════════════════════
+stage_labimages() {
+echo "==== [5b/11] Lab scenario images ===="
+local img root out="$B/gns3/docker-nodes/lab-images.tar.gz" tags=() xtmp=""
+mkdir -p "$B/gns3/docker-nodes"
+if [ -n "${SITE_ARCHIVE:-}" ]; then
+    # packed builder: no checkout. The archive's extracted trees (scripts, images,
+    # scenarios, ...) ARE the build context -- nothing else is in it, so no
+    # .dockerignore is needed there; a checkout's own .dockerignore trims the rest.
+    xtmp="$(mktemp -d)" || { note "WARN: mktemp failed -- no lab images built"; return 0; }
+    tar xf "$SITE_ARCHIVE" -C "$xtmp" || { rm -rf "$xtmp"; note "WARN: could not extract SITE_ARCHIVE -- no lab images built"; return 0; }
+    root="$xtmp"
+else
+    root="$(labimages_root)"
+fi
+if [ ! -d "$root/images" ]; then
+    note "WARN: images/ tree missing at $root -- no lab images built"
+    [ -z "$xtmp" ] || rm -rf "$xtmp"
+    return 0
+fi
+for img in "${LAB_IMAGES[@]}"; do
+    [ -f "$root/images/$img/Dockerfile" ] || { note "WARN: images/$img/Dockerfile missing -- skipped"; continue; }
+    # localhost/ prefix: podman stores unqualified names there; docker accepts it,
+    # so RepoTags in the archive match lab-images.list on either runtime
+    "$CTR" build -f "$root/images/$img/Dockerfile" -t "localhost/lab/$img:$TS" "$root" || { note "WARN: build of lab/$img failed -- skipped"; continue; }
+    tags+=("localhost/lab/$img:$TS")
+done
+[ -z "$xtmp" ] || rm -rf "$xtmp"
+[ "${#tags[@]}" -gt 0 ] || return 0
+ctr_save "$out" "${tags[@]}"
+printf '%s\n' "${tags[@]}" > "${out%.tar.gz}.list"
+note "Lab images saved: ${tags[*]}"
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
 # 6. GNS3 appliances — definitions + free images + docker-node images
 # ═════════════════════════════════════════════════════════════════════════════
 stage_appliances() {
@@ -801,7 +920,13 @@ else
     fi
 fi
 
-# 6g. Licensed images — manual checklist
+# 6g. Free QEMU images named by their own definitions (see GNS3A_FREE_IMAGES).
+# Tolerant like the rest of the stage: a miss WARNs in the notes, never fails.
+for a in "${GNS3A_FREE_IMAGES[@]}"; do
+    fetch_gns3a_image "$a" || true
+done
+
+# 6h. Licensed images — manual checklist
 cat > "$B/gns3/appliances/README.txt" <<'EOF'
 LICENSED / ACCOUNT-GATED GNS3 IMAGES — MANUAL DOWNLOADS, STAGE INTO THIS DIRECTORY
 (decisions 2026-08-31; definitions for these are already in ../definitions/)
@@ -942,7 +1067,7 @@ note "Dell firmware: not a bundle item — handled on the R770 directly (dell/RE
 #     stamp-skipped): it is small, and it must always match the checkout (or
 #     archive) it was cut from.
 # ═════════════════════════════════════════════════════════════════════════════
-SITE_TREES=(scripts config docs/analyst-wiki)
+SITE_TREES=(scripts config docs/analyst-wiki scenarios images)
 
 site_excluded() {  # site_excluded <path relative to the site source root>
     # Defence in depth on top of tracked-file enumeration: anything secret-

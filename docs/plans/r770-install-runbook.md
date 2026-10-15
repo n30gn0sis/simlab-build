@@ -319,8 +319,9 @@ JVM heaps to the host by itself; the imported config then sets them (see 8.3).
 **Changing the config later** (edit `malcolm-config.json`; `configure` re-runs
 only when its sha256 differs from the last successful run): every installer
 run rewrites `malcolm/docker-compose.yml`, which puts nginx-proxy back on
-`0.0.0.0:443` — so it is always `configure`, then `bind-loopback`, then
-`start` (which refuses until `bind-loopback` has run again). On a stack that is
+`0.0.0.0:443` and drops the Arkime `config.orig.ini` mount — so it is always
+`configure`, then `bind-loopback`, then `arkime-config`, then `start` (which
+refuses until `bind-loopback` has run again). On a stack that is
 already running, `start` only reports "already running" and does not apply the
 new config: restart it with Malcolm's own `restart`, as the PUID user (8.1):
 `cd /opt/malcolm/malcolm && sudo -u <puid-user> env HOME=/opt/malcolm/malcolm ./scripts/restart --quiet`,
@@ -403,7 +404,7 @@ script), it refuses too: inspect the tree, move `/opt/malcolm` aside, re-run.
 **An upgrade is a deliberate operator step**, not a side effect of re-running
 `install` against a newer bundle: stop Malcolm, move `/opt/malcolm`
 aside (keep it until the new stack verifies), then run `install`, `configure`,
-`auth`, `bind-loopback`, `start`, `health` and `verify` again.
+`auth`, `bind-loopback`, `arkime-config`, `start`, `health` and `verify` again.
 
 ### 8.1a Generate the auth material — not optional
 
@@ -460,8 +461,8 @@ The installer's default heap is sized for a much smaller box than the R770 and
 a much larger one than a rehearsal VM. What `configure` imports today is the
 rehearsed `osMemory: 4g` carried in `config/malcolm/malcolm-config.json`. To
 change it, edit that file from the steady-state budget in the buildout plan §8,
-re-run `configure`, then `bind-loopback` and a restart (8.1, "Changing the
-config later"), and record the value you chose.
+re-run `configure`, then `bind-loopback`, `arkime-config` and a restart (8.1,
+"Changing the config later"), and record the value you chose.
 
 ### 8.4 Bring it up
 
@@ -476,6 +477,16 @@ re-apply after every installer run — the installer regenerates the file, and a
 # silently no-ops on this file).
 sudo ./site/scripts/r770-malcolm-deploy.sh bind-loopback
 # bind-loopback edits the compose file as root and gives it back its owner.
+# arkime-config: Arkime drops every ESP packet as "unknown" unless its config.ini
+# has trackESP=true, and no Malcolm env variable sets it (found on the staging
+# IPsec rehearsal, 2026-10-09). The verb reads config.orig.ini out of the arkime
+# image named in the compose file, adds trackESP=true, keeps it at
+# malcolm/arkime/etc/config.orig.ini and bind-mounts it read-only over the
+# image's copy in the arkime and arkime-live services -- the file the container's
+# entrypoint renders config.ini from when the container is created. Re-run after
+# every configure (the installer rewrites the compose file); on a running stack
+# it needs a stop and start to take effect. health checks the running container.
+sudo ./site/scripts/r770-malcolm-deploy.sh arkime-config
 # start runs Malcolm's own ./scripts/start --quiet, not raw 'docker compose up':
 # control.py creates the keystore and touches files compose needs first, and
 # without --quiet it tails logs forever instead of returning. It runs as the

@@ -1715,8 +1715,218 @@ assert c["indexDir"] == "/data/index", c["indexDir"]
     [ "$(calls tcpdump)" -eq 0 ]
 }
 
+@test "upload-dir prints the compose file's upload bind source and changes nothing" {
+    malcolm_tree
+    up="$BATS_TEST_TMPDIR/data/pcap/raw/upload"; mkdir -p "$up"
+    compose_with_upload "$up" > "$MD/docker-compose.yml"
+    run md upload-dir
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$up" ]
+    [ ! -f "$S/argv" ]
+}
+
+@test "upload-dir refuses when the upload directory is missing" {
+    malcolm_tree; rm -r "$MD/pcap"
+    run md upload-dir
+    echo "$output"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"REFUSE"*"upload directory $MD/pcap/upload"*"does not exist"* ]]
+}
+
 @test "unknown verb prints usage and fails" {
     run md frobnicate
     [ "$status" -ne 0 ]
     [[ "$output" == *"usage"* ]]
+}
+
+# ── arkime-config ────────────────────────────────────────────────────────────
+
+# The docker stub for arkime-config: `run ... --entrypoint cat IMG PATH` prints
+# $S/orig.ini (exit $S/run_rc if set); `compose exec` exits $S/exec_rc (default 0).
+arkime_docker() {
+    stub docker 'echo "docker $*" >> "$S/argv"
+case "$1 $2" in
+  "compose ps")   cat "$S/ps" 2>/dev/null; exit 0 ;;
+  "compose exec") exit "$(cat "$S/exec_rc" 2>/dev/null || echo 0)" ;;
+esac
+if [ "$1" = run ]; then
+    case " $* " in *" --entrypoint cat "*) [ -f "$S/run_rc" ] && exit "$(cat "$S/run_rc")"; cat "$S/orig.ini"; exit 0 ;; esac
+    cat > "$S/stdin.docker"; printf ":\$2y\$10\$fakebcrypthash\n\n"; exit 0
+fi
+exit 0'
+    printf '%s\n' '# Arkime config.ini file' '[MALCOLM_PCAP_NODE_NAME]' 'webBasePath=/arkime/' '' \
+        '[default]' 'antiSynDrop=false' 'elasticsearch=https://opensearch:9200' '' '[custom-fields]' 'x=y' > "$S/orig.ini"
+}
+INI_SRC='      source: ./arkime/etc/config.orig.ini'
+INI_DST='      target: /opt/arkime/etc/config.orig.ini'
+# svc_lines SERVICE: the lines of that service in the compose file.
+svc_lines() {
+    awk -v svc="$1" '/^  [A-Za-z0-9_-]+:$/ {cur = substr($0, 3, length($0) - 3)} cur == svc' "$MD/docker-compose.yml"
+}
+
+@test "arkime-config takes config.orig.ini from the arkime image, sets trackESP=true under [default], mounts it in arkime, keeps a backup" {
+    malcolm_tree; arkime_docker
+    run md arkime-config
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PASS    Arkime trackESP=true"* ]]
+    grep -qxF 'docker run --rm --pull never --network none --entrypoint cat x /opt/arkime/etc/config.orig.ini' "$S/argv"
+    ini="$MD/arkime/etc/config.orig.ini"
+    [ "$(grep -c '^trackESP=' "$ini")" -eq 1 ]
+    [ "$(grep -n -x 'trackESP=true' "$ini" | cut -d: -f1)" -eq "$(( $(grep -n -x '\[default\]' "$ini" | cut -d: -f1) + 1 ))" ]
+    grep -qx 'x=y' "$ini"                      # the rest of the image's file is intact
+    [ "$(cat "$STAMP/arkime-config.image")" = x ]
+    # arkime: had no volumes: key — one is added with the one entry
+    svc_lines arkime | grep -qx '    volumes:'
+    svc_lines arkime | grep -qxF "$INI_SRC"
+    svc_lines arkime | grep -qxF "$INI_DST"
+    svc_lines arkime | grep -qx '      read_only: true'
+    [ "$(grep -cxF "$INI_SRC" "$MD/docker-compose.yml")" -eq 1 ]
+    ls "$MD"/docker-compose.yml.bak-* > /dev/null
+    # the other services are untouched
+    grep -qxF '      target: /var/www/upload/server/php/chroot/files' "$MD/docker-compose.yml"
+    grep -qxF "$OPEN" "$MD/docker-compose.yml"
+    bak=$(ls "$MD"/docker-compose.yml.bak-*)
+    grep -qxF "chown --reference=$bak -- $MD/docker-compose.yml" "$S/argv"
+    grep -qxF "chown --reference=$MD/docker-compose.yml -- $ini $MD/arkime/etc" "$S/argv"
+    [ "$(calls runuser)" -eq 0 ]
+}
+
+@test "arkime-config is idempotent: already configured, no image read, no second backup, file unchanged" {
+    malcolm_tree; arkime_docker; md arkime-config
+    cp "$MD/docker-compose.yml" "$BATS_TEST_TMPDIR/after1.yml"; rm -f "$S/argv"
+    run md arkime-config
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already configured"* ]]
+    [ "$(calls docker)" -eq 0 ]
+    cmp "$MD/docker-compose.yml" "$BATS_TEST_TMPDIR/after1.yml"
+    [ "$(ls "$MD"/docker-compose.yml.bak-* | wc -l)" -eq 1 ]
+    [ ! -e "$MD/arkime/etc/config.orig.ini.bak"* ]
+}
+
+@test "arkime-config inserts under an existing volumes: key in arkime and arkime-live, ahead of their other mounts" {
+    malcolm_tree; arkime_docker
+    { printf '%s\n' 'services:' '  nginx-proxy:' '    ports:' "$OPEN" '  arkime:' '    image: ghcr.io/x/arkime:1' '    volumes:'
+      bind_entry ./arkime/etc/wise.ini /opt/arkime/wiseini/wise.ini
+      printf '%s\n' '  arkime-live:' '    image: ghcr.io/x/arkime:1' '    volumes:'
+      bind_entry ./arkime/etc/wise.ini /opt/arkime/wiseini/wise.ini
+      printf '%s\n' '  zeek:' '    image: z' '    volumes:'
+      bind_entry ./zeek-logs /zeek/logs; } > "$MD/docker-compose.yml"
+    run md arkime-config
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"mounted ./arkime/etc/config.orig.ini over /opt/arkime/etc/config.orig.ini in: arkime arkime-live"* ]]
+    for svc in arkime arkime-live; do
+        [ "$(svc_lines $svc | grep -cxF "$INI_SRC")" -eq 1 ]
+        # directly under volumes:, before wise.ini
+        [ "$(svc_lines $svc | grep -n -x '    volumes:' | cut -d: -f1)" -lt "$(svc_lines $svc | grep -n -xF "$INI_SRC" | cut -d: -f1)" ]
+        [ "$(svc_lines $svc | grep -n -xF "$INI_SRC" | cut -d: -f1)" -lt "$(svc_lines $svc | grep -n -x '      source: ./arkime/etc/wise.ini' | cut -d: -f1)" ]
+        [ "$(svc_lines $svc | grep -cx '    volumes:')" -eq 1 ]
+        svc_lines $svc | grep -qx '      source: ./arkime/etc/wise.ini'
+    done
+    [ "$(svc_lines zeek | grep -cxF "$INI_SRC")" -eq 0 ]
+    [ "$(cat "$STAMP/arkime-config.image")" = ghcr.io/x/arkime:1 ]
+    grep -qxF 'docker run --rm --pull never --network none --entrypoint cat ghcr.io/x/arkime:1 /opt/arkime/etc/config.orig.ini' "$S/argv"
+}
+
+@test "arkime-config turns an existing trackESP=false into true, exactly once" {
+    malcolm_tree; arkime_docker
+    sed -i 's/^antiSynDrop=false$/trackESP=false\nantiSynDrop=false/' "$S/orig.ini"
+    run md arkime-config
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^trackESP=' "$MD/arkime/etc/config.orig.ini")" -eq 1 ]
+    grep -qx 'trackESP=true' "$MD/arkime/etc/config.orig.ini"
+}
+
+@test "after the installer rewrites the compose file, arkime-config re-adds the mount without re-reading the image" {
+    malcolm_tree; arkime_docker; md arkime-config
+    cp "$S/compose.fixture" "$MD/docker-compose.yml"; rm -f "$S/argv"
+    run md arkime-config
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"mounted ./arkime/etc/config.orig.ini"* ]]
+    [ "$(grep -cxF "$INI_SRC" "$MD/docker-compose.yml")" -eq 1 ]
+    run grep -c '^docker run' "$S/argv"; [ "$output" = 0 ]
+}
+
+@test "arkime-config refreshes the copy when the compose file names a new arkime image, backing up the old" {
+    malcolm_tree; arkime_docker; md arkime-config
+    sed -i 's/^trackESP=true$/trackESP=true\nmarker=old/' "$MD/arkime/etc/config.orig.ini"
+    sed -i '/^  arkime:$/{n;s/.*/    image: y/}' "$MD/docker-compose.yml"
+    rm -f "$S/argv"
+    run md arkime-config
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"config.orig.ini taken from y"* ]]
+    grep -qxF 'docker run --rm --pull never --network none --entrypoint cat y /opt/arkime/etc/config.orig.ini' "$S/argv"
+    [ "$(cat "$STAMP/arkime-config.image")" = y ]
+    ! grep -q '^marker=old' "$MD/arkime/etc/config.orig.ini" || false
+    grep -qx 'trackESP=true' "$MD/arkime/etc/config.orig.ini"
+    grep -qx 'marker=old' "$MD"/arkime/etc/config.orig.ini.bak-*
+    [ "$(grep -cxF "$INI_SRC" "$MD/docker-compose.yml")" -eq 1 ]   # the mount is not duplicated
+}
+
+@test "arkime-config refuses without an arkime service, writing nothing" {
+    malcolm_tree; arkime_docker
+    printf '%s\n' 'services:' '  nginx-proxy:' '    ports:' "$OPEN" > "$MD/docker-compose.yml"
+    run md arkime-config
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REFUSE"*"arkime"* ]]
+    [ ! -e "$MD/arkime/etc/config.orig.ini" ]
+    [ "$(calls docker)" -eq 0 ]
+}
+
+@test "arkime-config refuses before install" {
+    arkime_docker
+    run md arkime-config
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"REFUSE"* ]]
+}
+
+@test "arkime-config fails when the image cannot be read, and neither file is touched" {
+    malcolm_tree; arkime_docker; echo 1 > "$S/run_rc"
+    cp "$MD/docker-compose.yml" "$BATS_TEST_TMPDIR/before.yml"
+    run md arkime-config
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL"*"cannot read /opt/arkime/etc/config.orig.ini from x"* ]]
+    [ ! -e "$MD/arkime/etc/config.orig.ini" ]
+    [ ! -e "$STAMP/arkime-config.image" ]
+    cmp "$MD/docker-compose.yml" "$BATS_TEST_TMPDIR/before.yml"
+    ! ls "$MD"/docker-compose.yml.bak-* 2>/dev/null || false
+}
+
+@test "arkime-config fails on an image file without a [default] section" {
+    malcolm_tree; arkime_docker; echo 'not an ini' > "$S/orig.ini"
+    run md arkime-config
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL"*"cannot read"* ]]
+    [ ! -e "$MD/arkime/etc/config.orig.ini" ]
+}
+
+@test "arkime-config on a running stack says a stop and start are needed" {
+    malcolm_tree; arkime_docker; healthy_ps
+    run md arkime-config
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"NOTE    Malcolm has containers"*"stop and start"* ]]
+}
+
+@test "health PASSes trackESP when the arkime container's config.ini has it" {
+    malcolm_tree; arkime_docker; healthy_ps; good_ss
+    run md health --timeout 0
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PASS    arkime config.ini has trackESP=true"* ]]
+    grep -qxF 'docker compose exec -T arkime grep -qx trackESP=true /opt/arkime/etc/config.ini' "$S/argv"
+}
+
+@test "health FAILs when the arkime container's config.ini lacks trackESP=true" {
+    malcolm_tree; arkime_docker; healthy_ps; good_ss; echo 1 > "$S/exec_rc"
+    run md health --timeout 0
+    echo "$output"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"PASS    127.0.0.1:8443 is listening"* ]]
+    [[ "$output" == *"FAIL    arkime config.ini lacks trackESP=true"*"arkime-config"* ]]
 }

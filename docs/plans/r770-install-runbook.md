@@ -1,5 +1,13 @@
 # R770 Install Runbook — from bundle to running lab
 
+> **Since 2026-10 the R770 install runs from the bundle's `kit/`.** Every
+> bundle carries sim-lab-basic at `kit/` (the fetch's `kit` stage, required
+> by `r770-bundle.sh verify --strict`). After `./r770-bundle.sh verify .`,
+> run `sudo <bundle>/kit/scripts/r770-install.sh discover`, then `plan`, then
+> `run --yes`. See sim-lab-basic's `docs/deployment-runbook.md`, "The
+> installer". The hand-typed procedure below is the reference for what each
+> step does. `site/scripts` is no longer the deploy path.
+
 The R770 side of the air gap. Its counterpart is `r770-staging-runbook.md`,
 which builds the bundle; this document installs it.
 

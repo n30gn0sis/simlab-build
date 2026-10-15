@@ -91,10 +91,27 @@ cmd_pack() {
     fi
     printf '%s' "$commit" > "$tmp/site-commit.txt"
 
+    # The kit (sim-lab-basic, the R770 installer) rides along when KIT_SRC_ROOT
+    # names a checkout at pack time: same rules as site/ -- one exact, clean
+    # commit. Without it the pack carries no kit, and the packed builder's
+    # fetch then needs KIT_SRC_ROOT (or --skip kit) like any other run.
+    local kit_files="" kit_commit=""
+    if [ -n "${KIT_SRC_ROOT:-}" ]; then
+        if [ -n "$(git -c safe.directory="$KIT_SRC_ROOT" -C "$KIT_SRC_ROOT" status --porcelain -- scripts config scenarios docs 2>/dev/null)" ]; then
+            rm -rf "$tmp"; die "--pack refuses a dirty kit tree at KIT_SRC_ROOT ($KIT_SRC_ROOT) -- commit or stash it first"
+        fi
+        kit_commit="$(git -c safe.directory="$KIT_SRC_ROOT" -C "$KIT_SRC_ROOT" rev-parse HEAD)" || { rm -rf "$tmp"; die "KIT_SRC_ROOT ($KIT_SRC_ROOT) is not a git checkout"; }
+        git -c safe.directory="$KIT_SRC_ROOT" -C "$KIT_SRC_ROOT" archive --format=tar HEAD -- scripts config scenarios docs > "$tmp/kit.tar" ||
+            { rm -rf "$tmp"; die "could not archive the kit at $kit_commit"; }
+        kit_files="kit.tar"
+    else
+        echo "r770-build-bundle: note: --pack without KIT_SRC_ROOT carries no kit; the packed builder's fetch will need KIT_SRC_ROOT (or --skip kit)" >&2
+    fi
+
     # shellcheck disable=SC2086
-    if ! tar czf "$tmp/payload.tgz" -C "$HERE" $CONTENTS -C "$tmp" site.tar site-commit.txt; then    # CONTENTS: intentional word-splitting, unchanged from before this fix
+    if ! tar czf "$tmp/payload.tgz" -C "$HERE" $CONTENTS -C "$tmp" site.tar site-commit.txt $kit_files; then    # CONTENTS, kit_files: intentional word-splitting
         rm -rf "$tmp"
-        die "could not pack: $CONTENTS site.tar site-commit.txt"
+        die "could not pack: $CONTENTS site.tar site-commit.txt $kit_files"
     fi
 
     cat <<HEADER
@@ -112,6 +129,8 @@ cmd_pack() {
 # as a git archive of commit ${commit} (site.tar + site-commit.txt below), so
 # the fetch's "site" stage ships that exact, reviewed content even though
 # this unpacked builder has no checkout of its own to read it from.
+# Also carries sim-lab-basic (the R770 installer) as kit.tar when KIT_SRC_ROOT
+# was set at pack time.
 #
 # Copy to a staging host and run it. On RHEL 8 use rootful podman:
 #   sudo -E bash ${PACKED_NAME}
@@ -130,8 +149,14 @@ R770_PAYLOAD
 chmod +x "\$D"/*.sh
 export SITE_ARCHIVE="\$D/site.tar"
 export SITE_COMMIT="$commit"
-exec "\$D/r770-build-bundle.sh" "\$@"
 FOOTER
+    if [ -n "$kit_commit" ]; then
+        # shellcheck disable=SC2016  # $D stays literal: it is the packed script's own variable
+        printf 'export KIT_ARCHIVE="$D/kit.tar"\nexport KIT_COMMIT="%s"\n' "$kit_commit"
+    fi
+    cat <<'FOOTER2'
+exec "$D/r770-build-bundle.sh" "$@"
+FOOTER2
     rm -rf "$tmp"
 }
 

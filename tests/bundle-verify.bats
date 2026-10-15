@@ -313,6 +313,22 @@ pair_bundle() {   # a bundle with all three list/payload pairs intact
     [[ "$output" == *"RESULT: FAIL (--strict)"* ]]
 }
 
+# ── kit/ — the R770 installer delivered with the bundle ──
+@test "a fixture bundle with kit/ passes and names the kit commit" {
+    run "$SCRIPT" verify "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"kit/ carries the R770 installer (sim-lab-basic 0000000fixture)"* ]]
+}
+
+@test "a bundle with no kit/ warns, and --strict refuses it" {
+    rm -rf "$BUNDLE/kit"; "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE"
+    [ "$status" -eq 2 ]; [[ "$output" == *"kit/ is missing"* ]]
+    run "$SCRIPT" verify "$BUNDLE" --strict
+    [ "$status" -eq 1 ]
+}
+
 @test "SITE_REQUIRED_SCRIPTS names the whole scenario harness" {
     for s in scen-lib.sh scen-prep scen-run scen-events.sh scen-check scen-ingest scen-clear scen-bridges.sh; do
         grep -q "scripts/scenarios/$s" "$SCRIPT"
@@ -327,6 +343,20 @@ pair_bundle() {   # a bundle with all three list/payload pairs intact
     [ "$status" -eq 2 ]
     [[ "$output" == *"scripts/scenarios/scen-check"* ]]
     run "$SCRIPT" verify "$BUNDLE" --strict
+    [ "$status" -eq 1 ]
+}
+
+@test "kit/ without its installer or its commit record warns, naming what is missing" {
+    rm -f "$BUNDLE/kit/scripts/r770-install.sh" "$BUNDLE/kit/KIT_COMMIT"; "$SCRIPT" manifest "$BUNDLE"
+    run "$SCRIPT" verify "$BUNDLE"
+    echo "$output"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"kit/scripts/r770-install.sh"* ]]; [[ "$output" == *"kit/KIT_COMMIT"* ]]
+}
+
+@test "a modified kit/ file fails verify because the manifest covers it" {
+    echo tampered > "$BUNDLE/kit/scripts/r770-install.sh"
+    run "$SCRIPT" verify "$BUNDLE"
     [ "$status" -eq 1 ]
 }
 
